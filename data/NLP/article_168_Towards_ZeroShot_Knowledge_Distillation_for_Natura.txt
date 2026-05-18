@@ -1,0 +1,1201 @@
+Title: Towards Zero-Shot Knowledge Distillation for Natural Language Processing
+Source URL: http://arxiv.org/abs/2012.15495v1
+--------------------------------------------------
+
+Towards Zero-Shot Knowledge Distillation for Natural Language
+Processing
+Ahmad Rashid1, Vasileios Lioutas2∗, Abbas Ghaddar1, Mehdi Rezagholizadeh1
+1Huawei Noah’s Ark Lab, 2University of British Columbia
+ahmad.rashid@huawei.com, contact@vlioutas.com,
+abbas.ghaddar@huawei.com, mehdi.rezagholizadeh@huawei.com
+Abstract
+Knowledge Distillation (KD) is a common
+knowledge transfer algorithm used for model
+compression across a variety of deep learn-
+ing based natural language processing (NLP)
+solutions.
+In its regular manifestations, KD
+requires access to the teacher’s training data
+for knowledge transfer to the student network.
+However, privacy concerns, data regulations
+and proprietary reasons may prevent access to
+such data. We present, to the best of our knowl-
+edge, the ﬁrst work on Zero-Shot Knowledge
+Distillation for NLP, where the student learns
+from the much larger teacher without any task
+speciﬁc data. Our solution combines out of
+domain data and adversarial training to learn
+the teacher’s output distribution. We investi-
+gate six tasks from the GLUE benchmark and
+demonstrate that we can achieve between 75%
+and 92% of the teacher’s classiﬁcation score
+(accuracy or F1) while compressing the model
+30 times.
+1
+Introduction
+Deep Learning based Natural Learning Process-
+ing (NLP) systems have become state-of-the-art
+on many applications such as Machine Trans-
+lation (MT) (Vaswani et al., 2017; Lioutas and
+Guo, 2020), Natural Language Understanding
+(NLU) (Devlin et al., 2019) and Language Gen-
+eration (Brown et al., 2020) among others. These
+models are increasingly trained on huge corpora
+and with billions of trainable parameters (Brown
+et al., 2020). This is prohibitive for deploying these
+models on edge devices as well as maintaining
+them on servers. Moreover, training and evaluat-
+ing them leaves a signiﬁcant environmental foot-
+print (Strubell et al., 2019) wherein avoiding the
+resource hungry training is very challenging and
+∗Work done during an internship at Huawei Noah’s Ark
+Lab.
+may be unavoidable (Li et al., 2020). Model com-
+pression approaches make it feasible to employ
+current state of the art models on edge devices.
+Model Compression (Sanh et al., 2019; Jiao
+et al., 2019) has received a lot of attention in the
+NLP community due to the aforementioned reasons.
+Some of the algorithms include model pruning (See
+et al., 2016), quantization (Shen et al., 2019), low-
+rank matrix factorization (Sainath et al., 2013) and
+knowledge distillation (KD) (Buciluˇa et al., 2006;
+Hinton et al., 2015).
+KD is one of the most commonly used, appli-
+cation and model agnostic, compression and en-
+sembling algorithm. Some of the advantages of
+KD include use of just the teacher logits and archi-
+tecture independence between the student and the
+teacher. However, the student needs to be trained
+with the teacher’s training data so as to prevent
+loss of accuracy. We can not assume this access
+for many practical problems. Some of the con-
+cerns preventing access include data privacy, intel-
+lectual property, size and transience (Micaelli and
+Storkey, 2019). e.g. a model trained on patient
+health records might be available but the data itself
+may be inaccessible due to patient privacy.
+In computer vision (CV), Zero-Shot KD (ZSKD)
+has been proposed to train a student without using
+any data. In this context Zero-Shot refers to train-
+ing without using data instead of no training at
+all. Nayak et al. (2019) propose generating ”data
+impressions” by updating noise using backpropoga-
+tion until it generates ’valid’ teacher logits and
+then training the student on these data impressions.
+Chen et al. (2019) use a generator to produce syn-
+thetic images and use the teacher as discriminator,
+observing that for real images the softmax function
+of the teacher encourages a unimodal distribution.
+Micaelli and Storkey (2019) use a generator to pro-
+duce synthetic training samples employing adver-
+sarial training to improve the quality. Yoo et al.
+arXiv:2012.15495v1  [cs.CL]  31 Dec 2020
+(2019) generate synthetic data by conditioning a
+generator on output samples from the teacher and
+a low dimensional representation of the generated
+samples. These works assume that there is no data
+available whatsoever for training the student. How-
+ever, we contend that a similar approach for NLP
+does not work. We relax this condition and argue
+that we can still achieve the goals of ZSKD if we
+use easy to access out-of-domain (OOD), task ag-
+nostic data to aid the process. Krishna et al. (2019)
+put forth a similar argument, albeit for the prob-
+lem of model extraction, where they use simple
+heuristic rules to generate training data for a stu-
+dent, of similar or larger size to the teacher, in order
+to learn the teacher’s output distribution. However,
+they do not put constraints on the size of the stu-
+dent and even propose a student larger than the
+teacher. Moreover they assume only API access to
+the teacher with a ﬁx budget.
+We study the problem of ZSKD for NLP and in
+particular present the following contributions:
+• We present one of the ﬁrst works in NLP on
+model compression for NLU models using
+KD without the teacher’s training data or any
+other task-speciﬁc data.
+• We present a novel KD algorithm which com-
+bines OOD data and adversarial training.
+• Our algorithm generalizes to different clas-
+siﬁcation tasks for NLP including sentiment
+analysis, question answering, entailment etc.
+• We present an analysis of our algorithm on
+Natural Language Inference.
+2
+Related Work
+Knowledge Distillation
+KD (Hinton et al., 2015) is a well-known deep
+learning technique to transfer the knowledge from
+an already trained large teacher model to a smaller
+student network. KD adds a new loss function to
+the student’s regular training loss over the training
+labels. This new loss function aims at matching
+the smoothened output probabilities of the student
+with those of the teacher. More speciﬁcally, the
+training data is fed into the teacher model and the
+teacher logits are obtained. These are fed, typically,
+into a softmax function and the temperature pa-
+rameter is adjusted to smoothen the resulting label
+distribution. The training loss function for the KD
+algorithm is as following:
+LKD = α ∗H(y, σ(zs; T = 1)) +
+(1 −α) ∗H(σ(zt; T = τ), σ(zs, T = τ))
+(1)
+where H can be the cross-entropy or any other
+valid loss function and zs and zt are the student
+and teacher logits respectively. We will use the
+Kullback–Leibler (KL) divergence in our algorithm
+between the teacher and student logits. σ is the soft-
+max function, and τ and α are training parameters.
+Few Sample and Zero-Shot Knowledge
+Distillation
+Considering that the KD training procedure is data
+hungry and requires access to a large training set,
+the Few Sample Knowledge Distillation (FSKD)
+technique (Li et al., 2018) deals with the sample
+efﬁciency and training efﬁciency of KD. The FSDK
+technique is comprised of three main steps which
+are: ﬁrst, compressing the teacher network to the
+student network; second, aligning the student and
+teacher blocks by adding layers to match the size of
+output blocks of the student and the teacher; third,
+absorbing the added layers in the student network.
+This training process leaves only a few training
+parameters in the student network which makes the
+training possible with small amount of unlabeled
+samples (Li et al., 2018). FSKD can be applied
+to on-device training, cloud services for customers
+with private data, or even fast convergence training
+scenarios. Our work is different from FSKD in the
+sense that we do not have access to any of teacher’s
+training data.
+ZSKD deals with scenarios in which either no
+training data is available (e.g. in (Nayak et al.,
+2019)) or at least teacher’s training data is not
+available (for example due to customer’s privacy
+issues). Lopes et al. (2017) introduce a data-free
+knowledge distillation approach with the assump-
+tion that the teacher’s network and some meta-data
+(i.e. the teacher activation records or statistics on
+the teacher’s training data) are given. This work
+reconstructs the original training data by tweaking
+a noise input and trying to recover the given meta-
+data. We are different from (Lopes et al., 2017) in
+the sense that our model does not need any meta-
+data for training. Another case in point is (Nayak
+et al., 2019) which introduces a data-free knowl-
+edge distillation approach with no knowledge about
+the target data distribution. In this regard, their
+Figure 1: Schematic Diagram of our Zero-Shot KD solution. a) We assume access to a pre-trained teacher. b) We
+adversarially train the generator using out-of-domain data (OOD). c) Finally we use the generated data and the
+OOD data for KD.
+Zero-Shot technique models the softmax output of
+the teacher using the Dirichlet distribution and then
+builds the underlying data samples (so called Data
+Impressions ) corresponding to that modeled dis-
+tribution for the teacher. This Zero-Shot technique
+(ZSKD) is experimented on MNIST and CIFAR-10,
+however, we believe that this approach will not be
+practical for NLP tasks due to the fact that the input
+data is discrete and the size of the output softmax
+can be really large. One potential practical scenario
+for NLP can be training students without accessing
+teacher’s training data. In this scenario, we are al-
+lowed to use any text corpus in the public domain
+except the data used for training the teacher net-
+work. In this case we can borrow ideas from model
+extraction techniques such as (Pal et al., 2019; Kr-
+ishna et al., 2019; Yoo et al., 2019) to facilitate
+ZSKD training by querying the teacher model us-
+ing unlabeled data. (Pal et al., 2019; Krishna et al.,
+2019) deal with textual input but do not consider
+smaller students and the KD scenario. (Yoo et al.,
+2019) designs a conditional data generator to tackle
+with lack of training data for the student network
+and focuses on image classiﬁcation. However, our
+solution works on text and our text generator is
+unconditional.
+Adversarial Training
+Adversarial examples are small perturbations to
+training samples indistinguishable to humans but
+enough to fool neural network classiﬁers. Good-
+fellow et al. (2014) proposed adding them to the
+training set to make CV systems robust to adversar-
+ial attacks. Miyato et al. (2016) adapt adversarial
+training to text classiﬁcation and improve perfor-
+mance on a few supervised and semi-supervised
+text classiﬁcation tasks.
+Adversarial training although proposed for
+model robustness (Ebrahimi et al., 2017), has been
+shown to improve state-of-the-art model perfor-
+mance (Cheng et al., 2019; Zhu et al., 2019) in NLP.
+Cheng et al. (2019) study machine translation and
+propose making the model robust to both source
+and target perturbation, generated by swapping the
+word embedding of a word with that of its syn-
+onym. They model small perturbations by consider-
+ing word swaps which cause the smallest increase
+in loss gradient. They achieve a higher BLEU
+score on Chinese-English and English-German
+translation compared to the baseline. Zhu et al.
+(2019) propose a novel adversarial training algo-
+rithm, FreeLB, to make gradient based adversarial
+training efﬁcient by updating both embedding per-
+turbations and model parameters simultaneously
+during the backward pass of training. They show
+improvements on multiple language models on the
+GLUE benchmark.
+Micaelli and Storkey (2019) adapt adversarial
+training for ZSKD and train an image generator
+to increase the divergence between student and
+teacher and train the student to decrease this diver-
+gence.
+3
+Methodology
+We solve the missing data problem for knowledge
+transfer between teacher and student. We rely on
+an adversarial text generator as the backbone of
+our method. However, we still need data to pre-
+train the generator. Since we assume access to this
+general purpose OOD data, we delineate general
+principles to extract a training set from this source
+as well. Finally, we apply KD on a combination of
+the OOD training data and the adversarial training
+data. Figure 1 gives a visual illustration of the
+proposed ZSKD method.
+3.1
+Out-of-Domain Training Data
+Our ZSKD method assumes that we do not have the
+original training data on which the teacher model
+is trained as well as any other task speciﬁc data.
+Similar to (Krishna et al., 2019), we construct an
+out-of-domain (OOD) dataset. The idea is that us-
+ing a general purpose corpus of text, we randomly
+sample sentences from the text. Then depending on
+the task we add simple heuristics to make the text
+suitable for the problems at hand. We summarize
+a list of targeted tasks all taken from the GLUE
+benchmark.
+Sentiment Classiﬁcation (SST-2). We do not
+modify the sampled sentences for this task but sim-
+ply feed them to the teacher to get the sentiment
+output distribution, even though most sentences in
+the sampled text would have neutral sentiment.
+Pairwise Sentence Classiﬁcation The training
+sequence typically consists of two input sentences.
+Depending on the task these can be:
+• In Natural Language Inference (NLI), the two
+input sentences are the hypothesis and the
+premise. Depending on the task, the goal can
+be to determine whether the hypothesis is true
+(entailment), false (contradiction), or undeter-
+mined (neutral) given the premise (MNLI) or
+whether the hypothesis entails the premise in
+the form of binary classiﬁcation (RTE). For
+these tasks, we generate the OOD data by ran-
+domly extracting a sentence from the corpus
+to serve as the premise and then by random
+chance construct the hypothesis to either be a
+slightly changed version of the premise or be
+a completely new random sentence.
+• In tasks such as Quora Question Pair (QQP)
+and Microsoft Research Paraphrase Corpus
+(MRPC), the goal is to determine if the two
+input sentences are semantically equivalent
+or not. We follow a strategy similar to NLI
+tasks but for the QQP task we post-process the
+generated sentences by appending a question
+mark at the end.
+Question NLI. The goal of this task is to deter-
+mine if the given paragraph contains the answer to
+the input question. We sample a paragraph from
+our corpus and, randomly, either sample a seg-
+ment from within the paragraph to form a question
+or sample an unrelated sentence from the corpus.
+Then, we randomly append a questioning word
+such as Who, Where, What etc. to the start of the
+segment and a question mark at the end.
+3.2
+Adversarial Training
+Inspired by (Micaelli and Storkey, 2019) and on
+the promise of adversarial training for NLP (Zhu
+et al., 2019), the key ingredient of our proposed
+method is to learn a generator that generates train-
+ing samples. Most methods in adversarial train-
+ing for NLP (Zhang et al., 2020) perturb the word
+embeddings instead of generating text due to the
+discreteness problem of text. In order to generate
+text, we need an argmax operation which breaks
+end-to-end differentiability. Since our goal is KD,
+embedding perturbation introduces the problem of
+size mismatch between the student and teacher em-
+bedding. Instead we generate text and sample from
+the argmax by using the Gumbel-Softmax distri-
+bution (Kusner and Hern´andez-Lobato, 2016; Jang
+et al., 2016), a continuous distribution over the sim-
+plex that can approximate one-hot samples from a
+discrete distribution.
+Algorithm 1: Adversarial Training for Zero-Shot Knowledge Distillation
+pretrain: T(·)
+dataset: D
+initialize: G(·; φ)
+initialize: S(·; θ)
+for k ←1, 2, ..., N do
+xk ←D
+# Adversarial Step
+for 1, 2, ..., nG do
+z ←{z0, . . . , zl} ∼N(0, std)
+xlogits ←G(z; φ)
+xp ←Gumbel-Softmax(xlogits)
+LA ←−DKL(T(xp) || S(xp))
+LF ←DKL(xk || xp)
+LT ←LA+LF
+2
+φ ←φ −η∂LT
+∂φ
+end
+# Knowledge Distillation
+for 1, 2, ..., nS do
+z ←{z0, . . . , zl} ∼N(0, std)
+xlogits ←G(z; φ)
+xp ←Gumbel-Softmax(xlogits)
+LG ←DKL(T(xp) || S(xp))
+LOOD ←DKL(T(xk) || S(xk))
+L ←α · LG + (1 −α) · LOOD
+θ ←θ −η∂L
+∂θ
+end
+decay η
+end
+Task
+Model
+Method
+Data
+Generation
+Data
+Size
+Score
+SST-2
+Teacher
+-
+Original
+67K (×1)
+93.0
+Student
+-
+Original
+67K (×1)
+87.4
+Student
+KD
+WikiText-103
+269K (×4)
+84.9
+Student
+KD + Adv (Ours)
+WikiText-103
+135K (×2)
+85.0
+Student
+KD + Adv (Ours)
+WikiText-103
+269K (×4)
+85.9
+Table 1: Results on the single sentence sentiment classiﬁcation task.
+3.2.1
+Generator Pre-training
+Our adversarial generation is closer in spirit to ad-
+versarial training and therefore we pre-train the
+generator to produce samples from the OOD train-
+ing data D (See Section 3.1). Speciﬁcally, our
+generator G is a language model which is fed a
+ﬁxed length sequence of randomly sampled repre-
+sentations from a normal distribution with mean
+0 and variance σ2 and it generates a sequence of
+tokens. We train it by minimizing the following
+loss function:
+LPG ←DKL(xk || xp)
+(2)
+where a xk is a sample from the OOD training
+set D and a xp is a sample from the generator. The
+algorithm describing this process can be found on
+Section B of the supplementary material.
+3.2.2
+KD with Adversarial Generation
+Once pre-trained, the generator is trained with two
+losses. The ﬁrst loss maximises the KL-divergence
+between the teacher and student model on the gen-
+erated data. The teacher and student model param-
+eters are ﬁxed. The goal is to generate training
+samples where the teacher and student diverge the
+most. However, this can lead to degenerate sam-
+ples which are not useful for transferring teacher
+knowledge. The second loss is the same as Equa-
+tion 2 and prevents the generator from diverging
+too much from the OOD training data. The overall
+loss for generator training is thus:
+max
+G
+Ezp∼N(0,std)[DKL(T(G(zp)) || S(G(zp)))] +
+min
+G
+Ezp∼N(0,std)[DKL(xk || G(zp))]
+(3)
+Task
+Model
+Method
+Data
+Generation
+Data
+Size
+Score
+MNLI
+Teacher
+-
+Original
+392K (×1)
+86.6
+Student
+-
+Original
+392K (×1)
+75.5
+Student
+KD
+WikiText-103
+1.5M (×4)
+62.5
+Student
+KD + Adv (Ours)
+WikiText-103
+785K (×2)
+63.8
+Student
+KD + Adv (Ours)
+WikiText-103
+1.5M (×4)
+65.1
+RTE
+Teacher
+-
+Original
+2.5K (×1)
+70.7
+Student
+-
+Original
+2.5K (×1)
+64.2
+Student
+KD
+WikiText-103
+10K (×4)
+61.7
+Student
+KD + Adv (Ours)
+WikiText-103
+5K (×2)
+62.0
+Student
+KD + Adv (Ours)
+WikiText-103
+10K (×4)
+62.5
+Table 2: Results on the NLI classiﬁcation tasks.
+where G is the generator, T is the teacher, S is
+the student, zp is a sample from normal distribution
+and xk is a sample from the OOD training set.
+In each training loop we train the generator for
+nG steps and the student for nS steps. Speciﬁcally,
+as shown in Algorithm 1 the student is optimized
+using a joint KD loss between the data samples
+generated from the generator G and the data sam-
+ples coming from the OOD dataset. The complete
+version of our proposed algorithm can be found on
+Section B of the supplementary material.
+4
+Experiments
+We evaluated our proposed adversarial ZSKD ap-
+proach on six classiﬁcation tasks from the Gen-
+eral Language Understanding Evaluation (GLUE)
+(Wang et al., 2018) benchmark. Speciﬁcally, the
+ﬁrst task we report results on is binary sentiment
+classiﬁcation using the SST-2 (Socher et al., 2013)
+dataset. In this task, the input is a single sentence
+and the output is a probability distribution between
+positive and negative sentiments.
+The second task is ternary natural language infer-
+ence (NLI) classiﬁcation on the MNLI (Williams
+et al., 2018) dataset. The input is a pair of sentences
+and the output is a probability distribution between
+entailment, contradiction and neutral classes. A
+similar task is the Recognizing Textual Entailment
+(RTE) (Bentivogli et al., 2009) task which is a bi-
+nary entailment task.
+In addition, we report results on the Quora
+Question Pairs (QQP) (Chen et al., 2018) task
+and the Microsoft Research Paraphrase Corpus
+(MRPC) (Dolan and Brockett, 2005) task which
+share the goal of predicting semantic equivalence
+between two sentences.
+Finally, we report re-
+sults on the Question Natural Language Inference
+(QNLI) (Wang et al., 2018) dataset which is a bi-
+nary classiﬁcation task on predicting whether the
+answer to a question is found inside a given para-
+graph.
+4.1
+Experimental Setup
+All models used in this paper are based on two ar-
+chitecture settings from the BERT (Devlin et al.,
+2019) model. Speciﬁcally, for the teacher model
+we used the pre-trained version of the BERTLARGE
+model released by the authors. The model con-
+sists of 24 layers. The hidden size is 1024 and the
+number of heads is 16. The total number of pa-
+rameters is about 340M. For the student model, we
+decided to use a signiﬁcantly smaller version of the
+BERT model. Speciﬁcally, we used the BERTMINI
+version which uses 4 layers with 256 hidden dimen-
+sion and 4 attention heads. The total size of the
+model is 11M trainable parameters. Both models
+use a vocabulary of size 30,522 extracted using the
+Byte Pair Encoding (BPE) (Sennrich et al., 2016)
+tokenization method.
+Hyper-parameters
+We ﬁne-tuned the BERT-
+based student model for 10 epochs and picked the
+best checkpoint that gave the lowest loss during
+training. We report results for all methods on the
+given Dev set. For each task, we selected the best
+ﬁne-tuning learning rate among 5e-5, 4e-5, 3e-5,
+and 2e-5 values. We used the AdamW (Loshchilov
+Task
+Model
+Method
+Data
+Generation
+Data
+Size
+Score
+QQP
+Teacher
+-
+Original
+363K (×1)
+89.9
+Student
+-
+Original
+363K (×1)
+83.7
+Student
+KD
+WikiText-103
+1.4M (×4)
+70.0
+Student
+KD + Adv (Ours)
+WikiText-103
+728K (×2)
+71.7
+Student
+KD + Adv (Ours)
+WikiText-103
+1.4M (×4)
+72.2
+MRPC
+Teacher
+-
+Original
+4K (×1)
+87.1
+Student
+-
+Original
+4K (×1)
+78.5
+Student
+KD
+WikiText-103
+15K (×4)
+74.5
+Student
+KD + Adv (Ours)
+WikiText-103
+7K (×2)
+75.4
+Student
+KD + Adv (Ours)
+WikiText-103
+15K (×4)
+76.4
+Table 3: Results on the pairwise sentence classiﬁcation tasks.
+Task
+Model
+Method
+Data
+Generation
+Data
+Size
+Score
+QNLI
+Teacher
+-
+Original
+104K (×1)
+91.5
+Student
+-
+Original
+104K (×1)
+84.1
+Student
+KD
+WikiText-103
+418K (×4)
+78.1
+Student
+KD + Adv (Ours)
+WikiText-103
+209K (×2)
+79.1
+Student
+KD + Adv (Ours)
+WikiText-103
+418K (×4)
+79.9
+Table 4: Results on the question NLI task.
+and Hutter, 2017) optimizer with the default values.
+In addition, we used a linear decay learning rate
+scheduler with no warmup steps. We set the α val-
+ues from our algorithm to be 0.2 and the std value
+to 0.01. Additionally, we set the value nG to 10
+and nS to 100. Finally, we pre-train the generator
+for two epochs.
+Hardware Details
+We trained all models using a
+single NVIDIA V100 GPU. The batch size was set
+to 64. We used mixed-precision training (Micike-
+vicius et al., 2018) to expedite the training proce-
+dure. All experiments were run using the PyTorch1
+framework.
+4.2
+Results
+Table 1 presents our result on SST-2. For all the
+tasks, we present the original large teacher score,
+the smaller student score when trained on the train-
+ing data, the student trained with KD on the OOD
+data and two experiments with different training
+set sizes using our algorithm. Our baseline is the
+1https://pytorch.org/
+KD with OOD data and is adapted from (Krishna
+et al., 2019). Their results were on using same size
+student and teacher and only on SST-2 and MNLI.
+We have applied it the smaller student setting and
+deﬁned the OOD generation process for the 6 other
+datasets to extend their method.
+The data size (x1, x2 and x4) are the OOD data
+sizes compared to the task speciﬁc training data
+size. The adversarially trained student, in addi-
+tional to the OOD data, generates an equal number
+of adversarial examples. On SST-2, we attain close
+to the student accuracy using the OOD training
+data. Our method using x2 OOD data does just as
+well as the baseline but when we use all the OOD
+data used by the baseline we increase the accuracy
+by 1.
+The results of the NLI classiﬁcation tasks, MNLI
+and RTE, are on Table 2. MNLI is one of the
+two hardest task that we evaluated on. Looking
+at the accuracy scores we can see that the student
+trained on the training data falls well short of the
+teacher. On this task, we can see the strength of
+neutral
+contradiction
+entailment
+Overall
+OOD Samples
+67.2
+68.6
+51.6
+62.5
++0.75M Adv
+70.8
+66.1
+55.7
+63.8
++1.5M Adv
+73.2
+65.3
+57.8
+65.1
+Table 5: Per-class F1 scores on MNLI of students trained on OOD samples with incremental subsets of adversarial
+examples. No Adv refer to the student trained on randomized sentence pairs.
+our method as the adversarial training improves the
+score both when we use x2 OOD data and even
+further when we use x4 OOD data. High model
+capacity is important for MNLI. We see a similar
+trend for RTE.
+On pairwise sentence classiﬁcation, on Table 3
+we see that MRPC follows a similar trend where
+the adversarial training algorithm improves the F1
+score both when used with x2 OOD data and with
+x4 OOD data.
+The same applies for the QQP
+task. Similar to MNLI, the model capacity and
+the amount of training data appears to be impor-
+tant for this task. Table 4 presents the result on
+the QNLI task and we see improvements using our
+algorithm both when using half the OOD data as
+the baseline and when using the same OOD data.
+On average we see an improvement of 1.4 over all
+the tasks.
+Overall, we were able to recover between 98.2%
+(SST-2) and 86.2% (MNLI and QQP) of the per-
+formance of a version of the student model trained
+with the original dataset. Similarly, we recovered
+from 92.3% (SST-2) to 75.1% (MNLI) of the per-
+formance between the teacher and the ﬁnal student
+model.
+4.3
+Language Model Generator
+We explored the use of a language model (LM)
+for OOD generation. Table 6 shows the result of
+using GPT-2 (Radford et al., 2019) as a text gen-
+erator for SST-2 and MNLI. We do not observe
+any improvement and the algorithm is much slower
+in comparison due to the complexity of executing
+such a large language model. We believe that the
+reason there is no improvement between OOD data
+generated from the LM and the data extracted from
+WikiText-103 is that there is barely any semantic
+difference between the two OOD generation meth-
+ods.
+4.4
+Few-shot Setting
+We explore the strength of our algorithm in the few-
+shot setting where we have 200 examples per class
+Task
+Model
+LM (GPT-2)
+WikiText-103
+SST-2
+Student+KD
+83.1
+83.2
+MNLI
+Student+KD
+60.0
+60.2
+Table 6: Results with using GPT-2 for OOD generation
+Task
+Standard
+Train
+KD
+KD + Adv (Ours)
+SST-2
+62.0
+62.8
+71.2
+MNLI
+45.9
+47.0
+48.7
+Table 7: Results on training a student model using 200
+examples from each class (few-shot).
+for both SST-2 and MNLI. Our aim is not to test
+the limits of our technique by augmenting massive
+amounts of data but to demonstrate that adversarial
+training in the few shot setting can improve the
+accuracy of a model. Table 7 shows the results
+when we proceed from training on the few samples,
+to regular KD on the few-samples and ﬁnally to
+our algorithm. Here, we do not do KD on the OOD
+data, but on the adversarial examples and the few-
+shot samples. We generate the same number of
+adversarial examples as the few-shot samples. We
+can see a consistent improvement for both SST-2
+and MNLI.
+4.5
+Analysis
+We inspected the per-class results for MNLI to
+gain insight into the properties of the adversari-
+ally generated samples. Table 5 show that adding
+adversarial examples continuously improves the
+performances on neutral and entailment classes.
+Our manual inspection shows that adding the
+generator to the loop makes the student more ro-
+bust on examples where the premise and hypothesis
+doesn’t signiﬁcantly overlap. The gain could be im-
+putable to the diversity of the adversarial examples,
+although, the generator may produce a nonsensical
+sequence of words. We observed that the premise
+and hypothesis rarely share common words, con-
+trary to heuristically populated examples 2. Adver-
+sarial examples prevent the student from relying on
+the superﬁcial syntactic properties of OOD samples.
+Section A of the supplementary material presents
+samples from the adversarial generator for MNLI.
+5
+Conclusion
+We present the ﬁrst study on Zero-shot Knowledge
+Distillation (ZSKD) for NLP. We present an algo-
+rithm based on OOD data generation and adver-
+sarial learning and evaluate on six tasks from the
+GLUE benchmark reaching to within 75% of the
+teacher performance on all tasks while attaining
+a 30x compression. We believe this is the ﬁrst
+step towards ZSKD for NLP-based task. The next
+steps are to a) explore a generic methodology for
+OOD data creation and b) study sequence gener-
+ation tasks such as Machine Translation and Ab-
+stractive Summarization and achieve compression
+without having access to the original training data.
+References
+Luisa Bentivogli, Peter Clark, Ido Dagan, and Danilo
+Giampiccolo. 2009. The ﬁfth pascal recognizing tex-
+tual entailment challenge. In TAC.
+Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie
+Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind
+Neelakantan, Pranav Shyam, Girish Sastry, Amanda
+Askell,
+Sandhini Agarwal,
+Ariel Herbert-Voss,
+Gretchen Krueger, Tom Henighan, Rewon Child,
+Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu,
+Clemens Winter, Christopher Hesse, Mark Chen,
+Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin
+Chess, Jack Clark, Christopher Berner, Sam Mc-
+Candlish, Alec Radford, Ilya Sutskever, and Dario
+Amodei. 2020. Language models are few-shot learn-
+ers.
+Cristian Buciluˇa,
+Rich Caruana,
+and Alexandru
+Niculescu-Mizil. 2006. Model compression. In Pro-
+ceedings of the 12th ACM SIGKDD international
+conference on Knowledge discovery and data min-
+ing, pages 535–541.
+Hanting Chen, Yunhe Wang, Chang Xu, Zhaohui Yang,
+Chuanjian Liu, Boxin Shi, Chunjing Xu, Chao Xu,
+and Qi Tian. 2019.
+Data-free learning of student
+networks. In Proceedings of the IEEE International
+Conference on Computer Vision, pages 3514–3522.
+Z. Chen, H. Zhang, X. Zhang, and L. Zhao. 2018.
+Quora question pairs.
+Yong Cheng, Lu Jiang, and Wolfgang Macherey. 2019.
+Robust neural machine translation with doubly ad-
+versarial inputs. arXiv preprint arXiv:1906.02443.
+2premise and hypothesis are almost identical
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019.
+BERT: Pre-training of
+deep bidirectional transformers for language under-
+standing.
+In Proceedings of the 2019 Conference
+of the North American Chapter of the Association
+for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long and Short Papers),
+pages 4171–4186, Minneapolis, Minnesota. Associ-
+ation for Computational Linguistics.
+William B. Dolan and Chris Brockett. 2005. Automati-
+cally constructing a corpus of sentential paraphrases.
+In Proceedings of the Third International Workshop
+on Paraphrasing (IWP2005).
+Javid Ebrahimi, Anyi Rao, Daniel Lowd, and De-
+jing Dou. 2017.
+Hotﬂip: White-box adversarial
+examples for text classiﬁcation.
+arXiv preprint
+arXiv:1712.06751.
+Ian J Goodfellow, Jonathon Shlens, and Christian
+Szegedy. 2014. Explaining and harnessing adversar-
+ial examples. arXiv preprint arXiv:1412.6572.
+Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. 2015.
+Distilling the knowledge in a neural network. arXiv
+preprint arXiv:1503.02531.
+Eric Jang, Shixiang Gu, and Ben Poole. 2016. Categor-
+ical reparameterization with gumbel-softmax. arXiv
+preprint arXiv:1611.01144.
+Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang,
+Xiao Chen, Linlin Li, Fang Wang, and Qun Liu.
+2019. Tinybert: Distilling bert for natural language
+understanding. arXiv preprint arXiv:1909.10351.
+Kalpesh Krishna, Gaurav Singh Tomar, Ankur P
+Parikh, Nicolas Papernot, and Mohit Iyyer. 2019.
+Thieves on sesame street! model extraction of bert-
+based apis. arXiv preprint arXiv:1910.12366.
+Matt J. Kusner and Jos´e Miguel Hern´andez-Lobato.
+2016. Gans for sequences of discrete elements with
+the gumbel-softmax distribution.
+Tianhong Li, Jianguo Li, Zhuang Liu, and Changshui
+Zhang. 2018.
+Few sample knowledge distillation
+for efﬁcient network compression.
+arXiv preprint
+arXiv:1812.01839.
+Zhuohan Li, Eric Wallace, Sheng Shen, Kevin Lin,
+Kurt Keutzer, Dan Klein, and Joseph E Gonzalez.
+2020. Train large, then compress: Rethinking model
+size for efﬁcient training and inference of transform-
+ers. arXiv preprint arXiv:2002.11794.
+Vasileios Lioutas and Yuhong Guo. 2020. Time-aware
+large kernel convolutions.
+In Proceedings of the
+37th International Conference on Machine Learning
+(ICML).
+Raphael Gontijo Lopes, Stefano Fenu, and Thad
+Starner. 2017.
+Data-free knowledge distilla-
+tion for deep neural networks.
+arXiv preprint
+arXiv:1710.07535.
+Ilya Loshchilov and Frank Hutter. 2017.
+Decoupled
+weight decay regularization.
+Paul Micaelli and Amos J Storkey. 2019.
+Zero-shot
+knowledge transfer via adversarial belief matching.
+In Advances in Neural Information Processing Sys-
+tems, pages 9547–9557.
+Paulius Micikevicius, Sharan Narang, Jonah Alben,
+Gregory Diamos, Erich Elsen, David Garcia, Boris
+Ginsburg,
+Michael Houston,
+Oleksii Kuchaiev,
+Ganesh Venkatesh, and Hao Wu. 2018. Mixed preci-
+sion training. In International Conference on Learn-
+ing Representations.
+Takeru Miyato,
+Andrew M Dai,
+and Ian Good-
+fellow. 2016.
+Adversarial training methods for
+semi-supervised text classiﬁcation. arXiv preprint
+arXiv:1605.07725.
+Gaurav Kumar Nayak, Konda Reddy Mopuri, Vaisakh
+Shaj, R Venkatesh Babu, and Anirban Chakraborty.
+2019. Zero-shot knowledge distillation in deep net-
+works. arXiv preprint arXiv:1905.08114.
+Soham Pal,
+Yash Gupta,
+Aditya Shukla,
+Aditya
+Kanade, Shirish Shevade, and Vinod Ganapathy.
+2019. A framework for the extraction of deep neural
+networks by leveraging public data. arXiv preprint
+arXiv:1905.09165.
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan,
+Dario Amodei, and Ilya Sutskever. 2019. Language
+models are unsupervised multitask learners. OpenAI
+Blog, 1(8):9.
+Tara N Sainath, Brian Kingsbury, Vikas Sindhwani,
+Ebru Arisoy, and Bhuvana Ramabhadran. 2013.
+Low-rank matrix factorization for deep neural net-
+work training with high-dimensional output targets.
+In 2013 IEEE international conference on acoustics,
+speech and signal processing, pages 6655–6659.
+IEEE.
+Victor Sanh, Lysandre Debut, Julien Chaumond, and
+Thomas Wolf. 2019. Distilbert, a distilled version
+of bert: smaller, faster, cheaper and lighter. arXiv
+preprint arXiv:1910.01108.
+Abigail See, Minh-Thang Luong, and Christopher D
+Manning. 2016.
+Compression of neural machine
+translation models via pruning.
+arXiv preprint
+arXiv:1606.09274.
+Rico Sennrich, Barry Haddow, and Alexandra Birch.
+2016.
+Neural machine translation of rare words
+with subword units. In Proceedings of the 54th An-
+nual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 1715–
+1725, Berlin, Germany. Association for Computa-
+tional Linguistics.
+Sheng Shen, Zhen Dong, Jiayu Ye, Linjian Ma, Zhewei
+Yao, Amir Gholami, Michael W Mahoney, and
+Kurt Keutzer. 2019.
+Q-bert: Hessian based ultra
+low precision quantization of bert. arXiv preprint
+arXiv:1909.05840.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, Christopher D. Manning, Andrew Ng, and
+Christopher Potts. 2013.
+Recursive deep models
+for semantic compositionality over a sentiment tree-
+bank.
+In Proceedings of the 2013 Conference on
+Empirical Methods in Natural Language Processing,
+pages 1631–1642, Seattle, Washington, USA. Asso-
+ciation for Computational Linguistics.
+Emma Strubell, Ananya Ganesh, and Andrew Mc-
+Callum. 2019.
+Energy and policy considera-
+tions for deep learning in nlp.
+arXiv preprint
+arXiv:1906.02243.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In Advances in neural information pro-
+cessing systems, pages 5998–6008.
+Alex Wang, Amanpreet Singh, Julian Michael, Fe-
+lix Hill, Omer Levy, and Samuel Bowman. 2018.
+GLUE: A multi-task benchmark and analysis plat-
+form for natural language understanding.
+In Pro-
+ceedings of the 2018 EMNLP Workshop Black-
+boxNLP: Analyzing and Interpreting Neural Net-
+works for NLP, pages 353–355, Brussels, Belgium.
+Association for Computational Linguistics.
+Adina Williams, Nikita Nangia, and Samuel Bowman.
+2018. A broad-coverage challenge corpus for sen-
+tence understanding through inference. In Proceed-
+ings of the 2018 Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics: Human Language Technologies, Volume
+1 (Long Papers), pages 1112–1122, New Orleans,
+Louisiana. Association for Computational Linguis-
+tics.
+Jaemin Yoo, Minyong Cho, Taebum Kim, and U Kang.
+2019.
+Knowledge extraction with no observable
+data. In Advances in Neural Information Processing
+Systems, pages 2701–2710.
+Wei Emma Zhang, Quan Z Sheng, Ahoud Alhazmi,
+and Chenliang Li. 2020.
+Adversarial attacks on
+deep-learning models in natural language process-
+ing: A survey. ACM Transactions on Intelligent Sys-
+tems and Technology (TIST), 11(3):1–41.
+Chen Zhu, Yu Cheng, Zhe Gan, Siqi Sun, Thomas
+Goldstein, and Jingjing Liu. 2019.
+Freelb:
+En-
+hanced adversarial training for language understand-
+ing. arXiv preprint arXiv:1909.11764.
+A
+Generated Examples
+We present on Table 8, a few randomly generated
+examples using the adversarial generator for the
+MNLI task. We tested two training settings (1)
+with and (2) without pre-training the generator
+and using the LF loss during an adversarial step.
+We can see from the results that without these addi-
+tional extensions the proposed generator can only
+generate repeated, frequent tokens. When using
+these extensions, the generated text is nonsensical,
+however, it generates diverse words and it is use-
+ful for KD. This is reﬂected on the accuracy of
+the trained student model which is 56.3% when
+trained without pre-training and the LF loss. In
+this scenario, the adversarial step degrades model
+accuracy. When we train the student model using
+our proposed algorithm it achieves 65.1% accuracy.
+B
+Algorithm
+In this section, we present the complete algorithm
+of our proposed Zero-shot Knowledge Distillation
+process. We include the process of pre-training
+the generator along the adversarial train used for
+improving the student performance. The complete
+procedure can be seen on Algorithm 2.
+Pre-training generator and using the LF loss during each adversarial step
+With
+Without
+[CLS] he anime a of survey developedic the
+headed life raise.,, designingism robot world
+which 20th the testous out [SEP] swedish ) hud-
+son in studio of pumping pay ” a and corre-
+spondence ” assist,,tion the over and meaningful
+sponsored. [SEP]
+– – – – – – – – – – – – – – – – – – – – – – – –
+–ted – – – – – – – – – – – – – – – – – – – – – – –
+august
+[CLS] however in and was entertainment ser-
+vice asked of their rebellious def exceptionally
+carriedlk and to a ” in by the quad in. [SEP]
+after the who bridge which sent direct animal
+extinct to and april the people bases improve-
+ment [PAD] by more his ”. [SEP]
+– – – – – – – – – – – – – – – – – – – – – – – –
+– – – – – – – – – – – – – – – – – – – – – – – – –
+extended
+[CLS] so generation included 27 made in the
+the in of south st johncoef the award his. kin of
+ﬁrst (ville [SEP] in to, line – ur wall pt as shy
+novsky them also of ”. helping. a houston 2015
+[PAD] [SEP]
+– – – – – – – – – – – – – – – – – – – – – – – – – –
+– – – – – – – – – – – – – – – – – – – – – – – –
+[CLS] the expert the victory on - the festival
+of -, kate like the passry grew must sell in in
+border longer him [SEP] us king all bb, @ ” do
+[PAD] evaluated,.hai causeway [PAD] ). [PAD]
+in previousn. [SEP]
+end – – – – – – – – – – – – – – – – – – – – – – –
+– – – – – – – – – – – – – – – – – – – – – – – – – –
+[CLS] swiss addition & moments, from song
+georgie ” analysis the was image in 20th annual
+fellow as into was of ; pattern. [SEP] cong,,
+an of provideds her and or. [PAD]leen western
+classical.. kill the the 2007. [SEP]
+– – – – – – – – – – – – – – – – – – – – – – – – –
+baronet – – – – – – – – – – – – – – – – – – – – –
+– – –
+[CLS] the conducting moderator extracteli, us-
+ing the war ban civil -oh, then festivals, the
+golden.ing by positively. [SEP] besides labour
+oak 600 patton later from. the analysis [PAD]
+ﬁnish barking base. mark [PAD] his × 23 s ).
+[SEP]
+– – – – – – – – – – – – – – – – – – – – – – – – – –
+– – – – – – – – – – – – – – – – – – – – – – – paid
+Table 8: Generated examples using the adversarial generator for MNLI.
+Algorithm 2: Zero-shot KD (Complete)
+pretrain: T(·)
+dataset: D
+initialize: G(·; φ)
+initialize: S(·; θ)
+# Pre-train Generator
+for k ←1, 2, ..., N do
+z ←{z0, . . . , zl} ∼N(0, std)
+xk ←D
+xp ←G(z; φ)
+LPG ←DKL(xk || xp)
+φ ←φ −λ∂LPG
+∂φ
+decay λ
+end
+# Adversarial Train
+for k ←1, 2, ..., N do
+xk ←D
+for 1, 2, ..., nG do
+z ←{z0, . . . , zl} ∼N(0, std)
+xlogits ←G(z; φ)
+xp ←Gumbel-Softmax(xlogits)
+LA ←−DKL(T(xp) || S(xp))
+LF ←DKL(xk || xp)
+LT ←LA+LF
+2
+φ ←φ −η∂LT
+∂φ
+end
+for 1, 2, ..., nS do
+z ←{z0, . . . , zl} ∼N(0, std)
+xlogits ←G(z; φ)
+xp ←Gumbel-Softmax(xlogits)
+LG ←DKL(T(xp) || S(xp))
+LOOD ←DKL(T(xk) || S(xk))
+L ←α · LG + (1 −α) · LOOD
+θ ←θ −η∂L
+∂θ
+end
+decay η
+end

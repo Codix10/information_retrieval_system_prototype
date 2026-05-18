@@ -1,0 +1,2650 @@
+Title: Explaining Natural Language Processing Classifiers with Occlusion and Language Modeling
+Source URL: http://arxiv.org/abs/2101.11889v1
+--------------------------------------------------
+
+UNIVERSITY OF POTSDAM
+MASTER’S THESIS
+Explaining Natural Language
+Processing Classiﬁers with Occlusion
+and Language Modeling
+Author:
+David HARBECKE
+Supervisors:
+Prof. Dr. David SCHLANGEN
+Prof. Dr. Manfred STEDE
+A thesis submitted in fulﬁllment of the requirements
+for the degree of Master of Science in
+Cognitive Systems: Language, Learning and Reasoning
+at the
+Faculty of Human Sciences
+September 27, 2020
+arXiv:2101.11889v1  [cs.CL]  28 Jan 2021
+Declaration of Authorship
+I, David HARBECKE, declare that this thesis, titled “EXPLAINING NATURAL
+LANGUAGE PROCESSING CLASSIFIERS WITH OCCLUSION AND LANGUAGE
+MODELING”, and the work presented in it are my own. I conﬁrm that I
+worked independently and only with the sources and aids indicated.1 All
+passages of the work which I have taken from these sources and aids, either
+in wording or in meaning, are marked and listed in the bibliography. Parts
+of the presented research have been published with a co-author (Harbecke
+and Alt, 2020).2 Content contributions of the co-author that are mentioned
+are marked as such. I am familiar with “Richtlinie zur Sicherung guter
+wissenschaftlicher Praxis für Studierende an der Universität Potsdam (Pla-
+giatsrichtlinie)”3.
+Date:
+Signed:
+1Nevertheless, this thesis is written in ﬁrst-person plural.
+2I hereby acknowledge the Association for Computational Linguistics for letting me
+describe ﬁndings of publications co-authored by me.
+3https://www.uni-potsdam.de/am-up/2011/ambek-2011-01-037-039.pdf
+iii
+English Abstract
+David HARBECKE
+EXPLAINING NATURAL LANGUAGE PROCESSING CLASSIFIERS WITH
+OCCLUSION AND LANGUAGE MODELING
+Deep neural networks are powerful statistical learners. However, their
+predictions do not come with an explanation of their process. To analyze
+these models, explanation methods are being developed. We present a
+novel explanation method, called OLM, for natural language processing
+classiﬁers. This method combines occlusion and language modeling, which
+are techniques central to explainability and NLP, respectively. OLM gives
+explanations that are theoretically sound and easy to understand.
+We make several contributions to the theory of explanation methods. Axioms
+for explanation methods are an interesting theoretical concept to explore their
+basics and deduce methods. We introduce a new axiom, give its intuition
+and show it contradicts another existing axiom. Additionally, we point
+out theoretical difﬁculties of existing gradient-based and some occlusion-
+based explanation methods in natural language processing. We provide an
+extensive argument why evaluation of explanation methods is difﬁcult. We
+compare OLM to other explanation methods and underline its uniqueness
+experimentally. Finally, we investigate corner cases of OLM and discuss its
+validity and possible improvements.
+iv
+Deutsche Zusammenfassung
+David HARBECKE
+EXPLAINING NATURAL LANGUAGE PROCESSING CLASSIFIERS WITH
+OCCLUSION AND LANGUAGE MODELING
+Tiefe neuronale Modelle sind gut im statistischen Lernen. Jedoch liefern
+deren Vorhersagen keine Erklärungen des Vorgangs. Um diese Modelle zu
+analysieren, hat man Erklärungstechniken entwickelt. Wir präsentieren eine
+neue Erklärungstechnik, gennant OLM, für klassiﬁzerende Modelle linguis-
+tischer Datenverarbeitung. Diese Methode kombiniert das Maskieren von
+Merkmalen mit Sprachmodellierung, was jeweils grundlegende Methoden
+der Erklärungstechnik und linguistischer Datenverarbeitung sind. OLM
+liefert Erklärungen die theoretisch fundiert und einfach zu verstehen sind.
+Wir machen mehrere theoretische Beiträge zu Erklärungstechniken. Axiome
+für Erklärungstechniken sind ein interessantes theoretisches Konzept um
+deren Grundlagen auszuloten und Techniken abzuleiten. Wir führen ein
+neues Axiom ein, legen die Intuition dar und zeigen dass es einem existieren-
+den Axiom widerspricht. Zusätzlich zeigen wir theoretische Problematik
+in der Anwendung von gradienten- und manchen maskierungsbasierten
+Erklärungstechniken bei linguistischer Datenverarbeitung auf. Wir argu-
+mentieren umfangreich, warum die Evaluation von Erklärungstechniken
+schwierig ist. Wir vergleichen OLM mit anderen Erklärungstechniken und
+heben dessen Alleinstellungsmerkmal hervor. Abschließend betrachten wir
+Grenzfälle der Anwendung von OLM und diskutieren dessen Validität und
+mögliche Verbesserungen.
+v
+Contents
+Declaration of Authorship . . . . . . . . . . . . . . . . . . . . . . . .
+ii
+English Abstract . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+iii
+Deutsche Zusammenfassung
+. . . . . . . . . . . . . . . . . . . . . .
+iv
+Contents . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+v
+List of Figures . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . vii
+List of Tables . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . vii
+List of Deﬁnitions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . viii
+1
+Introduction
+1
+1.1
+Deep Learning . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1
+1.1.1
+Motivation . . . . . . . . . . . . . . . . . . . . . . . . . .
+1
+1.1.2
+Architecture . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+1.1.3
+Training . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3
+1.1.4
+Capabilities . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+1.2
+Natural Language Processing . . . . . . . . . . . . . . . . . . .
+4
+1.2.1
+Language Representations for Deep Learning
+. . . . .
+6
+2
+Explainability of DNNs
+8
+2.1
+Axioms for Explanation Methods . . . . . . . . . . . . . . . . .
+11
+2.2
+Gradient-based Explanation Methods in NLP . . . . . . . . . .
+13
+2.3
+On the Incompleteness of Evaluating Explanations . . . . . . .
+15
+3
+Methods
+17
+3.1
+Occlusion . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+17
+3.2
+Language Modeling . . . . . . . . . . . . . . . . . . . . . . . . .
+18
+3.3
+OLM
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+19
+3.3.1
+Motivation . . . . . . . . . . . . . . . . . . . . . . . . . .
+20
+3.3.2
+Formula Derivation OLM . . . . . . . . . . . . . . . . .
+21
+3.3.3
+Axiomatic Analysis . . . . . . . . . . . . . . . . . . . . .
+23
+3.3.4
+OLM-S(ensitivity) . . . . . . . . . . . . . . . . . . . . . .
+24
+vi
+4
+Experiments
+26
+4.1
+Correlation of Explanation Methods . . . . . . . . . . . . . . .
+29
+4.1.1
+Baseline Methods . . . . . . . . . . . . . . . . . . . . . .
+29
+4.1.2
+Tasks . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+30
+4.1.3
+Results . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+33
+4.2
+CoLA Corner Case
+. . . . . . . . . . . . . . . . . . . . . . . . .
+34
+4.2.1
+Statistical Analysis of Explanations . . . . . . . . . . . .
+35
+4.3
+FAVA . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+37
+5
+Conclusion
+41
+5.1
+Summary . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+41
+5.2
+Future Work . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+43
+Bibliography
+46
+vii
+List of Figures
+1.1
+Schematic view of a neural network
+. . . . . . . . . . . . . . .
+2
+2.1
+Artiﬁcial explanations
+. . . . . . . . . . . . . . . . . . . . . . .
+12
+2.2
+Schematic display of data likelihood in NLP
+. . . . . . . . . .
+14
+4.1
+Correlation of verb relevance for FAVA sentence pairs . . . . .
+40
+List of Tables
+4.1
+Example explanations for SST-2 . . . . . . . . . . . . . . . . . .
+26
+4.2
+Resampling examples for SST-2 . . . . . . . . . . . . . . . . . .
+28
+4.3
+Correlation of explanation methods on MNLI . . . . . . . . . .
+31
+4.4
+Correlation of explanation methods on SST-2 . . . . . . . . . .
+32
+4.5
+Correlation of explanation methods on CoLA . . . . . . . . . .
+32
+4.6
+Signiﬁcance test for explanations on CoLA
+. . . . . . . . . . .
+36
+4.7
+Example explanations for CoLA . . . . . . . . . . . . . . . . . .
+36
+4.8
+Resampling examples for CoLA . . . . . . . . . . . . . . . . . .
+37
+4.9
+Example explanations for FAVA . . . . . . . . . . . . . . . . . .
+38
+4.10 Signiﬁcance test for explanations on FAVA . . . . . . . . . . . .
+39
+viii
+List of Deﬁnitions
+pdata
+probability distribution of data
+pLM
+probability distribution of a language model
+fθ
+neural network with parameters θ
+f
+neural network, or, in general, black-box function
+fc := projc ◦f
+projection of function f to class c, i.e. output neuron c
+(X, Y)
+labeled dataset
+X
+a dataset or, more general, the whole input space
+Y
+label set
+x ∈X
+an input element of the dataset; an input vector
+xi
+an indexed feature of the input x
+x\i
+an input without the feature at i-th position
+(x\i, ˆxi)
+an input with a replacement feature
+r f,c(xi)
+relevance of an input feature xi regarding function f
+and class c
+1
+1 Introduction
+The advent of deep learning has created an explanation gap as the models
+are considered hard to interpret (Guidotti et al., 2018; Adadi and Berrada,
+2018). Models without hand-engineered features are hard to understand in
+their decision making. This makes explanation methods highly relevant. In
+natural language processing most state-of-the-art architectures are neural
+networks. To understand their decisions we point out gaps in existing
+explanation methods and develop a novel method.
+1.1
+Deep Learning
+Deep learning describes the architectures of multi-layered neural networks
+and methods to train them. Deep neural networks (DNNs) learn features
+from data. The layers of a deep neural network learn increasingly higher
+level features (Deng and Yu, 2014).
+To introduce deep neural networks we ﬁrst motivate interest in them. Then,
+we introduce some of their theory by explaining a possible deep neural
+network architecture and how DNNs can be trained. Lastly, we discuss
+speciﬁc properties that show DNNs’ relevance to the presented work.
+1.1.1
+Motivation
+Deep neural networks have achieved state-of-the-art performance on a wide
+variety of tasks, such as
+• image recognition (Ciregan et al., 2012; Krizhevsky et al., 2012),
+• text classiﬁcation (Kim, 2014),
+• perfect information games (Silver et al., 2016, 2018),
+2
+Chapter 1. Introduction
+x1
+x2
+x3
+Input
+layer
+h1
+1
+h1
+2
+h1
+3
+h1
+4
+Hidden
+layer 1
+h2
+1
+h2
+2
+h2
+3
+h2
+4
+Hidden
+layer 2
+ˆy1
+ˆy2
+Output
+layer
+FIGURE 1.1: Schematic view of a feed-forward neural network
+with two hidden layers. Each node displays a neuron, the
+arrows between nodes represent the weights. The biases and
+activation functions are not depicted.
+• or estimating the underlying probability distribution of a sample space
+(Bengio et al., 2003; Goodfellow et al., 2014).
+In addition to the wide variety of tasks they can perform well, the prediction
+process of a neural network can be seen as opaque. A neural network learns
+its parameters from data and does not need to have feature extractions
+engineered by humans. Thus, external techniques are required to explain the
+training and decisions of a neural network.
+1.1.2
+Architecture
+A neural network consists of neurons in layers. Figure 1.1 gives a schematic
+view of a neural network. The input layer displays an input vector x =
+(x1, x2, x3)T with three input dimensions. For the ﬁrst hidden layer this input
+vector is multiplied by a weight matrix W1 with 3 × 4 dimensions, a bias
+vector b1 = (b1
+1, b1
+2, b1
+3, b1
+4)T is added and a non-linear activation function σ1 is
+applied component-wise. This is repeated for the next hidden layer and the
+output layer with different weights and biases. Therefore, a step from a layer
+to the next is an afﬁne transformation followed by an activation function.
+The activation function of the output layer is usually chosen such that the
+output neurons represent a probability distribution or individual probability
+functions, depending on the formulation of the problem and the data. A
+mathematical formulation of the network would be
+ˆy = σ3(W3σ2(W2σ1(W1x + b1) + b2) + b3).
+(1.1)
+1.1. Deep Learning
+3
+A neural network with several hidden layers is called deep neural network
+(DNN). The weights and biases are the trainable parameters θ of a neural
+network. The prediction ˆy depends on these parameters, also referred to as
+weights. A simpler formulation if we are not interested in speciﬁc weights is
+ˆy = fθ(x).
+(1.2)
+1.1.3
+Training
+To train a DNN we need an objective and a loss function. The objective is
+usually a labeled dataset (X, Y) and tells us what the network should predict
+for each input. An element of the dataset x ∈X is usually a coordinate vector
+over R. The loss function is a function L( ˆy, y) of the prediction ˆy and true
+label y ∈Y. Sometimes a regularizer, which is a loss function on the network
+parameters θ, also usually coordinate vectors over R, is added to this loss
+function.
+With all these ingredients, a neural network is usually trained with back-
+propagation (Linnainmaa, 1970; Rumelhart et al., 1986a,b) and a variation
+of gradient descent (Cauchy, 1847). Backpropagation is a method that prop-
+agates the error E calculated by the loss function to the parameters θ of
+the DNN via the chain rule of differentiation. The need for differentiability
+explains why often both the inputs and parameters are coordinate vectors
+over R. It ensures that the gradients are also real valued. This is important
+for section Language Representations for Deep Learning (1.2.1).
+Differentiation can be done in parallel for all parameters of a layer. Gradient
+descent is an optimization technique of these parameters. Let us view the
+neural network as a high-dimensional function over all parameters θ. It
+changes the parameter values by stepping proportionally to the size of the
+partial derivative of the loss over the whole dataset regarding the parameter
+in each direction. Gradient descent can be seen an optimization alternative
+to using Newton’s Method (Newton, 1736; Raphson, 1690; Simpson, 1740),
+which looks for zeros of a function, for the ﬁrst derivative of a function.
+Gradient descent only updates the parameters once per iteration over the
+dataset. This is inefﬁcient as subsets of the dataset (mini-batch) can provide
+a good estimation of the gradient (Wilson and Martinez, 2003; Bottou and
+Bousquet, 2008). Stochastic gradient descent (Robbins and Monro, 1951)
+4
+Chapter 1. Introduction
+averages the gradients over a mini-batch and does one optimization step for
+this mini-batch. This is a better trade-off between update time and update
+quality. There are many popular and recent variants and alternatives to
+stochastic gradient descent such as Momentum (Qian, 1999) and ADAM
+(Kingma and Ba, 2014).
+1.1.4
+Capabilities
+The universal approximation theorem states that with speciﬁc restrictions for
+the width (Lu et al., 2017) or depth (Hanin, 2017) DNNs can approximate any
+continuous convex function. This gives an intuition on why they are state-of-
+the-art for many prediction tasks. Furthermore, Choromanska et al. (2015)
+show that deep networks have better loss surfaces than shallow networks for
+training. This means that the local optima that optimizers ﬁnd are closer to
+the global optimum for deep networks. This is underlined by the information
+bottleneck principle (Tishby and Zaslavsky, 2015; Shwartz-Ziv and Tishby,
+2017) which states that training of a DNN is faster than that of similarly
+capable shallow networks. The success of deep learning is also partly due to
+hardware with parallel computing capabilities (Strigl et al., 2010).
+For this work the relevance of DNNs is two-fold. First, we try to explain their
+behaviour when performing state-of-the-art prediction on natural language
+processing tasks. Second, we use neural language models to create these
+explanations.
+1.2
+Natural Language Processing
+Natural language processing (NLP) encompasses the intersection between
+human language and the processing of it by computing machinery. The ﬁeld
+of NLP is nowadays mostly concerned with a statistical and quantitative
+processing and modeling of mass amounts of language data. Manning and
+Schütze (1999) state:
+“Increasingly, businesses, government agencies and individuals
+are confronted with large amounts of text that are critical for
+working and living, but not well enough understood to get the
+enormous value out of them that they potentially hide.”
+1.2. Natural Language Processing
+5
+This development has been ampliﬁed by the success of DNNs which are
+currently state of the art for many of the popular datasets of these tasks. This
+includes
+• automatic speech recognition on the LibriSpeech corpus (Panayotov
+et al., 2015) by Synnaeve et al. (2019) and the Wall Street Journal corpus
+(Paul and Baker, 1992) by Povey et al. (2016),
+• part-of-speech tagging on the Wall Street Journal part of the Penn
+Treebank (Marcus et al., 1999) by Bohnet et al. (2018),
+• sentiment analysis on the IMDB dataset (Maas et al., 2011), the Stanford
+Sentiment Treebank (Socher et al., 2013) and the Yelp Review dataset
+(Zhang et al., 2015) by XLNET (Yang et al., 2019),
+• text classiﬁcation on the AG News corpus, the DBpedia onthology
+(Zhang et al., 2015) and the TREC dataset (Voorhees and Tice, 2000) by
+XLNET (Yang et al., 2019).
+• There are also multi-task benchmarks, such as GLUE (Wang et al.,
+2017) and SuperGLUE (Wang et al., 2019a), that combine several NLP
+classiﬁcation tasks. Leading both benchmarks is T5 (Raffel et al., 2019).
+At least three things are notable regarding the previous list. First, the variety
+of tasks is wide, ranging from speech recognition on audio data and generat-
+ing text data in language modeling to classifying words, sentences or texts
+in part-of-speech tagging, relationship extraction, sentiment analysis and
+text classiﬁcation. This makes the dominance of neural architectures in these
+tasks even more impressive.
+Second, XLNet (Yang et al., 2019) and T5 (Raffel et al., 2019) appear frequently
+on top of the leaderboard on many of these tasks. Both use a pre-trained
+language model, i.e. they learn a representation of language by going over
+large text datasets with billions of words, such as the BooksCorpus (Zhu
+et al., 2015) or English Wikipedia1. The training of language models will be
+described in more detail in section Language Modeling (3.2). Raffel et al.
+(2019) even encode the problem formulation into the representation.
+Third, most of the datasets are classiﬁcation tasks in some sense where the
+neural model has a preselected set of outputs. These are the problems and
+1https://en.wikipedia.org
+6
+Chapter 1. Introduction
+models we are interested in. The method presented in this thesis yields
+explanations for NLP classiﬁcation tasks.
+1.2.1
+Language Representations for Deep Learning
+Time ﬂies like an arrow;
+fruit ﬂies like bananas
+Anthony Oettinger
+An important component to utilize neural networks in NLP is the represen-
+tation of the input. This is nontrivial, as we saw in section Training (1.1.3).
+We have to assign real valued coordinate vectors to our input. Furthermore,
+the unit of language, called token or atomic parse element, from which to
+map into our vector space is nonobvious. It is imperative to choose a token
+that allows for an unambiguous mapping. For written language characters,
+words, sentences and documents are among the candidates for this atomic
+parse element.
+A simple realization of this mapping is to count the words of an input and
+create a vector representation with vector indices corresponding to words.
+This method is called bag-of-words (Harris, 1954). It can be used both on a
+sentence and a document level. A practical improvement on this is what
+is now called tf-idf (Salton et al., 1975). There, the word counts are scaled
+with the logarithm of the inverse of the ratio of documents containing the
+word. Both methods do not preserve the order or contextual meaning of
+words. Locally, the order and contextuality can be incorporated by choosing
+to use n-grams instead of or in addition to single words. However, this does
+not retain information about longer contexts. It also yields exponentially
+more possible n-grams and fewer counts of a speciﬁc n-gram for increasing
+n, which makes the representations less precise and efﬁcient.
+A variation to bag-of-words is one-hot-encoding where the words are not
+counted but words get assigned pairwise distinct standard basis vectors.
+If we ignore out-of-vocabulary words, this is an one-to-one function between
+inputs and the representation. This method can be used as underlying trans-
+formation for representing words with other methods. Compared to the
+previous methods, it allows the order of words in the whole input to be kept.
+1.2. Natural Language Processing
+7
+However, none of these methods provide information about the similarity of
+words.
+Mikolov et al. (2013) introduce word2vec, a learned vector space represen-
+tation of words. It can be called an embedding because the dimensionality
+of this vector space is lower than the number of words that are represented.
+This means that the vectors corresponding to words are not pairwise orthog-
+onal, generally. Words with similar meaning are supposed to have a small
+angle between their vector representations. Words are predicted from their
+context with the intuition that words that appear in similar contexts have
+similar meaning. At the time they achieved state of the art on semantic word
+similarity. GloVe (Pennington et al., 2014) explicitly learns vector representa-
+tions that are based on co-occurrence. These representations allow the DNNs
+that employ them to use the order of words if they desire. Thus, context is
+preserved but does not inﬂuence representation itself.
+Many approaches use characters (Wieting et al., 2016; Bojanowski et al., 2017)
+or sub-words (Wu et al., 2016; Kudo and Richardson, 2018) as tokens to
+improve on word representations. By choosing a smaller unit, similarities
+between words with similar spelling or the same root can be incorporated
+into the representation. Still, it does not enable different representations of
+the same word in different contexts.
+Howard and Ruder (2018) use the language modeling described in section
+Language Modeling (3.2) to create a vector embedding where the infor-
+mation of context is fed through several layers. This enables a different
+representation for “ﬂies like” in the epigraph of this section, depending on
+the context.
+8
+2 Explainability of DNNs
+In section Capabilities (1.1.4) we indicated the performance abilities of
+DNNs. However, their state-of-the-art prediction performance is not the mea-
+sure of all things. Recital 71 of the European Union’s General Data Protection
+Regulation1 states:
+“[decision-making based solely on automated processing] should
+be subject to suitable safeguards, which should include speciﬁc
+information to the data subject and the right [...] to obtain an
+explanation of the decision reached after such assessment and to
+challenge the decision.”
+Its potential legal ramiﬁcations are discussed in Goodman and Flaxman
+(2017). This regulation clearly states that for real-world applications of
+DNNs explanations are necessary. Explanations as support for a decision
+by a black box is detailed in Lombrozo (2006): “explanations are [...] the
+currency in which we exchanged beliefs”. We will be using the term ex-
+plainability (of DNNs) to refer to this ﬁeld, not the more frequently used
+“Explainable Artiﬁcial Intelligence (XAI)” or “Interpretable Machine Learn-
+ing”. Both these terms indicate that there is something inherently explainable
+or interpretable about the models in deep learning. This may be the case in
+machine learning but cannot be assumed in general. Furthermore, it is very
+controversial whether the “Artiﬁcial Intelligence” moniker is a precise or
+helpful representation of the characteristics of deep learning (Jordan, 2019).
+Several popular surveys of explainability exist. We summarize some of
+them to pigeonhole our work more precisely. Doshi-Velez and Kim (2017)
+point out that explanations ﬁll an incompleteness in the problem that deep
+learning models work on. E.g., the objective given to the model during
+training may not have measured generalization performance adequately.
+This can be uncovered with explanations. Doshi-Velez and Kim (2017) divide
+1https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32016R0679
+Chapter 2. Explainability of DNNs
+9
+explanations into local and global explanations. Local explanations try to
+explain the model at a speciﬁc input, whereas global explanations try to
+explain the model as a whole or its general behaviour.
+Adadi and Berrada (2018) highlight key concepts in explainability. They
+give four reasons for explanations: “explain to justify”, “explain to con-
+trol”, “explain to improve” and “explain to discover”. Furthermore, they
+add two categories to sort explanation methods into. They differentiate
+between model-speciﬁc interpretability and model-agnostic interpretability
+with the latter denoting methods that can work on any black-box model. As
+a subcategory to model-speciﬁc methods they discern intrinsic and post-hoc
+methods.
+Guidotti et al. (2018) present a detailed taxonomy of problems that explana-
+tion methods can try to solve. They give formal deﬁnitions of these problems,
+including intrinsically explainable models and post-hoc black-box methods.
+In addition to the previous methods, they describe black-box model expla-
+nation, which tries to build intrinsically explained models that approximate
+the model to be explained.
+There is an extended discussion of explanation and psychology in Miller
+(2019). They argue that many of the insights gained in psychological under-
+standing of explanations can be used for explainability of DNNs. We will
+try to psychologically motivate our method in section Motivation (3.3.1).
+However, we disagree that many insights from psychology can be easily
+transferred. Two main questions for explanations of black boxes are how to
+generate explanations from them and how to evaluate the faithfulness of their
+explanations. This removes assumptions generally held in psychological
+contexts.
+There exist a variety of NLP speciﬁc explanations. Li et al. (2016) present
+methods to view and test heatmaps for different recurrent networks. They in-
+vestigate sentiment analysis by putting forward different investigative input.
+Alvarez-Melis and Jaakkola (2017) create an explanation graph between struc-
+tured input and output. This is especially useful for sequence to sequence
+tasks like machine translation. Many state-of-the-art models use attention
+(Bahdanau et al., 2015; Vaswani et al., 2017). Some papers argue whether
+attention weights as explanations are permissible. Jain and Wallace (2019)
+show that attention weights do not necessarily agree with other explanations
+10
+Chapter 2. Explainability of DNNs
+and can also be distorted while not changing the prediction. Wiegreffe and
+Pinter (2019) disagree and show that under some circumstances these distor-
+tion lead to a signiﬁcant decrease in performance. Synthesized, these papers
+argue that attention weights can be used as explanation if and only if the
+attention is vital for the model. There is also a variety of approaches that
+determine the quality of models by linguistic analysis (Linzen et al., 2016;
+McCoy et al., 2019).
+We provide some examples of methods that that do not belong to our cat-
+egory of explanations and will not be discussed further. Kim et al. (2018)
+analyze neural models by determining which concepts were important to a
+classiﬁcation decision. Intrinsic model-speciﬁc explanations can be found
+in older machine learning approaches, such as decision trees, or in model
+architectures that provide explanations and predictions in parallel (Zhang
+et al., 2018). Ribeiro et al. (2016) explain by learning a local explainable model
+around the prediction of a neural model.
+We will now focus on local post-hoc input space explanations. They describe
+how much a feature of one speciﬁc input contributed to a speciﬁc output
+(class). They give a real value called relevance for every input feature which
+can be used to create a saliency map (Simonyan et al., 2013). An example can
+be found in Table 4.1. The output can be the true label neuron, the predicted
+neuron or another output of choice. A positive relevance value indicates that
+the feature contributed positively to the given output, whereas a negative
+relevance value indicates that the feature distracted from the output. Input
+features can be the input values for the ﬁrst layer, or a cluster of these. For
+NLP, e.g., all input values of a word (and punctuation mark) can be clustered.
+If the explanation method gives relevances for every input dimension the
+relevances are aggregated such that every word receives one relevance value.
+This is often achieved by summing the relevances (Arras et al., 2017).
+An important part of explainability is occlusion. It is either presented as an
+explanation method (Robnik-Šikonja and Kononenko, 2008; Zintgraf et al.,
+2017) where the difference in prediction when removing an input feature is
+seen as indicator for the importance of this feature . Alternatively, it is used
+as evaluation of explanation methods (Zeiler and Fergus, 2014; Montavon
+et al., 2018), where it is argued that (other) explanation methods should ﬁnd
+features whose occlusion change the prediction signiﬁcantly.
+2.1. Axioms for Explanation Methods
+11
+The use of a method both for generating and evaluating explanations points
+to a false dichotomy between explanation methods and their evaluation,
+which we discuss extensively in section On the Incompleteness of Evaluat-
+ing Explanations (2.3). In general, most objective evaluation methods allow
+for a derivation of an explanation method which satisﬁes this evaluation
+perfectly. This has already been done in Kindermans et al. (2018) and when
+developing the theory for this thesis, it was originally intended as an evalu-
+ation method. However, we argue the standard for an evaluation method
+should be higher. It should not be considered as just an accessory to an
+explanation method to justify the explanations.
+Explanations are a simpliﬁcation of the model’s decision process. They try to
+present the process in a human-understandable way. For complex models
+this is always an approximation. To strictly deﬁne some ground rules for this
+approximation, axioms for explanation methods are developed.
+2.1
+Axioms for Explanation Methods
+Axioms are a proposed method to develop and test explanation methods
+by Sundararajan et al. (2017) and extensively discussed in Lipton (2018).
+Additional axioms are proposed in Bach et al. (2015), Ancona et al. (2018),
+Kindermans et al. (2019) and Srinivas and Fleuret (2019). The advantage of
+axiomatic analysis is that objectives for explanation methods can be stated
+and discussed and each explanation method can be evaluated against these
+objectives. This can also give context to tasks, models or settings where
+some explanation methods might be suitable or unsuitable. We will discuss
+later why axioms might be the most objective evaluation of explanation
+methods. In the following, we brieﬂy discuss some important axioms and
+their intuition.2
+Completeness The sum of the relevances of features of an input is equal to the
+prediction (Bach et al., 2015). This axiom stems from the intuition that a
+prediction of an input is a prediction of a composition of features.
+Implementation Invariance Two neural networks that are functionally equiv-
+alent, i.e. give the same output for all possible inputs, should receive the same
+2An extensive discussion of axioms and explanation methods was done in the Individual
+Module and will thus not be repeated.
+12
+Chapter 2. Explainability of DNNs
+Explanation 1:
+good ﬁlm , but very glum .
+(positive sentiment)
+good ﬁlm , but very glum .
+(negative sentiment)
+Explanation 2:
+good ﬁlm , but very glum .
+(positive sentiment)
+good ﬁlm , but very glum .
+(negative sentiment)
+FIGURE 2.1: Artiﬁcial explanations from two methods. We
+are investigating the explanation of a sentiment classiﬁer for
+both positive and negative sentiment. Red indicates a feature
+supporting the prediction, blue indicates a detraction. The ﬁrst
+explanations do not satisfy Class Zero-Sum as the explanations
+are equal for both classes. It is unclear which token actually
+contributed to which classes. The second explanations do sat-
+isfy Class Zero-Sum. It is identiﬁable which token contributed
+to which class and by how much.
+relevances for every input (Sundararajan et al., 2017). This seems trivial but
+is important to state as methods that work with internal weights of neural
+models do not necessarily comply.
+Linearity A network, which is a linear combination of other networks, should
+have explanations which are the same linear combination of the original networks
+explanations (Sundararajan et al., 2017). This axiom states that an explanation
+method should be a linear function of neural networks given the input.
+Sensitivity An input feature should receive a non-zero relevance, if and only if the
+prediction of the network depends on the feature (Sundararajan et al., 2017). This is
+a simple double check that features that are ignored by the network should
+not receive relevance and features that are important to the model should
+receive relevance.
+Sensitivity-1 The relevance of an input variable should be the difference of predic-
+tion when the input variable is removed (Ancona et al., 2018). This could also be
+named the occlusion axiom. It basically restates the prediction difference
+formula (Robnik-Šikonja and Kononenko, 2008) which we will see later in
+Eq. (3.1).
+We introduce a new axiom:
+Class Zero-Sum The sum of relevances of a feature over all classes is zero (Harbecke
+and Alt, 2020). The intuition behind this axiom is guided by the normalization
+of most classiﬁers. If the sum of the predictions is ﬁxed, then every feature
+2.2. Gradient-based Explanation Methods in NLP
+13
+adds as much to the prediction of a set of classes as it takes away from all
+other classes. Thus, if we want to explain the feature for all classes we should
+ﬁx the sum over all classes to zero. E.g., we do not want a token to contribute
+positively to positive and negative sentiment (see Figure 2.1).
+If a relevance method fulﬁlls this axiom, it allows for an intuitive interpreta-
+tion of the relevances, that may be taken for granted. Since the relevances of
+a feature are normalized to have a sum of zero over all classes, a feature with
+positive relevance to a class can be interpreted as contributing to that class,
+whereas a feature with a negative relevance detracts from that class.
+The Class Zero-Sum axiom is a contradiction to the Completeness axiom if the
+normalization of the classiﬁer is not set to have a sum of zero. We argue that
+Completeness forces a method to assign undue relevance, e.g. in cases where
+there is no information detected in the input for any class, it does not make
+sense to distribute positive relevance over features.
+2.2
+Gradient-based Explanation Methods in NLP
+Gradient-based explanation methods were introduced with Sensitivity Analy-
+sis (Baehrens et al., 2010; Simonyan et al., 2013). The intuition is that the
+gradient of the prediction at the input tells us which input dimensions can
+change the prediction the most and are thus most important for the predic-
+tion. As Sundararajan et al. (2017) showed, this can be misleading, as this
+only gives information about the function in the local neighborhood of the
+input.
+In the following we call the distribution of data pdata, meaning pdata(x) is
+the probability of x appearing as a data point for a speciﬁc task. This is not
+constrained to a dataset but the evasive more general distribution, i.e. “data
+that users would expect the systems to work well on” (Gorman and Bedrick,
+2019). As discussed in section Training (1.1.3), in general, an input x in this
+case can be regarded as coordinate vector over R. In practice this is almost
+always the case in NLP. Let us assume we have a practical limitation on the
+length of input text and, therefore, a maximum embedding dimension of n.
+We can make all other inputs have this dimensionality by padding them with
+zeros. Thus, we have a function f that maps text to a subset S of a coordinate
+14
+Chapter 2. Explainability of DNNs
+space Rn. We will now discuss which properties this subset S has and why
+this is important.
+FIGURE 2.2: Schematic display of data likelihood in NLP. There
+are discrete inputs, i.e., combination of tokens, with a data
+likelihood greater than zero. All other inputs in the embed-
+ding space have likelihood zero because they have no corre-
+sponding tokens. Every input with a positive likelihood has a
+neighborhood that does not contain another input with positive
+likelihood. Gradient-based explanation methods (red arrow)
+consider inﬁnitesimal changes to the input and thus data with
+no likelihood.
+1. S is a discrete set in Rn.
+A discrete set is a set where every element s ∈S has a neighbourhood that
+does not contain any other point of S. There are a ﬁnite number of tokens
+with pairwise distinct embeddings and a ﬁnite length. Thus, S is ﬁnite and
+the global minimum of distances between two elements of S is positive.
+Therefore, S is discrete.
+2. pdata(x) for x ∈Rn is a discrete probability distribution.
+For every point x ∈Rn/S we have pdata(x) = 0. We just saw that S ⊂Rn is
+a discrete subset. Therefore, pdata is a discrete probability distribution, as can
+be seen schematically in Figure 2.2. Note that this is particularly different
+2.3. On the Incompleteness of Evaluating Explanations
+15
+to vision. Every canonical image representation x in a coordinate space Rn
+entails a neighbourhood of small perturbations where the images still make
+sense. Consequently, the probability distribution of images embedded in Rn
+is continuous.
+3. This property of the probability distribution is fundamental to gradient-
+based explanation methods.
+Gradient-based explanation methods analyze the change of prediction with
+respect to the the input dimensions. Analyzing inﬁnitesimal change in a
+function presumes that this change is meaningful. However, if the data
+probability is zero everywhere in a small neighbourhood of an input vector,
+these changes become meaningless, as the prediction function can never be
+confronted with other vectors from this neighbourhood. These vectors are
+automatically out of distribution, i.e. the prediction function is analyzed by
+evaluating a priori meaningless behaviour.
+We thus argue that gradient-based explanation methods are not theoretically
+justiﬁed in NLP. Although, in some cases, especially if the function is well-
+regularized, local behaviour indicates global behaviour. This, however, can
+not be assumed and needs to be investigated before using gradient methods.
+2.3
+On the Incompleteness of Evaluating Explana-
+tions
+The sole focus of an explanation method should be to relay information
+about a model to a user. Explanations exist to help understand the decision
+process of the model (Doshi-Velez et al., 2017). Thus, the correct explanation
+cannot be independent of the model.
+Every experimental evaluation of explanation methods relies on a ground
+truth (property) that the explanation should have. For example, let us take the
+evaluation method where the explanation of a model is compared with some
+features that are identiﬁed with the help of experts (Mohseni and Ragan,
+2018). These ground truths are independent of the model. First, neural
+models have achieved superhuman performance on several tasks, e.g. go
+(Silver et al., 2016) and chess (Silver et al., 2018), and grounding explanations
+by humans on these tasks cannot be considered helpful in understanding
+superhuman performance.
+16
+Chapter 2. Explainability of DNNs
+Second, it does not take into consideration that a model can be wrong and
+the explanations correct. The explanations of a model that made a false
+classiﬁcation can point to completely different features than an expert would
+select.
+Third, a rigid scheme by humans does not take into account that predictive
+features can be missed even by experts, as neural models are powerful statis-
+tical learners (Sarle, 1994; Geirhos et al., 2018). On the contrary, explanation
+methods are especially useful in cases where the model uses artefacts, not
+human-intuitive features, for its decision.
+It is unclear whether it is possible to distinguish between the theoretical foun-
+dations of explanation methods and their evaluations. The most prominent
+example of a method that is used for both is occlusion, which is discussed
+in the following section Occlusion (3.1). Since the model is the only ground
+truth and explanations are a simpliﬁcation, it is highly probable that there is
+more than one sensible explanation for an input classiﬁed by a model. Thus,
+for both explanations and evaluation, constraints are established that reduce
+the number of explanations. If these constrains are explicitly stated they can
+be regarded as axioms. Note that axioms can be used both to develop and to
+test explanation methods. All in all, the need for somewhat subjective con-
+straints makes the existence of a general evaluation of explanation methods
+unlikely.
+We do not argue that it is impossible to evaluate an explanation method.
+The performance in sensibly selected evaluations does probably correlate to
+the quality of an explanation method. Measuring the correlation to sensible
+explanation methods can also be seen as quality assessment. We will use
+and discuss this approach in section Tasks (4.1.2). Asserting which axioms
+an explanation method fulﬁlls is an important step towards evaluating its
+validity. We argue that the explanation method for one’s use case should
+be motivated by the paradigms that the method fulﬁlls. Furthermore, there
+are sanity checks (Adebayo et al., 2018) that can determine whether an
+explanation method has undesired properties. Experimental evaluation of
+a method can provide guidance for selecting an explanation method. They
+become more valuable the closer the setting of the evaluation is to the setting
+where the explanation is needed.
+17
+3 Methods
+To build a theoretically solid explanation method we combine a technique
+related to the Sensitivity-1 axiom with a method that considers likelihood in
+NLP. We introduce these techniques, occlusion and language modeling, before
+synthesizing them to a new method.
+3.1
+Occlusion
+We lay out the theory of occlusion and discuss its advantages and disadvan-
+tages. Occlusion was introduced under the name Occlusion Sensitivity (Zeiler
+and Fergus, 2014) as a method to detect whether an explanation method
+detects important features of an input for a neural network, by evaluating
+inputs with occluded features detected by the explanation method.
+Conversely, Robnik-Šikonja and Kononenko (2008) introduce the same tech-
+nique as a local post-hoc input space explanation method. It measures the
+importance of features of an input for a classiﬁer. This is done by comparing
+the predictions of the classiﬁer with and without the feature. We refer to this
+method as occlusion, too. A feature can be a word or sentence in NLP classi-
+fying or a pixel or larger patch of an image in image classifying. Occlusion is
+a true black-box method. It only uses the predictions of a model, no internal
+representations or even structural information about the model.
+For an input x we take a feature xi. To determine the relevance of xi we
+consider the input x\i without this feature. This is an incomplete input as we
+do not know which values to set as replacement for xi. A simple approach
+is to set all the values of xi to zero. In NLP, it is possible to delete words or
+replace them with the <UNK> token. This will be done as baseline methods
+in the experiments. Zintgraf et al. (2017) propose sampling the values from
+the overall distribution of the dataset. With this replacement we employ the
+18
+Chapter 3. Methods
+difference of probabilities formula (Robnik-Šikonja and Kononenko, 2008;
+Zintgraf et al., 2017).
+The relevance r given the prediction function f and class c is
+r f,c(xi) = fc(x) −fc(x\i).
+(3.1)
+There are various practical difﬁculties with occlusion. It is unclear which fea-
+tures to select, especially if the human understanding of features differs from
+the feature space that was used to input the data. Furthermore, occlusion
+does not guarantee that the data still makes sense (to the model) after a part
+of the input is taken out. This is especially difﬁcult in NLP, where models
+have increasing syntactic, hierarchical and other linguistic understanding
+(Liu et al., 2019a; Hewitt and Manning, 2019). Thus, models could misinter-
+pret data with missing features in various ways, e.g. taking ungrammaticality
+as an indicator for the prediction.
+3.2
+Language Modeling
+We offer a short introduction to language modeling. This is both valuable
+for our approach and for understanding the foundation of current state-of-
+the-art NLP classiﬁcation models. Language modeling can be seen as using
+large corpora of unannotated language data and creating a supervised task
+by reusing words as their own labels.
+A DNN takes a static word embedding like word2vec or GloVe, or a sub-word
+embedding like SentencePiece (Kudo and Richardson, 2018) as input and
+predicts one or several tokens that are missing. These missing tokens can
+be following the original input or masked among the input. The labels of
+these tokens are one-hot vectors. In a way, these models assign likelihood
+to a given text (Brown et al., 1992). Let us have a text T that is split into
+tokens (t1, . . . , tn) = T. If we have a language model pLM that is able to
+make predictions of the form pLM(t1) and pLM(ti+1|(t1, . . . , ti)) then we get
+3.3. OLM
+19
+a probability and score of the whole text.
+pLM(T) = pLM((t1, . . . , tn)) = pLM(t1)
+n−1
+∏
+i=1
+pLM(ti+1|(t1, . . . , ti))
+PPpLM(T) := pLM(T)−1
+n
+(3.2)
+PPpLM(T) is called perplexity of the corpus. The lower this score, the higher
+the probability that the language model assigned to the corpus and thus,
+through a Bayesian argument, the better the language model.
+Not all language models are trained to predict text from scratch. E.g., Devlin
+et al. (2019) mask 15% of words in a sentence and predict those. This does not
+lead to a model that can be measured by giving the perplexity of a corpus.
+Nevertheless, all these models create an embedding of the input in every
+hidden layer that can be used for other tasks. It is a priori unclear whether
+these representations are an improvement on the static embedding because
+the primary goal of the DNN is not to create a better representation of the
+input for other classiﬁcation tasks. However, experimental results from
+Howard and Ruder (2018), Peters et al. (2018) and Devlin et al. (2019) suggest
+that using embeddings from a language model is an improvement on static
+embeddings. The success of these models in various tasks mentioned in sec-
+tion Natural Language Processing (1.2) has been coined “NLP’s ImageNet
+moment” (Ruder, 2018). Devlin et al. (2019) argue “Recent empirical improve-
+ments due to transfer learning with language models have demonstrated
+that rich, unsupervised pre-training is an integral part of many language
+understanding systems.”
+In our experiments, we only use language models for the simple task of
+predicting one missing word or punctuation mark. This is an area where
+masked language models should excel.
+3.3
+OLM
+The main idea of this thesis is combining Occlusion with Language Modeling
+(OLM). Instead of leaving out tokens, we want to replace them with sensible
+options that only remove information but not structure. This disallows the
+prediction network to consider a changed structure of the input. It is now
+20
+Chapter 3. Methods
+forced to consider the change in information. To get a good overview of this
+change we sample plenty of possible replacements and compute a weighted
+average of the prediction results. Due to the law of large numbers (Bernoulli,
+1713) we consider this average an accurate approximation of all possibilities.
+3.3.1
+Motivation
+Counterfactual thinking is a psychological concept which states that humans
+think of past and future events by looking at alternatives “What if [...] ?”
+(Kahneman and Tversky, 1981; Roese, 1997). This enables us to evaluate
+past actions in another way than just looking at the outcome. For statistical
+models we are able to actually evaluate counterfactuals without needing to
+guess about the outcome. Occlusion can be seen as an objective measure to
+do this by changing small parts of the input and considering “What if” this
+part of the input is different.
+These approaches are closely linked to perturbation-based explanation meth-
+ods. In contrast, these methods do not presume a set of features of which
+at least one is occluded, but ﬁgure out which features create the largest
+change in prediction if they are missing or different (Fong and Vedaldi, 2017;
+Wachter et al., 2017). They highlight the synergy of local adversarials and
+explanations. Ribeiro et al. (2016) propose a variant of this by using small
+perturbations to learn a local linear model that resembles the original model
+and is interpretable. We argue that all these methods fail to consider data
+likelihood. Furthermore, Ilyas et al. (2019) show that uninterpretable adver-
+sarials are an inherent feature of almost all neural models, which questions
+their usefulness as explanations.
+Norm theory (Kahneman and Miller, 1986) states that we choose counter-
+factuals depending on how easy they are to imagine. This is at least related
+to how likely these alternatives are. Rational imagination theory (Byrne,
+2007) argues explicitly that we choose probable alternatives to reality when
+evaluating outcomes. These alternatives can either lead to more positive
+or negative results (Roese and Olson, 2014). We consider these psycholog-
+ical intuitions because they are important to our own understanding of
+explanations. Although, as we argued in section On the Incompleteness
+of Evaluating Explanations (2.3), explanations should not be evaluated by
+human intuition, it should be clear how the results of the methods are to be
+3.3. OLM
+21
+understood. Furthermore, intuitions are closely related to axioms. The men-
+tioned psychological statements describe intuitive principles. The evaluation
+of likely alternatives is easily understood and communicable to laymen of
+DNNs who may examine explanations to judge a model’s decision process.
+3.3.2
+Formula Derivation OLM
+We start from the difference of probabilities formula in Eq. (3.1). We reinter-
+pret x\i in the following way. Instead of considering removing the feature
+xi we rather remove the information provided by this feature to the model.
+This gives a very intuitive information-theoretic question that our method
+answers: What additional information does this feature give to the model for
+classiﬁcation? For this we have to consider what inputs are how likely given
+the rest of the input is preserved. In the abstract this gives
+fc(x\i) = ∑
+ˆxi
+pdata( ˆxi|x\i) fc(x\i, ˆxi)
+(3.3)
+with pdata being the data probability over a deﬁned space containing the
+inputs, as deﬁned in section Gradient-based Explanation Methods in NLP
+(2.2).
+To use this formula in NLP we approximate the data distribution (pdata) with
+a language model
+pdata( ˆxi|x\i) ≈pLM( ˆxi|x\i).
+(3.4)
+In practice this means we mask a word, which may consist of several tokens,
+or a punctuation mark and resample it with a given language model. Other
+inputs and features are possible but could increase the approximation error,
+e.g. by accumulating it over several words. The language model does not
+have the information of the original word but all information of the context.
+This can lead to cases where the original word is predicted with a very high
+probability. We argue that in these cases the additional information provided
+by this word was negligent.
+The big advantage of this approach is that the structure of the original input
+is preserved by only picking replacements that seem likely to a language
+22
+Chapter 3. Methods
+model. It gives the formula
+fc(x\i) :≈∑
+ˆxi
+pLM( ˆxi|x\i) fc(x\i, ˆxi)
+(3.5)
+for x\i. There are several practical difﬁculties that this approximation brings.
+First, it is only valid if all data is supposed to be grammatical. A language
+model assigns higher probability to replacement tokens that produce a gram-
+matical sentence. We will investigate this effect with the Corpus of Linguistic
+Acceptability dataset, in section CoLA Corner Case (4.2).
+Second, replacements sometimes make much more sense if another part
+of the input is changed. For example, a prepositional verb determines the
+preposition it appears alongside with and the preposition can be seen as
+information of the verb. This preposition, however, selects which verbs can
+be sampled as replacement.
+Third, the length of the replacement is a limiting factor. There are cases when
+the replacement should be allowed to contain more or fewer tokens than
+the original. Additionally, some masked language models, which predict
+sub-word tokens frequently, may not sample a whole word. This distorts
+the resampled input. The last two problems can be interpreted as not giv-
+ing the language model enough freedom by forcing it to make exactly one
+token replacement. We elaborate possible alleviations of these difﬁculties in
+section Future Work (5.2). In the following, we refer to the unit we want to
+resample as token because, disregarding practical concerns, it is arbitrary in
+our method.
+Combined with Eq. (3.1) we set
+r f,c(xi) := fc(x) −∑
+ˆxi
+pLM( ˆxi|x\i) fc(x\i, ˆxi).
+(3.6)
+This establishes a new method that can determine what effect tokens have
+on a prediction. They can either have a positive or negative relevance,
+depending on whether the original prediction is greater than the averaged
+prediction after resampling.
+3.3. OLM
+23
+3.3.3
+Axiomatic Analysis
+We will show that OLM satisﬁes Class Zero-Sum, Implementation Invariance,
+Sensitivity-1 and Linearity. Let f be a neural network that takes an element of
+the input space X and predicts a probability distribution over classes C, i.e,
+f : X →R|C|
+fc(x) ≥0
+∀c ∈C, x ∈X
+∑
+c∈C
+fc(x) = 1
+∀x ∈X.
+(3.7)
+Let xi be an indexed feature of an input x. We denote the relevance given to
+this feature regarding model f and class c by our method OLM with r f,c(xi).
+OLM satisﬁes Class Zero-Sum. Intuitively, if the input with the resampled
+token increases the prediction for one class, it has to decrease the predictions
+of other classes, and vice-versa. We have
+∑
+c∈C
+r f,c(xi)
+(3.6)
+= ∑
+c∈C
+ 
+fc(x) −∑
+ˆxi
+pLM( ˆxi|x\i) fc(x\i, ˆxi)
+!
+= ∑
+c∈C
+fc(x) −∑
+ˆxi
+pLM( ˆxi|x\i) ∑
+c∈C
+fc(x\i, ˆxi)
+(3.7)
+= 1 −∑
+ˆxi
+pLM( ˆxi|x\i) = 0.
+(3.8)
+Thus, OLM satisﬁes Class Zero-Sum. From this follows that it does not satisfy
+Completeness.
+OLM satisﬁes Implementation Invariance. OLM is a black-box method and
+only evaluates the function of the neural network. It does not regard the
+parameters θ. Assume we have
+θ ̸= θ′
+and
+fθ(x) = fθ′(x)
+∀x ∈X.
+(3.9)
+24
+Chapter 3. Methods
+Then we get
+r fθ,c(xi) = fθc(x) −∑
+ˆxi
+pLM( ˆxi|x\i) fθc(x\i, ˆxi)
+= fθ′c(x) −∑
+ˆxi
+pLM( ˆxi|x\i) fθ′c(x\i, ˆxi)
+= r fθ′,c(xi).
+(3.10)
+Thus, OLM satisﬁes Implementation Invariance.
+OLM satisﬁes Sensitivity-1. OLM is deﬁned as an occlusion method, so it
+necessarily provides the difference of prediction when an input variable is
+occluded. Equation (3.6) is based on Eq. (3.1).
+OLM satisﬁes Linearity. Let f = ∑n
+j=1 αjgj be a linear combination of models.
+Then we have
+r f,c(xi) = fc(x) −∑
+ˆxi
+pLM( ˆxi|x\i) fc(x\i, ˆxi)
+=
+n
+∑
+j=1
+αjgj
+c(x) −∑
+ˆxi
+pLM( ˆxi|x\i)
+n
+∑
+j=1
+αjgj
+c(x\i, ˆxi)
+=
+n
+∑
+j=1
+αjrgj,c(xi).
+(3.11)
+3.3.4
+OLM-S(ensitivity)
+It can be of additional interest to determine to which input features the model
+is most sensitive. Previously, we measured the mean difference between the
+model prediction and the resampled predictions. As a measure for sensitivity
+we suggest taking the standard deviation of the resampled predictions. This
+measures how varied the predictions are for one token position, given the
+rest of the input but regardless of the original token. With previous notation,
+we suggest for sensitivity s:
+s f,c(xi) :=
+s
+∑
+ˆxi
+pLM( ˆxi|x\i)
+
+fc(x\i, ˆxi) −µ
+2
+.
+(3.12)
+We do not suggest this as a relevance measure because, as previously men-
+tioned, it is independent of the input feature xi. Rather, this measure suggests
+3.3. OLM
+25
+additional information to the relevance method. For a neutral feature it may
+be reassuring to know whether the model would have picked up on more
+class-indicating possibilities. In combination OLM and OLM-S measure the
+mean and standard deviation of predictions with resampled tokens.
+26
+4 Experiments
+We perform several experiments to investigate the explanations generated
+by OLM. Example explanations can be found in Table 4.1. These experiments
+highlight some practical peculiarities of our explanation method. For com-
+parison with other methods we also display the results of OLM-S. These
+experiments cannot be comprehensive (see section On the Incompleteness
+of Evaluating Explanations (2.3)) and there is no standard benchmark. Thus,
+we compare to other explanation methods and conduct experiments in areas
+that may present corner cases to OLM.
+Method
+Relevances
+Max. value
+OLM
+good ﬁlm , but very glum .
+0.57
+OLM-S
+good ﬁlm , but very glum .
+0.48
+Delete
+good ﬁlm , but very glum .
+0.98
+UNK
+good ﬁlm , but very glum .
+0.98
+Sensitivity Analysis
+good ﬁlm , but very glum .
+35
+Gradient*Input
+good ﬁlm , but very glum .
+0.041
+Integrated Gradients
+good ﬁlm , but very glum .
+0.96
+TABLE 4.1: Example explanations for SST-2. Explanations
+are shown for positive sentiment which the input is correctly
+predicted as. Positive relevances are displayed in red, negative
+relevances are displayed in blue. Color intensity is normalized
+for every explanation method and is proportional to absolute
+value of relevance. The last column gives the maximum of
+the absolute relevances. OLM and OLM-S give relevance or
+sensitivity to both clauses. The other occlusion-based methods
+give almost all relevance to “good”. Gradient-based methods
+give most relevance to the second clause. Resamples that OLM
+used multiple times can be found in Table 4.2. OLM gives
+positive relevance to “glum” because some alternatives are
+predicted with a much lower probability for positive sentiment.
+Chapter 4. Experiments
+27
+Underlying these experiments is mostly the same combination of explanation
+and prediction model. This is done for two reasons. We investigate the
+algorithmic efﬁciency of OLM. For every token we resample k times. Let us
+assume the distribution of these tokens follows a variation of Zipf’s Law
+(Estoup, 1916; Zipf, 1949) with α > 1 (Piantadosi, 2014). Then, we have
+O(
+α√
+k) different samples per token. Furthermore, we resample each of n
+tokens in an input. Thus, for a single input we have O(n
+α√
+k) predictions. An
+investigation of the effect of different language models on the explanations
+of different classiﬁcation models should be done but requires vast resources.
+Additionally, we ﬁx the models to compare results across different tasks
+and datasets. To this end, we also only investigate explanations of the true
+label neuron. Some explanation methods do not necessarily treat different
+classes differently, as alluded to in Figure 2.1. We try to remove this effect by
+focusing only on the most important class.
+For OLM and OLM-S we use BERTBASE (Devlin et al., 2019) as a language
+model and choose words (and punctuation marks) as units for resampling.
+Resampling is computationally expensive but the quality of the samples is
+very important. We also want a language model that does not frequently
+produce sub-word tokens. BERT uses WordPiece (Wu et al., 2016) which
+does have sub-word tokens but mostly predicts whole words. This is viable
+for single word resampling, especially compared to many other masked
+language models. Thus, we choose BERTBASE as a low-resource compromise
+of a well-ﬁtting state-of-the-art language model to analyze the method over
+datasets. An example of the samples is shown in Table 4.2. We point out that
+in general our approach is language model agnostic. For generating single
+input explanations, not analyzing a dataset, we suggest using a collection
+of the best well-ﬁtting language models available. For classiﬁcation we use
+different variations of ROBERTA (Liu et al., 2019b)1 that we describe in
+section Tasks (4.1.2).2
+1All models were originally published at https://github.com/pytorch/fairseq/tree/
+master/examples/roberta. We use the implementation and pre-trained models from
+https://github.com/huggingface/transformers.
+2Experiments are available at https://github.com/harbecke/xbert.
+28
+Chapter 4. Experiments
+good
+ﬁlm
+,
+but
+very
+glum
+.
+good
+looking
+,
+but
+not
+bad
+.
+(34, 0.98)
+(11, 0.96)
+(84, 0.98)
+(87, 0.98)
+(22, 1)
+(26, 0.003)
+(100, 0.98)
+nice
+news
+art
+and
+still
+short
+(10, 0.46)
+(5, 0.018)
+(2, 0.79)
+(3, 1)
+(10, 0.87)
+(11, 1)
+great
+idea
+quality
+not
+very
+old
+(3, 0.41)
+(4, 0.0011)
+(2, 1)
+(2, 1)
+(10, 0.98)
+(5, 1)
+ﬁne
+taste
+though
+also
+thin
+(3, 0.27)
+(4, 0.94)
+(2, 1)
+(6, 1)
+(5, 1)
+classic
+morning
+too
+dull
+(3, 0.93)
+(3, 0.0064)
+(5, 1)
+(5, 0.058)
+interesting
+try
+always
+slow
+(3, 0.085)
+(3, 0.0026)
+(4, 0.89)
+(3, 1)
+lovely
+job
+never
+boring
+(3, 0.99)
+(3, 0.99)
+(3, 1)
+(3, 0.0059)
+strong
+work
+sometimes
+small
+(2, 1)
+(2, 0.99)
+(2, 1)
+(2, 1)
+bad
+thing
+quite
+dark
+(2, 8e-05)
+(2, 0.0041)
+(2, 0.98)
+(2, 1)
+fun
+plan
+slightly
+expensive
+(2, 0.87)
+(2, 0.0017)
+(2, 1)
+(2, 1)
+funny
+lord
+damn
+(2, 0.55)
+(2, 0.007)
+(2, 0.018)
+excellent
+question
+(2, 0.88)
+(2, 0.0012)
+wonderful
+walk
+(2, 0.93)
+(2, 0.22)
+decent
+answer
+(2, 0.48)
+(2, 0.011)
+scary
+thoughts
+(2, 0.001)
+(2, 0.07)
+advice
+(2, 0.0052)
+mood
+(2, 0.99)
+timing
+(2, 0.2)
+TABLE 4.2: Resampled words for the example explanations in
+Table 4.1. The header of a column indicates which word was
+replaced. The word entry in the row shows the replacement.
+The numbers in brackets are how often this word was the
+replacement out of 100 samples (weight) and the prediction of
+the positive sentiment neuron, which is the true label. Only
+words which were sampled at least twice are presented, the
+columns are ordered by sampling count.
+4.1. Correlation of Explanation Methods
+29
+4.1
+Correlation of Explanation Methods
+First, we compare the relevances produced by OLM to those of other ex-
+planation methods. The main focus of this experiment is to evaluate how
+large the differences to other explanations are. It could be assumed that the
+explanations of basic occlusion is very similar to OLM explanations. If this
+were shown by experiments, it would make the theoretical beneﬁts of OLM
+superﬂuous. E.g., in theory, the language model of a state-of-the-art classiﬁer
+could understand an obviously missing word. It could treat this similar to
+our method by internally representing it as missing and deriving a predic-
+tion from that. In the same vein, we investigate how much the explanation
+methods that use gradients differ from occlusion-based methods to see if
+theoretical difﬁculties manifest. 3
+We calculate the correlation of explanation methods on tasks in the following
+way. Let r1
+x and r2
+x be the ordered relevances of an element x ∈X of dataset
+X for methods 1 and 2. With corr being the Pearson correlation coefﬁcient for
+samples (Pearson, 1895), we set the correlation of two methods over dataset
+X to
+∑n
+i=1 corr(r1
+i , r2
+i )
+n
+.
+(4.1)
+This means, two methods are perfectly positively correlated if and only if
+they produce scaled relevances with possibly different positive scaling for
+each input.
+4.1.1
+Baseline Methods
+We compare our explanations with two baselines based on occlusion (see
+Eq. (3.1)). The simplest variation is removing the word of interest and not
+replacing it. We call this method Delete, it was ﬁrst used in NLP by Li
+et al. (2016). Similarly, we replace the word of interest with the unknown
+token <UNK>. This approach is more tailored to state-of-the-art classiﬁers
+pre-trained with masked language modeling.
+Furthermore, we compare explanations to three gradient-based methods.
+All these methods provide relevances for every dimension of the input. To
+3This experiment already appears in Harbecke and Alt (2020). The baseline methods
+were selected by me. Christoph Alt selected and conducted the experiments. Phrasing and
+analysis exceeding the publication is mine.
+30
+Chapter 4. Experiments
+receive relevances on word level we sum over the dimensions for each word
+(Arras et al., 2017). The simplest one is the absolute value of the gradients and
+is called Sensitivity Analysis (Simonyan et al., 2013). Note that this method
+only provides non-negative relevances. It is especially comparable to OLM-S
+which also provides a non-negative sensitivity of the model. Input*Gradient
+(Shrikumar et al., 2017) is self-explaining. Every input gets multiplied with
+its gradient. Finally, we compare our explanations to Integrated Gradients
+(Sundararajan et al., 2017). This is the integration of the gradient of the
+prediction function along a straight path from a baseline, usually the zero
+vector, to the input vector multiplied by the path length.
+4.1.2
+Tasks
+We select three NLP classiﬁcation tasks. An input contains one or two
+sentences or phrases for all tasks. Each task focuses on one speciﬁc aspect of
+language understanding. All tasks are part of the GLUE benchmark (Wang
+et al., 2017) which does not publish test sets. Therefore, we report results on
+the development set which we do not use for model optimization.
+Multi-Genre Natural Language Inference Corpus (MNLI) by Williams et al.
+(2018) is a natural language inference corpus. A data point consists of two
+sentences that may have a relation to each other.
+• If the second sentence is a sensible successor to the ﬁrst in content, this
+pair gets the entailment label.
+• If the content of the sentences does not relate to each other, the label is
+neutral.
+• If the sentences have are in disagreement they get a contradiction label.
+The corpus contains more than 400,000 samples.
+We use a ROBERTALARGE model which is already ﬁne-tuned on MNLI. It
+achieves an accuracy of 90.2% on the development set which is two per-
+centage points behind state-of-the-art T5 (Raffel et al., 2019). McCoy et al.
+(2019) show that even though these models perform around the human base-
+line for this task, they fail to generalize for a variety of rare constructions.
+Correlations of the explanation methods for MNLI can be found in Table 4.3.
+4.1. Correlation of Explanation Methods
+31
+Occlusion
+Gradient
+Method
+OLM
+OLM-S
+Del
+UNK
+Sen
+G*I
+IG
+OLM
+1.00
+0.61
+0.60
+0.58
+0.27
+-0.03
+0.28
+OLM-S
+0.61
+1.00
+0.32
+0.32
+0.35
+-0.01
+0.20
+Delete
+0.60
+0.32
+1.00
+0.73
+0.23
+-0.05
+0.34
+UNK
+0.58
+0.32
+0.73
+1.00
+0.22
+-0.03
+0.32
+Sensitivity Analysis
+0.27
+0.35
+0.23
+0.22
+1.00
+0.03
+0.17
+Gradient*Input
+-0.03
+-0.01
+-0.05
+-0.03
+0.03
+1.00
+0.00
+Integrated Gradients
+0.28
+0.20
+0.34
+0.32
+0.17
+0.00
+1.00
+TABLE 4.3: Correlation between explanation methods on MNLI
+development set. The table is symmetrical. The ﬁrst two rows
+are our own methods. The next two rows are other occlu-
+sion methods. The last three rows are gradient-based explana-
+tion methods. The correlation of different methods is highest
+between the occlusion methods but never close to 1. Gradi-
+ent*Input does not correlate with any method.
+Stanford Sentiment Treebank (SST) by Socher et al. (2013) is a sentiment
+classiﬁcation dataset. It contains 70,000 sentences from movies with either a
+negative or positive connotation. The SST-2 version only consists of binary
+classiﬁcation with positive and negative sentiment. Sentiment Analysis is an
+easy task to interpret explanations on if the explanation method assumes that
+features cannot contribute to both classes (see Figure 2.1 and Eq. (3.8)). An
+input feature contributes as much to the positive sentiment as it detracts from
+the negative sentiment and vice versa. Therefore, the explanation method
+assigns each feature positive or negative sentiment.
+We ﬁne-tune a pre-trained ROBERTABASE. This model achieves an accuracy
+of 94.5% on the development set which is 3 percentage points lower than mul-
+tiple state-of-the-art models, including T5 (Raffel et al., 2019). Correlations
+of the explanation methods for SST-2 can be found in Table 4.4.
+Corpus of Linguistic Acceptability (CoLA) by Warstadt et al. (2019) is a
+dataset with sentences labeled by their grammatical acceptability. It contains
+more than 10,000 sentences which are annotated as either acceptable or
+unacceptable. We will elaborate on the speciﬁcs of this task for explanation
+methods in section CoLA Corner Case (4.2).
+32
+Chapter 4. Experiments
+Occlusion
+Gradient
+Method
+OLM
+OLM-S
+Del
+UNK
+Sen
+G*I
+IG
+OLM
+1.00
+0.78
+0.52
+0.47
+0.30
+0.02
+0.35
+OLM-S
+0.78
+1.00
+0.39
+0.38
+0.37
+0.01
+0.30
+Delete
+0.52
+0.39
+1.00
+0.64
+0.21
+0.01
+0.37
+UNK
+0.47
+0.38
+0.64
+1.00
+0.18
+0.03
+0.36
+Sensitivity Analysis
+0.30
+0.37
+0.21
+0.18
+1.00
+0.03
+0.13
+Gradient*Input
+0.02
+0.01
+0.01
+0.03
+0.03
+1.00
+0.04
+Integrated Gradients
+0.35
+0.30
+0.37
+0.36
+0.13
+0.04
+1.00
+TABLE 4.4: Correlation between explanation methods on SST-2
+development set. The results resemble the results from Table
+4.3. The correlation between OLM and other occlusion methods
+is a little lower. In contrast, the correlation between OLM-S and
+other occlusion methods is a little higher.
+Analogous to SST-2 we ﬁne-tune ROBERTABASE and achieve a phi coefﬁ-
+cient4 (Yule, 1912) of 0.613 on the development set. STRUCTBERT (Wang
+et al., 2019b) achieves a phi coefﬁcient of 0.753. Correlations of the explana-
+tion methods for CoLA can be found in Table 4.5.
+4also misnomered Matthews correlation coefﬁcient
+Occlusion
+Gradient
+Method
+OLM
+OLM-S
+Del
+UNK
+Sen
+G*I
+IG
+OLM
+1.00
+0.56
+0.25
+0.21
+0.20
+0.02
+0.15
+OLM-S
+0.56
+1.00
+0.15
+0.12
+0.29
+0.03
+0.09
+Delete
+0.25
+0.15
+1.00
+0.35
+0.02
+0.04
+0.18
+Unk
+0.21
+0.12
+0.35
+1.00
+0.03
+0.03
+0.14
+Sensitivity Analysis
+0.20
+0.29
+0.02
+0.03
+1.00
+-0.00
+0.07
+Gradient*Input
+0.02
+0.03
+0.04
+0.03
+-0.00
+1.00
+0.12
+Integrated Gradients
+0.15
+0.09
+0.18
+0.14
+0.07
+0.12
+1.00
+TABLE 4.5: Correlation between explanation methods on CoLA
+development set. The correlation between OLM and OLM-
+S and other occlusion methods (in bold) is much lower than
+on the other two tasks. This indicates that this dataset could
+be a corner case for our method. Correlation between other
+methods is also lower but to a smaller extend.
+4.1. Correlation of Explanation Methods
+33
+4.1.3
+Results
+Tables 4.3, 4.4 and 4.5 show correlation of all tested explanation methods.
+Overall, there is positive correlation between almost all methods. No meth-
+ods produce equivalent relevances, even the correlation between OLM and
+OLM-S is never close to 1. The three occlusion-based relevance methods
+OLM, Delete and UNK have consistently high correlation on MNLI and SST-2
+but much lower correlation on CoLA.
+We draw the following conclusions. OLM produces signiﬁcantly different
+explanations than other occlusion methods. Delete and UNK have a higher
+correlation with each other for all three tasks than with OLM which is ev-
+idence that it stands out from other occlusion methods. The theoretical
+differences between these methods seem to manifest experimentally.
+OLM-S has the about as much correlation to other occlusion methods than
+to Sensitivity Analysis. This can be seen as experimental validation as a
+sensitivity method with a somewhat different intent than a relevance method.
+The correlation between gradient-based methods and other methods is low
+across all tasks. This could indicate that gradient methods do not capture the
+discrete nature of NLP (see section Gradient-based Explanation Methods in
+NLP (2.2)). Note that we use correlation in our argument in two seemingly
+conﬂicting ways. If the correlation of explanations is close to 0, they are
+independent of each other. It is unlikely that methods with independent
+results can both give very good explanations. Furthermore, if the correlation
+of explanations is close to 1, the methods are redundant. They might have
+theoretical differences but these at least did not manifest in the experiments.
+On the whole, we think different sensible explanation methods should have
+positive correlation 0 ≪c ≪1. This appears to be the case for OLM and
+most compared explanation methods.
+Table 4.1 shows example explanations for the input “good ﬁlm , but very
+glum .” from the SST-2 dataset. Table 4.2 shows the sampling examples that
+OLM used to give relevance to the words. The maximum value is easy to
+interpret for occlusion-based methods, as it indicates the change in prediction
+if the feature with the maximum value is occluded. OLM and OLM-S give
+lower relevances to “good” because alternatives sometimes lead to a positive
+classiﬁcation as well. Interestingly, alternatives to “ﬁlm” more often lead to a
+34
+Chapter 4. Experiments
+negative classiﬁcation. This indicates that the meaning or strength of “good”
+depends on the following noun. Surprisingly, “glum” also receives a positive
+relevance from OLM. There are alternatives, especially “bad”, that change
+the prediction to negative. Furthermore, the classiﬁcation gives positive
+sentiment a probability of 98%, so no negative word had a big effect in the
+original sentence.
+For two out of ﬁve words the original word was the most frequent sample
+from the language model. Additionally, the comma was resampled 84% of
+the time and the period every time. This indicates that the information of
+these was not completely lost as they are made very likely by the context.
+Many resampled words (prediction < 0.5) lead to a negative sentiment
+classiﬁcation. Also, many resampled words lead to a classiﬁcation where the
+model assigns a high probability to one class, i.e. is very sure. Only the ﬁrst
+word has several replacements where the model is unsure.
+This example also highlights a disadvantage of OLM. The structure “good
+[...] but [...] glum” can not be adequately evaluated by resampling only one
+word. It is possible to argue that two of these words already determine the
+sentiment of the third.
+4.2
+CoLA Corner Case
+CoLA is an interesting edge case for our method. In the CoLA dataset there
+are inputs that are grammatically acceptable and inputs that are unacceptable.
+The task of a model is to ﬁnd out to which category the input belongs. The
+language model in OLM mostly saw acceptable sentences during training,
+thus it can be assumed that OLM tries to resample such that grammatically
+acceptable input appears whenever possible. This can be seen as ﬂawed,
+because on average the resampling should lead to a similar class distribution
+as the original dataset.
+Therefore, in theory, OLM is able to identify important words if replacements
+make the sentence acceptable, because it assigns relevance if the prediction
+of the model changes from ungrammatical to grammatical. However, it does
+not identify the opposite case, where an input is grammatical only because of
+a speciﬁc construction. OLM would not modify the input to be unacceptable.
+4.2. CoLA Corner Case
+35
+In other words, CoLA is a task where the approximation pdata ≈pLM in
+Eq. (3.4) is not necessarily true, the resampling is not faithful to the data.
+4.2.1
+Statistical Analysis of Explanations
+To investigate this, we try to answer the following question. How much do
+the explanations for grammatically acceptable and unacceptable sentences
+differ? We hypothesize that the explanations for unacceptable inputs have
+higher values on average.
+First, we have to set the classes on equal footing. We only use explanations
+of inputs that were predicted correctly by the ROBERTABASE model from
+section Correlation of Explanation Methods (4.1) and with a probability p
+of at least 0.9. The relevances produced by OLM are always in the range
+[p −1, p], as for all occlusion-based methods (see Eq. (3.1)). This ensures that
+all explanations fall into the range [−0.1, 1]. We have 165 sentences labeled
+as unacceptable and 678 labeled as acceptable with probability p ≥0.9.
+We measure the sum, average and maximum of relevances over input sen-
+tences. For each of these measures we get results for acceptable and unaccept-
+able sentences, which can be compared with a statistical signiﬁcance test. We
+choose Welch’s t-test (Welch, 1947) which enables samples sizes and variances
+to be different for both classes. We can ignore that the samples are not from a
+normal distribution because of the large sample size (Kendall, 1951). Table
+4.6 shows results of these tests. The null hypothesis of the averages being
+equal can be rejected for all comparisons because all three tests are highly
+signiﬁcant.
+We feel obliged to mention that this is not a conclusive test. Features of
+inputs of different classes need not have equivalent properties. For accept-
+ability datasets, there are many more possible constructions for unacceptable
+sentences than acceptable sentences. Thus, we must not expect a symmetry
+between the explanations of different classes.
+The other two occlusion methods Delete and UNK ﬁnd more relevance in the
+acceptable sentences. This is likely due to them perturbing grammatically
+acceptable input such that it is not acceptable. The Delete method removes
+words, the UNK method replaces them with the <UNK> token, which may
+not share all syntactic properties with the original word. Thus, they are both
+36
+Chapter 4. Experiments
+relevance aggregation
+Avg.
+Sum
+Max
+unacceptable sentence
+0.275
+1.89
+0.893
+acceptable sentence
+0.0384
+0.304
+0.172
+p-value
+<0.001
+<0.001
+<0.001
+TABLE 4.6: Relevance values accumulated over inputs by the
+method in the column header, averaged over all sentences with
+correct classiﬁcation and probability p ≥0.9. For all accumu-
+lations the averages differ dramatically, which indicates that
+the resamples changed the prediction a lot more for unaccept-
+able sentences. A Welch’s t-test was performed to compare the
+means and yielded a p-value < 0.001 for all three methods.
+likely to break the syntax of a sentence. This conﬁrms that our method does
+differ signiﬁcantly from other occlusion-based methods.
+We show some randomly selected examples of the explanations in Table
+4.7. The sentences correctly classiﬁed as unacceptable all have words that
+can be replaced to make the sentence acceptable. The sentences correctly
+classiﬁed as acceptable have few words with high relevance, so the language
+model rarely created sentences that the classiﬁer considered unacceptable.
+id
+relevances
+max value
+1
+John paid me against the book .
+0.99
+2
+The person confessed responsible .
+1
+3
+Medea tried the nurse to poison her children .
+0.92
+4
+to die is no fun .
+0.49
+5
+This teacher is a genius .
+0.056
+6
+Soaring temperatures are predicted for this weekend .
+0.08
+TABLE 4.7: Six randomly selected example sentences from the
+CoLA dataset with explanations. The upper three examples
+are grammatically unacceptable, the lower three examples are
+acceptable. All examples are correctly classiﬁed with a prob-
+ability of at least 0.9. The upper examples have words with
+much higher relevance as the resampled words can make the
+sentence acceptable. In the lower examples the resampled
+words change the prediction only once. Sentences with likely
+replacement words that changed the prediction can be found
+in Table 4.8.
+4.3. FAVA
+37
+id
+orig. word
+new sentence
+prediction
+1
+paid
+John pushed me against the book .
+4e-4
+1
+paid
+John pressed me against the book .
+3.6e-4
+1
+me
+John paid damages against the book .
+4.3e-4
+1
+me
+John paid taxes against the book .
+7.9e-4
+1
+against
+John paid me for the book .
+3.7e-4
+2
+confessed
+The person was responsible .
+4.4e-4
+2
+confessed
+The person is responsible .
+4.4e-4
+2
+responsible
+The person confessed himself .
+4e-4
+3
+tried
+Medea orders the nurse to poison her children .
+3.5e-4
+3
+nurse
+Medea tried the same to poison her children .
+1.1e-3
+4
+die
+to eat is no fun .
+0.089
+TABLE 4.8: Resampled sentences for Table 4.7. All resampled
+words that changed the predicted class and were sampled at
+least 10 out of 100 times are depicted. Most of the previously
+unacceptable sentences are now acceptable and thus correctly
+classiﬁed by the model. In the last row we can see that the only
+frequent sample for acceptable sentences that changed the pre-
+diction was misclassiﬁed by the model. The upper rows of the
+table show that the interval of predictions for acceptable sam-
+ples is very narrow. They have a probability between 0.035%
+and 0.11% of being unacceptable, which is only a difference by
+factor three.
+Examples of these resampled sentences can be found in Table 4.8.
+We take this as evidence that the language model is able to construct gram-
+matical sentences even under adverse circumstances. The inspection of this
+dataset with OLM can be a useful analysis. However, the approximation in
+Eq. (3.4) of the language model distribution approximating the data distribu-
+tion does not hold up. The relevances of words in unacceptable sentences is
+ampliﬁed because the language model tries to choose words that build an
+acceptable sentence. We consider the results of OLM on this task meaningful
+but not unconditionally. The task shows investigating the approximation, or
+adapting the language model for the classiﬁcation task, can be pondered.
+4.3
+FAVA
+We conclude with an experiment that resembles CoLA but with a speciﬁc
+linguistic aspect and a possibility for more model introspection. Kann et al.
+(2019) introduce the Frames and Alternations of Verbs Acceptability (FAVA)
+38
+Chapter 4. Experiments
+verb frame
+relevances
+max value
+causative-
+the chapter edited .
+0.49
+inchovative
+david edited the chapter .
+0.18
+spray-
+michael poured the bucket with the soup .
+0.85
+load
+michael poured the soup into the bucket .
+0.028
+there-
+there agreed with the politician a protester .
+0.082
+load
+a protester agreed with the politician .
+0.15
+understood-
+kelly joked david .
+0.84
+object
+kelly and david joked .
+0.42
+dative
+nicole proclaimed the greatest athlete to rebecca .
+0.43
+nicole proclaimed rebecca the greatest athlete .
+0.25
+TABLE 4.9: Randomly selected example explanations for sen-
+tence pairs in the FAVA dataset. The examples are ordered by
+verb frame, the unacceptable example is always the ﬁrst. All
+examples are correctly classiﬁed with probability p ≥0.9. The
+verbs are frequently identiﬁed as the most important word in a
+sentence.
+dataset. It contains constructed sentences around verb properties that yield
+acceptable and unacceptable sentences. Most of these sentences come in
+pairs of acceptable and unacceptable sentence, which are variations of each
+other and at least one uses the given verb frame. This allows a direct com-
+parison that exceeds the possibilities of CoLA. We only select these pairs for
+evaluation. Example sentences and frames can be found in Table 4.9.
+In this case we do not ﬁne-tune a model on the dataset but use the
+ROBERTABASE model from TextAttack ﬁne-tuned on CoLA.5 Since this model
+was trained on another dataset, this allows us to evaluate on the train, devel-
+opment and test set. We do this to retrieve enough data. This dataset version
+encompasses 6466 single sentences or 3233 pairs. The accuracy for the model
+on our class-balanced version of the dataset is 84.3%. The best model in the
+original paper (Kann et al., 2019) achieved an accuracy of 85.5% on the test
+set of the whole dataset.
+This dataset is split into ﬁve types of syntactic verb frame alternations. Verbs
+5The model was originally published at https://github.com/QData/TextAttack. We
+used the version from the transformers package https://github.com/huggingface/
+transformers.
+4.3. FAVA
+39
+unacceptable
+acceptable
+average verb relevance
+0.400
+0.0960
+average word relevance
+0.115
+0.0429
+p-value
+<0.001
+<0.001
+TABLE 4.10: Relevance values averaged over all sentences
+with correct classiﬁcation and probability p ≥0.9. For both
+unacceptable and acceptable sentences the verb is signiﬁcantly
+more relevant than the average word. A Welch’s t-test was
+performed to compare the means and yielded a p-value < 0.001
+for both averages.
+can be seen as the central part-of-speech to this task, as constructions are
+built around the fact that they work for some verbs but not for all. Thus, we
+are interested whether verbs have a higher relevance than other words. We
+perform signiﬁcance tests as in section Statistical Analysis of Explanations
+(4.2.1). Table 4.10 shows statistical signiﬁcance for both acceptable and
+unacceptable sentences. For unacceptable sentences the relevance of verbs
+is more than three times as large as for the average word. For acceptable
+sentences the relevance is more than two times as large. This shows that
+OLM identiﬁes verbs as important words in this task which is centered on
+verbs.
+In Table 4.9 we show an example of the explanation of sentence pairs for each
+of the syntactic verb frame alternations. For all verb frames the verb gets the
+highest relevance in at least one of the two paired sentences. In only one of
+the verb frames the verb has the highest relevance in both paired sentences.
+As expected, the relevances of the unacceptable sentences are higher than
+the relevances of acceptable sentences.
+We also investigate how the relevances of verbs in sentence pairs are cor-
+related. We already saw that the relevances are higher for words of unac-
+ceptable sentences. Figure 4.1 provides a visualization of the relevances of
+sentence pairs. The null hypothesis of the relevances not being correlated
+is rejected with p-value < 0.005. The relevances are weakly negatively cor-
+related with a Pearson’s correlation coefﬁcient of r = −0.134. We interpret
+this as a sanity check (Adebayo et al., 2018) that our method does not simply
+assign high relevance to verbs.
+The relevance of verbs in unacceptable sentences is higher on average, as is
+40
+Chapter 4. Experiments
+FIGURE 4.1: Correlation of verb relevance for FAVA sentence
+pairs. The x-axis denotes the relevance of the verb in the un-
+acceptable sentence of a sentence pair. The y-axis denotes the
+relevance of the verb in the acceptable sentence of a sentence
+pair. Only pairs are depicted where both sentences were cor-
+rectly predicted with probability p ≥0.9. Thus, the interval of
+possible values for both axes is [−0.1, 1].
+the case for an average of all words in the CoLA experiments. Few verbs
+have high relevance in both sentences of a sentence pair. This can have two
+possible reasons. If the classiﬁcation model does not contextualize a verb
+completely, the verb as a feature itself inﬂuences the model prediction. This
+would mean an imbalance for the resampling predictions. Also, the verbs are
+unlikely to be special cases of both the unacceptable and the acceptable sen-
+tence. Resampling is more likely to change the prediction if the construction
+around the verb only does or does not work for few samples.
+All in all, these experiments provide evidence that OLM is a useful tool for
+analyzing black-box models. At the least, it provides easily interpretable
+explanations. We identify language modeling as a standout feature of OLM
+that makes its explanations vastly different from other methods. The intuitive
+theory of OLM allows for evaluation and introspection of relevances even
+for corner cases of the method.
+41
+5 Conclusion
+We summarize the topics and central arguments of this thesis. Furthermore,
+we point out weaknesses of our approach and how they could be alleviated.
+Last, we elaborate some possible future work.
+5.1
+Summary
+In the ﬁrst chapter of this thesis we provide the necessary theoretical back-
+ground. We introduce Deep Learning by motivating interest in the topic,
+mainly through its achieved results. Additionally, we discuss practical as-
+pects, such as the architectures of deep neural networks and how to train
+them. We round out this section by pointing to capabilities of neural net-
+works and how they are important to this thesis.
+We introduce the topic of explainability of neural networks. We summarize
+central papers and surveys of this topics. Focus is laid on theoretical aspects
+of explainability. This is done partly by showing work on axioms for expla-
+nation methods. In this context we provide our ﬁrst contribution, a novel
+axiom. It is guided by the principle that a feature of an input to a normalized
+prediction function contributes as much to a set of classes as it detracts from
+the complementary classes.
+The second contribution is a theoretical argument against gradient-based
+explanation methods in natural language processing. We show that input
+in NLP is discrete and thus the data likelihood distribution is discrete. This
+inhibits the functionality of gradients when analyzing the prediction function.
+We contrast this with the likelihood function in vision.
+Furthermore, we contribute another theoretical argument to explainability.
+We discuss why a general evaluation of explanation methods is unlikely to
+exist. The main argument is that the ground truth for the explanation is only
+held in the model, which is exactly what an explanation method is trying to
+42
+Chapter 5. Conclusion
+extract. Since this can only be done by approximation, we point out that there
+is a false dichotomy between the evaluative rules for this approximation and
+the explanation method that fulﬁlls them.
+The central methods chapter introduces our main contribution, a novel ex-
+planation method. It consists of the combination of two existing methods,
+Occlusion and Language Modeling and is coined OLM. Occlusion is a tech-
+nique in explainability that is used either to explain black-box models or
+evaluate explanations. It can be seen as incomplete because it does not de-
+termine how to replace occluded features. For this replacement we propose
+using language modeling in NLP. We show that language modeling is espe-
+cially suited to sample replacement. They excel at this task because language
+understanding by language models is the foundation of state-of-the-art mod-
+els in NLP.
+We motivate OLM psychologically and through information theory. These
+arguments lead us to selecting and evaluating likely alternatives to explain
+features of the original input. The formula for OLM is achieved by inserting
+sampling with a language model into the difference of probabilities formula.
+We analyze our method by going over the axioms that we introduced in the
+preceding chapter. We provide proofs of compliance. Since the formula for
+OLM is a weighted mean of predictions, we add the standard deviation as an
+additional measure OLM-S. This measure is intended as a sensitivity method,
+not a relevance method.
+We provide experimental evaluation of our method. As alluded to in the
+second chapter, we do not consider a complete evaluation, like a single
+benchmark, possible. We try to compare our method to existing methods
+by a correlation experiment. We work under the assumption that sensible
+methods correlate, but when introducing a novel method it is also important
+to see that there is no perfect correlation. Both aspects are shown over three
+tasks. The results on one task, CoLA, point to a possible problem of OLM.
+The second experiment is a deeper dive into the relevances of our method on
+CoLA. Linguistic acceptability is a context where it is wrong to assume that
+the distribution of a language model is similar to the distribution of the data.
+We show that this manifests in the explanations. We discuss how to interpret
+these explanations and how they make sense once the context is understood.
+The introspection with OLM is possibly deeper than with other relevance
+5.2. Future Work
+43
+methods, as we can also provide the compared samples. Furthermore, we
+show that the language modeling works as it is supposed to.
+Finally, we experiment on a dataset that is even more speciﬁc than CoLA.
+It contains pairs of sentences with verb frames that are either acceptable
+or unacceptable. This provides the additional information that the verb
+has to be very important for the model, as different verbs lead to different
+classiﬁcations in the same structure. We show that our method is able to
+identify verbs as very important. Furthermore, we show that relevances of
+verbs in sentence pairs is weakly negatively correlated, which indicates that
+our method does not blindly assign relevance to verbs.
+5.2
+Future Work
+We describe some of the shortcomings, unexplored areas and possible ideas to
+extend this work. All identiﬁed weaknesses concern the practical application
+of our method.
+There are three main problems with our approach. The major problem
+we identiﬁed during method development and experiments is the approx-
+imation of the data with a language model. While this is certainly valid
+frequently, we saw that there are exceptions. A language model can always
+provide syntactically correct data which does not make sense for the task. Of
+all possible sentences, most sentences are not suitable for a dataset because
+they do not indicate a class. A language model alone has no mechanism to
+detect this.
+One possibility to improve selection of resampled tokens would be to train a
+generative adversarial network (Goodfellow et al., 2014) to detect whether
+an input is part of the given dataset. The discriminator of this model could
+determine whether proposed resampled tokens create a likely input and also
+assign a probability. This probability could be used or combined with the
+language model probability to select resampled tokens. This would ensure
+that the resampled data ﬁts the task.
+A second problem of our method is that we resample exactly one token in a
+tokens previous place. If we choose words as replacement units, this prevents
+the use of language models that produce sub-word tokens frequently. It
+would be possible to use beam search to allow them to build a word from
+44
+Chapter 5. Conclusion
+these sub-word tokens. Additionally, If we want to change the position, we
+would not know where to position a replacement. This is problematic in
+several ways. In general, if we take out the information of one word then
+there are other sensible replacements that do not consist of just one word.
+Furthermore, if the replaced word forces a syntactic structure in the input
+that is not determined by any of the other inputs, it could be sensible to allow
+this structure to change.
+In an information theory sense, the removal of the information of one token
+places the sentence into another set of possibilities that contain the informa-
+tion of all other tokens but not necessarily in the exact phrasing as before.
+This is the same phenomenon that humans have when thinking of formulat-
+ing a sentence and changing the structure at the last moment because the last
+word ﬁts the new structure better. To allow this, we need an architecture that
+is invariant to rephrasing. It would be possible to use an encoder-decoder
+architecture to encode the information of the sentence without the tokens of
+interest. Then we have a representation of the sentence that can be used to
+generate the replacement sentence. However, it would be difﬁcult to detect
+whether there is information missing that needs to be sampled in the encoded
+state. E.g., if a strong adjective is removed in a sentiment classiﬁcation task,
+how do we produce a resampled sentence with sentiment?
+Another interesting aspect is choosing other features as replacement units.
+For tasks with many sentences it could be interesting to measure the effect
+of sentences as features. However, we consider it unlikely that resampled
+sentences produce vastly different results than removed sentences. Syntax is
+no longer an issue, only context for other sentences may be important.
+The third practical difﬁculty is the dependency of our approach on a language
+model. Even state-of-the-art language models differ from the true likelihood
+of language data. This problem is unlikely to be resolved practically, as
+language models will presumably not become perfect in the future. Our
+method depends on automatic generation of replacements. This complicates
+resampling multiple features at the same time, as the approximation errors
+are likely to accumulate.
+All mentioned practical points concern the possibilities and difﬁculties of
+generating good comparison samples. This thesis is an attempt towards
+5.2. Future Work
+45
+explanation methods in natural language processing that do not use unjusti-
+ﬁed inputs or methods. Therefore, a deeper analysis of sampling options to
+improve the tailoring of OLM to NLP is an adequate future research direction.
+46
+Bibliography
+Amina Adadi and Mohammed Berrada. Peeking inside the black-box: A
+survey on explainable artiﬁcial intelligence (xai). IEEE Access, 6:52138–
+52160, 2018.
+Julius Adebayo, Justin Gilmer, Michael Muelly, Ian Goodfellow, Moritz
+Hardt, and Been Kim. Sanity checks for saliency maps. In Advances in
+Neural Information Processing Systems, pages 9525–9536, 2018.
+David Alvarez-Melis and Tommi Jaakkola. A causal framework for ex-
+plaining the predictions of black-box sequence-to-sequence models. In
+Proceedings of the 2017 Conference on Empirical Methods in Natural Language
+Processing, pages 412–421, 2017.
+Marco Ancona, Enea Ceolini, Cengiz Öztireli, and Markus Gross. Towards
+better understanding of gradient-based attribution methods for deep neu-
+ral networks. International Conference on Learning Representations, 2018.
+Leila Arras, Franziska Horn, Grégoire Montavon, Klaus-Robert Müller, and
+Wojciech Samek. "What is relevant in a text document?": An interpretable
+machine learning approach. PloS one, 12(8):e0181142, 2017.
+Sebastian Bach, Alexander Binder, Grégoire Montavon, Frederick Klauschen,
+Klaus-Robert Müller, and Wojciech Samek. On pixel-wise explanations for
+non-linear classiﬁer decisions by layer-wise relevance propagation. PloS
+one, 10(7):e0130140, 2015.
+David Baehrens, Timon Schroeter, Stefan Harmeling, Motoaki Kawanabe,
+Katja Hansen, and Klaus-Robert Müller. How to explain individual classi-
+ﬁcation decisions. Journal of Machine Learning Research, 11(Jun):1803–1831,
+2010.
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine
+translation by jointly learning to align and translate. International Conference
+on Learning Representations, 2015.
+BIBLIOGRAPHY
+47
+Yoshua Bengio, Réjean Ducharme, Pascal Vincent, and Christian Jauvin. A
+neural probabilistic language model. Journal of machine learning research, 3:
+1137–1155, 2003.
+Jakob Bernoulli. Ars conjectandi. Impensis Thurnisiorum, fratrum, 1713.
+Bernd Bohnet, Ryan McDonald, Gonçalo Simões, Daniel Andor, Emily Pitler,
+and Joshua Maynez. Morphosyntactic tagging with a meta-bilstm model
+over context sensitive token encodings. In Proceedings of the 56th Annual
+Meeting of the Association for Computational Linguistics (Volume 1: Long
+Papers), pages 2642–2652, 2018.
+Piotr Bojanowski, Edouard Grave, Armand Joulin, and Tomas Mikolov. En-
+riching word vectors with subword information. Transactions of the Associa-
+tion for Computational Linguistics, 5:135–146, 2017.
+Léon Bottou and Olivier Bousquet. The tradeoffs of large scale learning. In
+Advances in neural information processing systems, pages 161–168, 2008.
+Peter F. Brown, Stephen A. Della Pietra, Vincent J. Della Pietra, Jennifer C.
+Lai, and Robert L. Mercer. An estimate of an upper bound for the entropy
+of english. Computational Linguistics, 18(1):31–40, 1992.
+Ruth M. J. Byrne. The rational imagination: How people create alternatives to
+reality. MIT press, 2007.
+Augustin Cauchy.
+Méthode générale pour la résolution des systemes
+d’équations simultanées.
+Comptes rendus hebdomadaires des séances de
+l’Académie des Sciences, 25:536–538, 1847.
+Anna Choromanska, Mikael Henaff, Michael Mathieu, Gérard Ben Arous,
+and Yann LeCun. The loss surfaces of multilayer networks. In Artiﬁcial
+intelligence and statistics, pages 192–204, 2015.
+Dan Ciregan, Ueli Meier, and Jürgen Schmidhuber. Multi-column deep neu-
+ral networks for image classiﬁcation. In 2012 IEEE conference on computer
+vision and pattern recognition, pages 3642–3649. IEEE, 2012.
+Li Deng and Dong Yu. Deep learning: methods and applications. Foundations
+and Trends® in Signal Processing, 7(3–4):197–387, 2014.
+48
+BIBLIOGRAPHY
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT:
+Pre-training of deep bidirectional transformers for language understand-
+ing. In Proceedings of the 2019 Conference of the North American Chapter
+of the Association for Computational Linguistics: Human Language Technolo-
+gies, Volume 1 (Long and Short Papers), pages 4171–4186. Association for
+Computational Linguistics, 2019.
+Finale Doshi-Velez and Been Kim. Towards a rigorous science of interpretable
+machine learning. CoRR, arXiv:1702.08608, 2017.
+Finale Doshi-Velez, Mason Kortz, Ryan Budish, Chris Bavitz, Sam Gersh-
+man, David O’Brien, Stuart Schieber, James Waldo, David Weinberger,
+and Alexandra Wood. Accountability of ai under the law: The role of
+explanation. CoRR, arXiv:1711.01134, 2017.
+Jean-Baptiste Estoup.
+Gammes sténographiques: méthode et exercices pour
+l’acquisition de la vitesse. Institut sténographique, 1916.
+Ruth C. Fong and Andrea Vedaldi.
+Interpretable explanations of black
+boxes by meaningful perturbation. In Proceedings of the IEEE International
+Conference on Computer Vision, pages 3429–3437, 2017.
+Robert Geirhos, Carlos R. M. Temme, Jonas Rauber, Heiko H. Schütt, Matthias
+Bethge, and Felix A. Wichmann. Generalisation in humans and deep
+neural networks. In Advances in neural information processing systems, pages
+7538–7550, 2018.
+Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-
+Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. Generative
+adversarial nets. In Advances in neural information processing systems, pages
+2672–2680, 2014.
+Bryce Goodman and Seth Flaxman. European union regulations on algo-
+rithmic decision-making and a “right to explanation”. AI magazine, 38(3):
+50–57, 2017.
+Kyle Gorman and Steven Bedrick. We need to talk about standard splits.
+In Proceedings of the 57th annual meeting of the association for computational
+linguistics, pages 2786–2791, 2019.
+BIBLIOGRAPHY
+49
+Riccardo Guidotti, Anna Monreale, Salvatore Ruggieri, Franco Turini, Fosca
+Giannotti, and Dino Pedreschi. A survey of methods for explaining black
+box models. ACM computing surveys (CSUR), 51(5):1–42, 2018.
+Boris Hanin. Universal function approximation by deep neural nets with
+bounded width and relu activations. CoRR, arXiv:1708.02691, 2017.
+David Harbecke and Christoph Alt. Considering likelihood in NLP classiﬁ-
+cation explanations with occlusion and language modeling. In Proceedings
+of the 58th Annual Meeting of the Association for Computational Linguistics:
+Student Research Workshop, pages 111–117. Association for Computational
+Linguistics, 2020.
+Zellig S. Harris. Distributional structure. Word, 10(2-3):146–162, 1954.
+John Hewitt and Christopher D. Manning. A structural probe for ﬁnding
+syntax in word representations. In Proceedings of the 2019 Conference of
+the North American Chapter of the Association for Computational Linguistics:
+Human Language Technologies, Volume 1 (Long and Short Papers), pages 4129–
+4138, 2019.
+Jeremy Howard and Sebastian Ruder. Universal language model ﬁne-tuning
+for text classiﬁcation. In Proceedings of the 56th Annual Meeting of the Associ-
+ation for Computational Linguistics (Volume 1: Long Papers), pages 328–339,
+2018.
+Andrew Ilyas, Shibani Santurkar, Dimitris Tsipras, Logan Engstrom, Brandon
+Tran, and Aleksander Madry. Adversarial examples are not bugs, they
+are features. In Advances in Neural Information Processing Systems, pages
+125–136, 2019.
+Sarthak Jain and Byron C. Wallace. Attention is not Explanation. In Proceed-
+ings of the 2019 Conference of the North American Chapter of the Association for
+Computational Linguistics: Human Language Technologies, Volume 1 (Long and
+Short Papers), pages 3543–3556, 2019.
+Michael I. Jordan. Artiﬁcial intelligence—the revolution hasn’t happened
+yet. Harvard Data Science Review, 2019.
+Daniel Kahneman and Dale T. Miller. Norm theory: Comparing reality to its
+alternatives. Psychological review, 93(2):136, 1986.
+50
+BIBLIOGRAPHY
+Daniel Kahneman and Amos Tversky. The simulation heuristic. Technical
+report, Stanford University, CA, Department of Psychology, 1981.
+Katharina Kann, Alex Warstadt, Adina Williams, and Samuel Bowman. Verb
+argument structure alternations in word and sentence embeddings. In
+Proceedings of the Society for Computation in Linguistics (SCiL) 2019, pages
+287–297, 2019.
+Maurice George Kendall. The Advanced Theory of Statistics: Vol: II. Charles
+Grifﬁn and Co., Ltd., London, 1951.
+Been Kim, Martin Wattenberg, Justin Gilmer, Carrie Cai, James Wexler, Fer-
+nanda Viegas, and Rory Sayres. Interpretability beyond feature attribution:
+Quantitative testing with concept activation vectors (tcav). In International
+Conference on Machine Learning, pages 2673–2682, 2018.
+Yoon Kim. Convolutional neural networks for sentence classiﬁcation. In
+Proceedings of the 2014 Conference on Empirical Methods in Natural Language
+Processing (EMNLP), pages 1746–1751. Association for Computational Lin-
+guistics, 2014.
+Pieter-Jan Kindermans, Kristof T. Schütt, Maximilian Alber, Klaus-Robert
+Müller, Dumitru Erhan, Been Kim, and Sven Dähne. Learning how to
+explain neural networks: Patternnet and patternattribution. International
+Conference on Learning Representations, 2018.
+Pieter-Jan Kindermans, Sara Hooker, Julius Adebayo, Maximilian Alber,
+Kristof T. Schütt, Sven Dähne, Dumitru Erhan, and Been Kim. The (un)
+reliability of saliency methods. In Explainable AI: Interpreting, Explaining
+and Visualizing Deep Learning, pages 267–280. Springer, 2019.
+Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimiza-
+tion. International Conference on Learning Representations, 2014.
+Alex Krizhevsky, Ilya Sutskever, and Geoffrey E. Hinton. Imagenet classi-
+ﬁcation with deep convolutional neural networks. In Advances in Neural
+Information Processing Systems, pages 1097–1105, 2012.
+Taku Kudo and John Richardson. Sentencepiece: A simple and language
+independent subword tokenizer and detokenizer for neural text processing.
+In Proceedings of the 2018 Conference on Empirical Methods in Natural Language
+Processing: System Demonstrations, pages 66–71, 2018.
+BIBLIOGRAPHY
+51
+Jiwei Li, Xinlei Chen, Eduard Hovy, and Dan Jurafsky. Visualizing and
+understanding neural models in nlp. In Proceedings of the 2016 Conference
+of the North American Chapter of the Association for Computational Linguistics:
+Human Language Technologies, pages 681–691, 2016.
+Seppo Linnainmaa. The representation of the cumulative rounding error of
+an algorithm as a taylor expansion of the local rounding errors. Master’s
+Thesis (in Finnish), University of Helsinki, 1970.
+Tal Linzen, Emmanuel Dupoux, and Yoav Goldberg. Assessing the ability of
+lstms to learn syntax-sensitive dependencies. Transactions of the Association
+for Computational Linguistics, 4:521–535, 2016.
+Zachary C. Lipton. The mythos of model interpretability. Queue, 16(3):31–57,
+2018.
+Nelson F. Liu, Matt Gardner, Yonatan Belinkov, Matthew E. Peters, and
+Noah A. Smith. Linguistic knowledge and transferability of contextual
+representations. In Proceedings of the 2019 Conference of the North American
+Chapter of the Association for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long and Short Papers), pages 1073–1094, 2019a.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen,
+Omer Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. Roberta:
+A robustly optimized BERT pretraining approach. CoRR, arXiv:1907.11692,
+2019b.
+Tania Lombrozo. The structure and function of explanations. Trends in
+cognitive sciences, 10(10):464–470, 2006.
+Zhou Lu, Hongming Pu, Feicheng Wang, Zhiqiang Hu, and Liwei Wang. The
+expressive power of neural networks: A view from the width. In Advances
+in Neural Information Processing Systems, pages 6231–6239, 2017.
+Andrew L. Maas, Raymond E. Daly, Peter T. Pham, Dan Huang, Andrew Y.
+Ng, and Christopher Potts. Learning word vectors for sentiment analysis.
+In Proceedings of the 49th Annual Meeting of the Association for Computational
+Linguistics: Human Language Technologies, pages 142–150, 2011.
+Christopher D. Manning and Hinrich Schütze. Foundations of statistical natural
+language processing. MIT press, 1999.
+52
+BIBLIOGRAPHY
+Mitchell Marcus et al. Treebank-3 LDC99T42, 1999. Philadelphia: Linguistic
+Data Consortium.
+Tom McCoy, Ellie Pavlick, and Tal Linzen. Right for the wrong reasons: Di-
+agnosing syntactic heuristics in natural language inference. In Proceedings
+of the 57th Annual Meeting of the Association for Computational Linguistics,
+pages 3428–3448, 2019.
+Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. Efﬁcient esti-
+mation of word representations in vector space. CoRR, arXiv:1301.3781,
+2013.
+Tim Miller. Explanation in artiﬁcial intelligence: Insights from the social
+sciences. Artiﬁcial Intelligence, 267:1–38, 2019.
+Sina Mohseni and Eric D. Ragan. A human-grounded evaluation benchmark
+for local explanations of machine learning. CoRR, arXiv:1801.05075, 2018.
+Grégoire Montavon, Wojciech Samek, and Klaus-Robert Müller. Methods
+for Interpreting and Understanding Deep Neural Networks. Digital Signal
+Processing, 73:1–15, 2018.
+Isaac Newton. The method of ﬂuxions and inﬁnite series. Henry Woodfall, 1736.
+Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur.
+Librispeech: an asr corpus based on public domain audio books.
+In
+2015 IEEE International Conference on Acoustics, Speech and Signal Processing
+(ICASSP), pages 5206–5210. IEEE, 2015.
+Douglas B. Paul and Janet M. Baker. The design for the wall street journal-
+based csr corpus. In Proceedings of the workshop on Speech and Natural
+Language, pages 357–362. Association for Computational Linguistics, 1992.
+Karl Pearson. VII. Note on regression and inheritance in the case of two
+parents. Proceedings of the Royal Society of London, 58(347-352):240–242, 1895.
+Jeffrey Pennington, Richard Socher, and Christopher D. Manning. Glove:
+Global vectors for word representation. In Proceedings of the 2014 conference
+on empirical methods in natural language processing (EMNLP), pages 1532–
+1543, 2014.
+Matthew Peters, Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher
+Clark, Kenton Lee, and Luke Zettlemoyer. Deep contextualized word
+BIBLIOGRAPHY
+53
+representations. In Proceedings of the 2018 Conference of the North American
+Chapter of the Association for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long Papers), pages 2227–2237, 2018.
+Steven T. Piantadosi. Zipf’s word frequency law in natural language: A
+critical review and future directions. Psychonomic bulletin & review, 21(5):
+1112–1130, 2014.
+Daniel Povey, Vijayaditya Peddinti, Daniel Galvez, Pegah Ghahremani, Vi-
+mal Manohar, Xingyu Na, Yiming Wang, and Sanjeev Khudanpur. Purely
+sequence-trained neural networks for asr based on lattice-free mmi. In
+Interspeech, pages 2751–2755, 2016.
+Ning Qian. On the momentum term in gradient descent learning algorithms.
+Neural networks, 12(1):145–151, 1999.
+Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang,
+Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. Exploring the
+limits of transfer learning with a uniﬁed text-to-text transformer. CoRR,
+arXiv:1910.10683, 2019.
+Joseph Raphson. Analysis Aequationum Universalis. London, 1690.
+Marco Tulio Ribeiro, Sameer Singh, and Carlos Guestrin. Why should i trust
+you?: Explaining the predictions of any classiﬁer. In Proceedings of the 22nd
+ACM SIGKDD international conference on knowledge discovery and data mining,
+pages 1135–1144. ACM, 2016.
+Herbert Robbins and Sutton Monro. A stochastic approximation method.
+The annals of mathematical statistics, pages 400–407, 1951.
+Marko Robnik-Šikonja and Igor Kononenko. Explaining classiﬁcations for
+individual instances. IEEE Transactions on Knowledge and Data Engineering,
+20(5):589–600, 2008.
+Neal J. Roese. Counterfactual thinking. Psychological bulletin, 121(1):133, 1997.
+Neal J. Roese and James M. Olson. What might have been: The social psychology
+of counterfactual thinking. Psychology Press, 2014.
+Sebastian Ruder. Nlp’s imagenet moment has arrived. The Gradient, 2018.
+54
+BIBLIOGRAPHY
+David E. Rumelhart, Geoffrey E. Hinton, and Ronald J. Williams. Learning
+representations by back-propagating errors. nature, 323(6088):533–536,
+1986a.
+David E. Rumelhart, Geoffrey E. Hinton, and Ronald J. Williams. Learning
+internal representations by error propagation. In D. E. Rumelhart and
+J. L. McClelland, editors, Parallel distributed processing: explorations in the
+microstructure of cognition, volume 1, chapter 8, pages 318–362. MIT Press,
+1986b.
+Gerard Salton, Anita Wong, and Chung-Shu Yang. A vector space model for
+automatic indexing. Communications of the ACM, 18(11):613–620, 1975.
+Warren S. Sarle. Neural networks and statistical models. In Proceedings of the
+Nineteenth Annual SAS Users Group International Conference, 1994.
+Avanti Shrikumar, Peyton Greenside, and Anshul Kundaje. Learning impor-
+tant features through propagating activation differences. In International
+Conference on Machine Learning, pages 3145–3153, 2017.
+Ravid Shwartz-Ziv and Naftali Tishby. Opening the black box of deep neural
+networks via information. CoRR, arXiv:1703.00810, 2017.
+David Silver, Aja Huang, Chris J. Maddison, Arthur Guez, Laurent Sifre,
+George Van Den Driessche, Julian Schrittwieser, Ioannis Antonoglou, Veda
+Panneershelvam, Marc Lanctot, Sander Dieleman, Dominik Grewe, John
+Nham, Nal Kalchbrenner, Ilya Sutskever, Timothy Lillicrap, Madeleine
+Leach, Koray Kavukcuoglu, Thore Graepel, and Demis Hassabis. Master-
+ing the game of go with deep neural networks and tree search. nature, 529
+(7587):484, 2016.
+David Silver, Thomas Hubert, Julian Schrittwieser, Ioannis Antonoglou,
+Matthew Lai, Arthur Guez, Marc Lanctot, Laurent Sifre, Dharshan Ku-
+maran, Thore Graepel, Timothy Lillicrap, Karen Simonyan, and Demis
+Hassabis. A general reinforcement learning algorithm that masters chess,
+shogi, and go through self-play. Science, 362(6419):1140–1144, 2018.
+Karen Simonyan, Andrea Vedaldi, and Andrew Zisserman. Deep inside con-
+volutional networks: Visualising image classiﬁcation models and saliency
+maps. CoRR, arXiv:1312.6034, 2013.
+BIBLIOGRAPHY
+55
+Thomas Simpson. Essays on Several Curious and Useful Subjects, in Speculative
+and Mix’d Mathematicks. H. Woodfall, 1740.
+Richard Socher, Alex Perelygin, Jean Wu, Jason Chuang, Christopher D.
+Manning, Andrew Y. Ng, and Christopher Potts. Recursive deep models
+for semantic compositionality over a sentiment treebank. In Proceedings of
+the 2013 conference on empirical methods in natural language processing, pages
+1631–1642, 2013.
+Suraj Srinivas and François Fleuret. Full-gradient representation for neural
+network visualization. In Advances in Neural Information Processing Systems,
+pages 4126–4135, 2019.
+Daniel Strigl, Klaus Koﬂer, and Stefan Podlipnig. Performance and scalability
+of gpu-based convolutional neural networks. In 2010 18th Euromicro Con-
+ference on Parallel, Distributed and Network-based Processing, pages 317–324.
+IEEE, 2010.
+Mukund Sundararajan, Ankur Taly, and Qiqi Yan. Axiomatic Attribution
+for Deep Networks. In International Conference on Machine Learning, pages
+3319–3328, 2017.
+Gabriel Synnaeve, Qiantong Xu, Jacob Kahn, Edouard Grave, Tatiana
+Likhomanenko, Vineel Pratap, Anuroop Sriram, Vitaliy Liptchinsky, and
+Ronan Collobert. End-to-end asr: from supervised to semi-supervised
+learning with modern architectures. CoRR, arXiv:1911.08460, 2019.
+Naftali Tishby and Noga Zaslavsky. Deep learning and the information
+bottleneck principle. In 2015 IEEE Information Theory Workshop (ITW),
+pages 1–5. IEEE, 2015.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you
+need. In Advances in Neural Information Processing Systems, pages 5998–6008,
+2017.
+Ellen M. Voorhees and Dawn M. Tice. Building a question answering test col-
+lection. In Proceedings of the 23rd annual international ACM SIGIR conference
+on Research and development in information retrieval, pages 200–207, 2000.
+56
+BIBLIOGRAPHY
+Sandra Wachter, Brent Mittelstadt, and Chris Russell. Counterfactual expla-
+nations without opening the black box: Automated decisions and the gdpr.
+Harv. JL & Tech., 31:841, 2017.
+Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and
+Samuel R. Bowman. GLUE: A multi-task benchmark and analysis platform
+for natural language understanding. International Conference on Learning
+Representations, 2017.
+Alex Wang, Yada Pruksachatkun, Nikita Nangia, Amanpreet Singh, Julian
+Michael, Felix Hill, Omer Levy, and Samuel Bowman. Superglue: A
+stickier benchmark for general-purpose language understanding systems.
+In Advances in Neural Information Processing Systems, pages 3266–3280,
+2019a.
+Wei Wang, Bin Bi, Ming Yan, Chen Wu, Jiangnan Xia, Zuyi Bao, Liwei Peng,
+and Luo Si. Structbert: Incorporating language structures into pre-training
+for deep language understanding. In International Conference on Learning
+Representations, 2019b.
+Alex Warstadt, Amanpreet Singh, and Samuel R. Bowman. Neural network
+acceptability judgments. Transactions of the Association for Computational
+Linguistics, 7:625–641, 2019.
+Bernard L. Welch. The generalization of student’s’ problem when several
+different population variances are involved. Biometrika, 34(1/2):28–35,
+1947.
+Sarah Wiegreffe and Yuval Pinter. Attention is not not explanation. In
+Proceedings of the 2019 Conference on Empirical Methods in Natural Language
+Processing and the 9th International Joint Conference on Natural Language
+Processing (EMNLP-IJCNLP), pages 11–20, 2019.
+John Wieting, Mohit Bansal, Kevin Gimpel, and Karen Livescu. Charagram:
+Embedding words and sentences via character n-grams. In Proceedings
+of the 2016 Conference on Empirical Methods in Natural Language Processing,
+pages 1504–1515, 2016.
+Adina Williams, Nikita Nangia, and Samuel Bowman. A broad-coverage
+challenge corpus for sentence understanding through inference. In Pro-
+ceedings of the 2018 Conference of the North American Chapter of the Association
+BIBLIOGRAPHY
+57
+for Computational Linguistics: Human Language Technologies, Volume 1 (Long
+Papers), pages 1112–1122, 2018.
+D. Randall Wilson and Tony R. Martinez. The general inefﬁciency of batch
+training for gradient descent learning. Neural networks, 16(10):1429–1451,
+2003.
+Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V. Le, Mohammad Norouzi,
+Wolfgang Macherey, Maxim Krikun, Yuan Cao, Qin Gao, Klaus Macherey,
+Jeff Klingner, Apurva Shah, Melvin Johnson, Xiaobing Liu, Łukasz Kaiser,
+Stephan Gouws, Yoshikiyo Kato, Taku Kudo, Hideto Kazawa, Keith
+Stevens, George Kurian, Nishant Patil, Wei Wang, Cliff Young, Jason Smith,
+Jason Riesa, Alex Rudnick, Oriol Vinyals, Greg Corrado, Macduff Hughes,
+and Jeffrey Dean. Google’s neural machine translation system: Bridging
+the gap between human and machine translation. CoRR, arXiv:1609.08144,
+2016.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Carbonell, Russ R. Salakhut-
+dinov, and Quoc V. Le. Xlnet: Generalized autoregressive pretraining
+for language understanding. In Advances in neural information processing
+systems, pages 5754–5764, 2019.
+G. Udny Yule.
+On the methods of measuring association between two
+attributes. Journal of the Royal Statistical Society, 75(6):579–652, 1912.
+Matthew D. Zeiler and Rob Fergus. Visualizing and understanding convolu-
+tional networks. In European conference on computer vision, pages 818–833.
+Springer, 2014.
+Quanshi Zhang, Ying Nian Wu, and Song-Chun Zhu. Interpretable convolu-
+tional neural networks. In Proceedings of the IEEE Conference on Computer
+Vision and Pattern Recognition, pages 8827–8836, 2018.
+Xiang Zhang, Junbo Zhao, and Yann LeCun. Character-level convolutional
+networks for text classiﬁcation. In Advances in neural information processing
+systems, pages 649–657, 2015.
+Yukun Zhu, Ryan Kiros, Rich Zemel, Ruslan Salakhutdinov, Raquel Urtasun,
+Antonio Torralba, and Sanja Fidler. Aligning books and movies: Towards
+story-like visual explanations by watching movies and reading books. In
+58
+BIBLIOGRAPHY
+Proceedings of the IEEE international conference on computer vision, pages
+19–27, 2015.
+Luisa M. Zintgraf, Taco S. Cohen, Tameem Adel, and Max Welling. Vi-
+sualizing deep neural network decisions: Prediction difference analysis.
+International Conference on Learning Representations, 2017.
+George Kingsley Zipf. Human behavior and the principle of least effort. Addison-
+Wesley Press, 1949.

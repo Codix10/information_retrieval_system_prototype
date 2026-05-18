@@ -1,0 +1,1384 @@
+Title: A general-purpose material property data extraction pipeline from large polymer corpora using Natural Language Processing
+Source URL: http://arxiv.org/abs/2209.13136v1
+--------------------------------------------------
+
+A general-purpose material property data
+extraction pipeline from large polymer corpora
+using Natural Language Processing
+Pranav Shetty,† Arunkumar Chitteth Rajan,‡ Christopher Kuenneth,‡ Sonakshi
+Gupta,¶ Lakshmi Prerana Panchumarti,‡ Lauren Holm,‡ Chao Zhang,† and
+Rampi Ramprasad∗,‡
+†School of Computational Science & Engineering
+‡School of Materials Science and Engineering, Georgia Institute of Technology, 771 Ferst
+Drive NW, Atlanta, Georgia 30332, USA
+¶Department of Metallurgy Engineering and Materials Science, Indian Institute of
+Technology, Indore
+E-mail: rampi.ramprasad@mse.gatech.edu
+Abstract
+The ever-increasing number of materials science articles makes it hard to infer
+chemistry-structure-property relations from published literature. We used natural lan-
+guage processing (NLP) methods to automatically extract material property data from
+the abstracts of polymer literature. As a component of our pipeline, we trained Mate-
+rialsBERT, a language model, using 2.4 million materials science abstracts, which out-
+performs other baseline models in three out of ﬁve named entity recognition datasets
+when used as the encoder for text. Using this pipeline, we obtained ∼300,000 material
+property records from ∼130,000 abstracts in 60 hours. The extracted data was ana-
+lyzed for a diverse range of applications such as fuel cells, supercapacitors, and polymer
+1
+arXiv:2209.13136v1  [cs.CL]  27 Sep 2022
+solar cells to recover non-trivial insights. The data extracted through our pipeline is
+made available through a web platform at https://polymerscholar.org which can
+be used to locate material property data recorded in abstracts conveniently.
+This
+work demonstrates the feasibility of an automatic pipeline that starts from published
+literature and ends with a complete set of extracted material property information.
+Introduction
+The number of materials science papers published annually grows at the rate of 6 % com-
+pounded annually. Quantitative and qualitative materials property information is locked
+away in these publications written in natural language that is not directly machine-readable.
+The explosive growth in published literature makes it harder to see quantitative trends by
+just directly analyzing large amounts of literature.
+Searching the literature for material
+systems that have desirable properties also becomes more challenging. Moreover, material
+information published in a non-machine-readable form contributes to data scarcity in the
+ﬁeld of materials informatics where the training of property predictors requires painstaking
+manual curation of the data of interest from literature. Here, we propose adapting techniques
+for information extraction from the natural language processing (NLP) literature to address
+these issues.
+Information extraction from the written text is well studied within NLP and involves sev-
+eral key components such as named entity recognition (NER), i.e., identifying categories to
+which words in the text belong; relation extraction, i.e., classifying relationships between ex-
+tracted entities; co-referencing, i.e., identifying clusters of named entities in the text referring
+to the same object such as a polymer and its abbreviation, and named entity normalization,
+i.e. identifying all the variations in the name for an entity across a large number of doc-
+uments. The idea of “self-supervised learning” through transformer-based models such as
+BERT,1,2 pre-trained on massive corpora of unlabeled text to learn contextual embeddings,
+is the dominant paradigm of information extraction today. A common architecture for NER
+2
+and relation extraction is to feed a labeled input to BERT and use the output vector em-
+bedding for each word along with the corresponding labels (which could be entity labels
+or relation labels) as inputs to a downstream machine learning model (typically a neural
+network) that learns to predict those labels. The tasks mentioned above are label intensive.
+Extending these methods to new domains requires labeling new data sets with ontologies
+that are tailored to the speciﬁc domain of interest.
+ChemDataExtractor,3 ChemSpot,4 and ChemicalTagger5 are tools that perform NER to
+tag material entities. For example, ChemDataExtractor has been used to create a database of
+Neel temperatures and Curie temperatures that were automatically mined from literature.6
+It has also been used to generate a literature extracted database of magnetocaloric materials
+and train property prediction models for key ﬁgures of merit.7 In the space of polymers, the
+authors of Ref. 8 used a semi-automated approach that crawled papers automatically and
+used students to extract the Flory-Huggins parameter (a measure of the aﬃnity between two
+materials, eg., a polymer and a solvent). Word embedding approaches were used in Ref. 9
+to generate entity-rich documents for human experts to annotate which were then used to
+train a polymer named entity tagger. Most previous NLP-based eﬀorts in materials science
+have focused on inorganic materials but limited work has been done to address information
+extraction challenges in polymers. Polymers in practice have several non-trivial variations in
+name for the same material entity which requires polymer names to be normalized. Moreover,
+unlike inorganic entities, polymer names cannot typically be converted to SMILES strings
+that are usable for downstream machine learning but the SMILES strings must instead be
+inferred from ﬁgures in the paper that contain the corresponding structure.
+Past work to automatically extract material property information from literature has fo-
+cused on speciﬁc properties typically using keyword search methods or regular expressions.10
+However, there are few solutions in the literature that address building general-purpose ca-
+pabilities for extracting material property information, i.e., for any material property. More-
+over, property extraction and analysis of polymers from a large corpus of literature has also
+3
+not yet been addressed. Automatically analyzing large materials science corpora has enabled
+many novel discoveries in recent years such as Ref. 11, where a literature extracted data set
+of zeolites was used to analyze interzeolite relations. Using word embeddings trained on such
+corpora has also been used to predict novel materials for certain applications in inorganics
+as well as polymers.12,13
+In this work, we built a general-purpose pipeline for extracting material property data.
+Starting with a corpus of 2.4 million materials science papers described in Ref. 12, we se-
+lected 750 abstracts from the polymer domain and annotated each of the abstracts using our
+own ontology that was designed for the purpose of extracting information from materials
+science literature. Using these 750 annotated abstracts we trained an NER model, using our
+MaterialsBERT language model to encode the input text into vector representations. Mate-
+rialsBERT in turn was trained by starting from PubMedBERT, another language model, and
+using 2.4 million materials science abstracts to continue training the model.14 The trained
+NER model was applied to polymer abstracts and heuristic rules were used to combine the
+predictions of the NER model and obtain material property records from all polymer rele-
+vant abstracts. This pipeline is illustrated in Figure 1. We restricted our focus to abstracts
+as associating property value pairs with their corresponding materials is a more tractable
+problem in abstracts. We analyzed the data obtained using this pipeline for applications as
+diverse as polymer solar cells, fuel cells, and supercapacitors and showed that several known
+trends and phenomena in materials science can be inferred using this data. Moreover, we
+trained a machine learning predictor for the glass transition temperature using automatically
+extracted data (Supplementary Information Section S5).
+This is the ﬁrst work to build a general-purpose material property data extraction
+pipeline, for any material property. MaterialsBERT, the language model that powers our
+information extraction pipeline is released in order to enable the information extraction ef-
+forts of other materials researchers. We show that MaterialsBERT outperforms other similar
+BERT-based language models such as BioBERT15 and ChemBERT16 on three out of ﬁve
+4
+materials science NER data sets. The data extracted using this pipeline can be explored
+using a convenient web-based interface (https://www.polymerscholar.org) which can aid
+polymer researchers in locating material property information of interest to them.
+Figure 1: Pipeline used for extracting material property records from a corpus of abstracts
+Results
+Abstract annotation
+Our ontology for extracting material property information consists of 8 entity types namely
+POLYMER, POLYMER CLASS, PROPERTY VALUE, PROPERTY NAME, MONOMER,
+ORGANIC MATERIAL, INORGANIC MATERIAL, and MATERIAL AMOUNT. For a
+detailed description of these entity types, see Table 1.
+This ontology captures the key
+pieces of information commonly found in abstracts and the information we wish to utilize
+5
+for downstream purposes. Note that, unlike some other studies, our ontology scheme does
+not annotate entities using the BIO tagging scheme, i.e., Beginning-Inside-Outside of the
+labeled entity. Instead, we opt to keep the labels simple and annotate only tokens belonging
+to our ontology and label all other tokens as ‘OTHER’. This is because, as reported in Ref.
+14, for BERT-based sequence labeling models, the advantage oﬀered by explicit BIO tags is
+negligible and IO tagging schemes suﬃce. More detailed annotation guidelines are provided
+in the Supplementary Information Section S1.
+A corpus of 2.4 million materials science
+papers was ﬁltered to obtain a dataset of abstracts that were polymer relevant and likely
+to contain the entity types of interest to us. We did so by ﬁltering abstracts containing the
+string ‘poly’ to ﬁnd polymer-relevant abstracts and used regular expressions to ﬁnd abstracts
+that contained numeric information.
+Using the above-described ontology, we annotated 750 abstracts and split the abstracts
+into 80 % for training, 10 % for validation, and 10 % for testing. Prior to manual annotation,
+we pre-annotated the dataset using dictionaries of entities for the entity types where one
+was available.17 This was intended to speed up the annotation process. This dataset was
+annotated by three domain experts using the tool Prodigy (https://prodi.gy). Annotation
+was done over three rounds using a small sample of abstracts in each round. With each
+round, the annotation guidelines were reﬁned and the abstracts in the previous rounds were
+re-annotated using the reﬁned guidelines.
+In order to assess the inter-annotator agreement between the three annotators, we use
+10 common abstracts to measure Cohen’s Kappa and Fleiss Kappa18 metrics. The Fleiss
+Kappa metric was computed to be 0.885 and the pairwise Cohen’s Kappa metric to be (0.906,
+0.864, 0.887) for each of the three pairs of annotators. These metrics are comparable to inter-
+annotator agreements reported elsewhere in the literature19 and indicate good homogeneity
+in the annotations.
+6
+Table 1: Description of each entity type in the ontology used for annotating polymer abstracts
+Entity type
+Description
+POLYMER
+Material entities that are polymers
+ORGANIC MATERIAL
+Material entities that are organic but not
+polymers. Typically used as plasticizers or
+cross-linking agents
+MONOMER
+Material entities which are explicitly indi-
+cated as being the repeat units for a POLY-
+MER entity
+POLYMER CLASS
+Material entities that don’t refer to a speciﬁc
+chemical substance but are broad terms used
+for a class of polymers
+INORGANIC MATERIAL
+Material entities which are inorganic and are
+typically used as additives in a polymer for-
+mulation
+MATERIAL AMOUNT
+Entity type indicating the amount of a par-
+ticular material in a material formulation
+PROPERTY NAME
+Entity type for a material property
+PROPERTY VALUE
+Entity type including a numeric value and its
+unit for a material property
+OTHER
+Default entity type used for all tokens that
+do not lie in any of the above categories
+NER model
+The architecture used for training our NER model is depicted in Figure 2.
+BERT and
+BERT-based models have become the de-facto solutions for a large number of NLP tasks.1
+It embodies the transfer learning paradigm in which a model is trained on a large amount of
+unlabeled text using unsupervised objectives (not shown in the ﬁgure). The resulting BERT
+encoder can be used to generate token embeddings for the input text that are conditioned
+on all other input tokens and hence are context-aware. We used a BERT-based encoder to
+generate representations for tokens in the input text as shown in Figure 2. The generated
+representations were used as inputs to a linear layer connected to a softmax non-linearity
+that predicted the entity type of each token. We used a number of diﬀerent encoders and
+compared the performance of the resulting models on our dataset of annotated polymer
+7
+Figure 2: Model architecture used for named entity recognition: Each token in the input
+sequence is converted to a contextual embedding by a pre-trained transformer model which
+is then input to a single layer neural network. The output of the neural network is the entity
+type of the input token.
+abstracts. We compared these models for a number of diﬀerent publicly available materials
+science datasets as well.
+We used early stopping while training the NER model, i.e., the number of epochs of
+training was determined by the peak performance of the model on the validation set as
+evaluated after every epoch of training.20 We also ﬁne-tuned PubMedBERT on the abstracts
+of the 2.4 million papers, referred to as MaterialsBERT. During ﬁne-tuning, we load the
+model and weights of PubMedBERT and continue training using the unsupervised objectives
+that PubMedBERT was originally trained on. The text of our corpus of abstracts forms the
+unlabeled input to the model. This is one of the BERT-based encoders that we test.
+8
+Evaluation methods
+The performance of the NER model is evaluated using precision, recall and F1 score of the
+predicted entity tag compared to the ground truth labels. These are deﬁned as below:
+Precision =
+TP
+TP + FP
+Recall =
+TP
+TP + FN
+F1 = 2 × Precision × Recall
+Precision + Recall
+(1)
+where TP are the true positives, FP are the false positives and FN are the false negatives.
+Each of the above metrics is reported as a % value. We consider a predicted label to be a
+true positive only when the label of a complete entity is predicted correctly. For instance, for
+the polymer ‘polyvinyl ethylene’, both ‘polyvinyl’ and ‘ethylene’ must be correctly labeled,
+else the entity is deemed to be predicted incorrectly.
+NER model performance
+Table 2: Performance of various pre-trained BERT-based encoders on the test set of polymer
+abstracts. Values are reported in %
+Model
+Precision
+Recall
+F1
+MaterialsBERT (ours)
+62.5
+70.6
+66.4
+PubMedBERT
+61.4
+70.7
+65.8
+MatBERT
+60.9
+70.1
+65.2
+BioBERT
+59.2
+66.3
+62.6
+ChemBERT
+52.2
+62.6
+57.0
+BERT-base
+52.1
+61.0
+56.2
+The performance of various pre-trained BERT-based language models tested for training
+an NER model using our annotated data set of polymer abstracts is shown in Table 2. We
+observe that MaterialsBERT, the model ﬁne-tuned by us on 2.4 million materials science
+9
+abstracts using PubMedBERT as the starting point, outperforms PubMedBERT as well as
+other language models used. This is in agreement with results previously reported where
+the ﬁne-tuning of a transformer-based language model on a domain-speciﬁc corpus results
+in improved downstream task performance.14 Similar trends are observed across two of the
+four materials science data sets as reported in Table 3 and thus MaterialsBERT outperforms
+other pre-trained language models in three out of ﬁve materials science data sets. These
+NER datasets were chosen to span a range of subdomains within materials science, i.e.,
+across organic and inorganic materials. A more detailed description of these NER datasets
+is provided in Supplementary Information Section S2. Note that all pre-trained encoders
+tested in Table 2 use the BERT-base architecture, diﬀering in their weights and hence are
+comparable. MaterialsBERT outperforms PubMedBERT on all datasets except ChemD-
+NER, which demonstrates that ﬁne-tuning on a domain speciﬁc corpus indeed produces a
+performance improvement on downstream classiﬁcation tasks. ChemBERT is BERT-base
+ﬁne-tuned on a corpus of ∼400,000 organic chemistry papers and also out-performs BERT-
+base1 across the NER data sets tested. BioBERT15 was trained by ﬁne-tuning BERT-base
+using the PubMed corpus and thus has the same vocabulary as BERT-base in contrast to
+PubMedBERT which has a vocabulary speciﬁc to the biomedical domain. Ref. 21 describes
+the model MatBERT which was pre-trained from scratch using a corpus of 2 million mate-
+rials science articles. Despite MatBERT being a model that was pre-trained from scratch,
+MaterialsBERT outperforms MatBERT on three out of ﬁve datasets. While the vocabu-
+lary of MatBERT and MaterialsBERT are both relevant to the domain of materials science,
+this performance diﬀerence can likely be attributed to the fact that PubMedBERT, the ini-
+tial model for MaterialsBERT was pre-trained on a much larger corpus of text (14 million
+abstracts and full text). All experiments shown in Table 2 and Table 3 were performed
+by us. Note that we do not test BiLSTM-based architectures22 as past work has shown
+that BERT-based architectures typically outperform BiLSTM-based ones.14,16,21 The perfor-
+mance on MaterialsBERT for each entity type in our ontology is described in Supplementary
+10
+Information Section S3.
+Table 3: Performance of various BERT based encoders on the test sets of publicly available
+materials science NER datasets. Values are reported in %
+Pre-trained en-
+coder
+ChemDNER23
+Inorganic Synthe-
+sis recipes24
+Inorganic
+Ab-
+stracts17
+ChemRxnExtractor16
+P
+R
+F1
+P
+R
+F1
+P
+R
+F1
+P
+R
+F1
+MaterialsBERT
+(ours)
+70.1
+68.2
+69.2
+69.1
+68.3
+68.6
+85.3
+86.7
+86.0
+73.5
+69.5
+71.4
+PubMedBERT
+71.5
+69.0
+70.2
+69.9
+65.3
+67.6
+84.0
+86.2
+85.0
+68.1
+59.5
+63.6
+MatBERT
+71.7
+66.9
+69.2
+68.6
+67.7
+68.2
+85.6
+86.7
+86.2
+67.4
+58.0
+62.4
+BioBERT
+70.6
+65.7
+68.0
+64.4
+63.7
+64.0
+85.6
+87.1
+86.4
+74.8
+65.4
+69.8
+ChemBERT
+72.5
+66.4
+69.4
+66.8
+64.3
+65.6
+83.2
+86.4
+84.8
+65.0
+64.0
+64.4
+BERT-base
+71.2
+65.7
+68.4
+62.4
+60.3
+61.4
+81.0
+81.9
+81.4
+57.7
+54.9
+56.2
+Quantifying the extracted data
+Using our pipeline, we extracted ∼300, 000 material property records from ∼130, 000
+abstracts. Out of our corpus of 2.4 million articles, ∼650, 000 abstracts are polymer relevant
+and around ∼130, 000 out of those contain material property data. This extraction process
+took 60 hours using a single Quadro 16 GB GPU. To place this number in context, PoLyInfo
+a comparable database of polymer property records that is publicly available has 492,645
+property records as of this writing.25 This database was manually curated by domain experts
+over many years while the material property records we have extracted using automated
+methods took 2.5 days using only abstracts and is yet of comparable size. The composition
+of these material property records is summarized in Table 4 for speciﬁc properties (grouped
+into a few property classes) that are utilized later on. For the general property class, we
+compute the number of neat polymers as the material property records corresponding to
+a single material of the POLYMER entity type. Blends correspond to material property
+records with multiple POLYMER entities while composites contain at least one material
+11
+entity that is not of the POLYMER or POLYMER CLASS entity type. To compute the
+number of unique neat polymer records, we ﬁrst counted all unique normalized polymer
+names from records that had a normalized polymer name. This accounts for the majority
+of polymers with multiple reported names as detailed in Ref. 26. Out of the remaining neat
+polymer records that did not have a normalized polymer name, we then counted all unique
+polymer names (accounting for case variations) and added them to the number of unique
+normalized polymer names to arrive at the estimated number of unique polymers.
+The
+number of extracted data points reported in Table 4 is higher than the ﬁgures shown later
+as additional constraints are imposed in each case in order to better study this data. For the
+general property class, we note that elongation at break data for an estimated 413 unique
+neat polymers was extracted. In contrast, Ref. 27 used 77 polymers to train a machine
+learning model. For tensile strength, an estimated 926 unique neat polymer data points are
+extracted while Ref. 28 used 672 data points to train a machine learning model. Thus the
+amount of data extracted in the aforementioned cases is already comparable to or greater
+than the amount of data being utilized to train property predictors in the literature. Note
+that Table 4 accounts for only 39207 points which is 13 % of the total extracted material
+property records. More details on the extracted material property records can be found in
+Supplementary Information Section S4. The reader is also encouraged to explore this data
+further through https://polymerscholar.org
+General property class
+We now analyze the properties extracted class-by-class in order to study their qualitative
+trend. Figure 3 shows property data extracted for the ﬁve most common polymer classes in
+our corpus (columns) and four most commonly reported properties (rows). Polymer classes
+are groups of polymers that share certain chemical attributes such as functional groups.
+These properties fall under the general property class as described in Table 4. The data
+is extracted when a polymer of that polymer class is part of the formulation for which
+12
+Table 4: Number of material property records extracted for several key polymer properties
+and ﬁgures of merit for certain applications
+Property class
+Property
+Total number of
+datapoints
+neat
+polymers/
+blends/ compos-
+ites
+Estimated num-
+ber
+of
+unique
+neat polymers
+General
+Molecular Weight
+9053
+9053/-/-
+2623
+Glass Transition Tem-
+perature
+6155
+4612/1036/507
+1732
+Electrical
+conductiv-
+ity
+6030
+3202/606/2222
+1017
+Tensile Strength
+4382
+2679/651/1052
+926
+Elongation at Break
+1499
+954/234/311
+413
+Polymer
+Solar
+Cells
+Power Conversion Ef-
+ﬁciency
+3595
+-
+-
+Open Circuit Voltage
+1386
+-
+-
+Short Circuit Current
+1049
+-
+-
+Fill Factor
+966
+-
+-
+Fuel Cells
+Proton conductivity
+1359
+-
+-
+Areal Power Density
+1235
+-
+-
+Areal Current Density
+295
+-
+-
+Methanol
+permeabil-
+ity
+174
+-
+-
+Supercapacitors
+Gravimetric
+Energy
+Density
+1131
+-
+-
+Gravimetric
+Power
+Density
+898
+-
+-
+a property is reported and does not necessarily correspond to homopolymers but instead
+could correspond to blends or composites.
+The polymer class is “inferred” through the
+POLYMER CLASS entity type in our ontology and hence must be mentioned explicitly for
+the materials record to be part of this plot. Several key trends are captured in this plot.
+From the glass transition temperature (Tg ) row, we observe that polyamides and polyimides
+typically have higher Tg than other polymer classes. Molecular weights unlike the other
+properties reported are not intrinsic material properties but are determined by processing
+parameters. The reported molecular weights are far more frequent at lower molecular weights
+than at higher molecular weights; mimicking a power-law distribution rather than Gaussian
+distribution. This is consistent with longer chains being more diﬃcult to synthesize than
+13
+Figure 3: Material property data extracted from abstracts for material systems that contain
+a polymer from the polymer classes of polyurethane, polyimide, polyamide, polyester, and
+polysiloxane in each corresponding column. These are the most commonly reported polymer
+classes and the properties reported are the most commonly reported properties.
+shorter chains. For electrical conductivity, we ﬁnd that polyimides have much lower reported
+values which is consistent with them being widely used as electrical insulators. Also note
+that polyimides have higher tensile strengths as compared to other polymer classes, which
+is a well-known property of polyimides.29
+Figure 4 shows mechanical properties measured for ﬁlms which demonstrates the trade-
+oﬀbetween elongation at break and tensile strength that is well known for material systems
+(often called the strength-ductility trade-oﬀdilemma). Materials with high tensile strength
+tend to have a low elongation at break and conversely, materials with high elongation at break
+tend to have low tensile strength.30 This known fact about the physics of material systems
+14
+emerges from an amalgamation of points independently gathered from diﬀerent papers. In
+the next section we take a closer look at pairs of properties for various devices that reveal
+similarly interesting trends.
+Figure 4: Tensile Strength Vs Elongation at break for ﬁlms demonstrating the strength-
+ductility trade-oﬀ
+Knowledge extraction
+Next, we consider a few device applications and co-relations between the most important
+properties reported for these applications to demonstrate that non-trivial insights can be
+obtained by analyzing this data. We consider three device classes namely polymer solar
+cells, fuel cells, and supercapacitors and show that their known physics is being reproduced
+by NLP extracted data. We ﬁnd documents speciﬁc to these applications by looking for
+relevant keywords in the abstract such as ‘polymer solar cell’ or ‘fuel cell’. The total number
+of data points for key ﬁgures of merit for each of these applications is given in Table 4.
+15
+(a)
+(b)
+(c)
+(d)
+(e)
+(f)
+Figure 5: Co-relations between key properties extracted automatically from literature for
+polymer solar cells a) Power Conversion Eﬃciency against short circuit current b) Power
+Conversion Eﬃciency against ﬁll factor c) Power Conversion Eﬃciency against open circuit
+voltage. Co-relations between key properties extracted manually from literature for polymer
+solar cells d) Power Conversion Eﬃciency against short circuit current e) Power Conversion
+Eﬃciency against ﬁll factor f) Power Conversion Eﬃciency against open circuit voltage.
+Observe that the trends in this ﬁgure match well with NLP extracted data in Figure 5.
+Reproduced here with permission from Ref. 31
+16
+Polymer solar cells
+Polymer solar cells, in contrast to conventional silicon-based solar cells, have the beneﬁt of
+lower processing cost but suﬀer from lower power conversion eﬃciencies. Improving their
+power conversion eﬃciency by varying the materials used in the active layer of the cell is
+an active area of research.32 Figure 5a)-c) shows the power conversion eﬃciency for polymer
+solar cells plotted against the corresponding short circuit current, ﬁll factor and open circuit
+voltage for NLP extracted data while Figure 5d)-f) shows the same pairs of properties for
+data extracted manually as reported in Ref. 31. Each data point in Figure 5a)-c) is taken
+from a particular paper and corresponds to a single material system. It is clear from Figure
+5(c) that the peak power conversion eﬃciencies reported are around 16.71 % which is close to
+the maximum known values reported in the literature33 as of this writing. The open-circuit
+voltages (OCV) appear to be Gaussian distributed at around 0.85 V. Figure 5(a) shows a
+linear trend between short circuit current and power conversion eﬃciency. It is clear that
+the trends observed in Figure 5a)-c) for NLP extracted data are quite similar to the trends
+observed from manually curated data in Figure 5d)-f).
+Fuel Cells
+Fuel cells are devices that convert a stream of fuel such as methanol or hydrogen and oxygen
+to electricity. Water is one of the primary by-products of this conversion making this a
+clean source of energy. A polymer membrane is typically used as a separating membrane
+between the anode and cathodes in fuel cells.34 Improving the proton conductivity and
+thermal stability of this membrane to produce fuel cells with higher power density is an
+active area of research. Figure 6(a) and 6(b) show plots for fuel cells comparing pairs of key
+performance metrics. The points on the power density versus current density plot (Figure
+6(a)) lie along the line with a slope of 0.4 V which is the typical operating voltage of a fuel cell
+under maximum current densities.35 Each point in this plot corresponds to a fuel cell system
+extracted from the literature that typically reports variations in the polymer membrane.
+17
+Figure 6(b) illustrates yet another use-case of this capability, i.e., to ﬁnd material systems
+lying in a desirable range of property values for the more speciﬁc case of direct methanol
+fuel cells. For such fuel cell membranes, low methanol permeability is desirable in order to
+prevent the methanol fuel from crossing the membrane and poisoning the cathode side.36
+High proton conductivity is simultaneously desirable. The box shown in the ﬁgure illustrates
+the desirable region and can thus be used to easily locate promising materials systems.
+(a)
+(b)
+(c)
+(d)
+(e)
+(f)
+Figure 6: Co-relations between key properties extracted automatically from literature for
+three diﬀerent applications a) Areal current Density Vs Areal Power Density for fuel cells.
+the slope of the best bit line has a slope of 0.4V which is the typical operating voltage of a
+fuel cell b) Proton Conductivity Vs Methanol permeability for fuel cells. The red box shows
+the desirable region of the property space c) Up-to-date Ragone plot for supercapacitors
+showing energy density Vs power density.
+d) Power Conversion Eﬃciency against time
+for fullerene acceptors and e) Power Conversion Eﬃciency against time for non-fullerene
+acceptors f) Trend of number of datapoints extracted by our pipeline over time. The dashed
+lines represent the number of papers published for each of the three applications in the plot
+and correspond to the dashed Y-axis.
+18
+Trends across time
+We show that known trends across time in polymer literature are also being reproduced in
+our extracted data. A Ragone plot illustrates the trade-oﬀbetween energy and power density
+for devices and supercapacitors are a class of devices that have high power density but low
+energy density. Figure 6(c) illustrates the trade-oﬀbetween gravimetric energy density and
+gravimetric power density for supercapacitors and is eﬀectively an up-to-date version of the
+Ragone plot for supercapacitors.37 Historically, in most Ragone plots, the energy density
+of supercapacitors ranges from 1 to 10 Wh/kg.38 However, this is no longer true as several
+recent papers have demonstrated energy densities of up to 100 Wh/kg.39–41 As seen in Figure
+6(c), the majority of points beyond an energy density of 10 Wh/kg are from the previous
+two years, i.e., 2020 and 2021.
+Figure 6(d) and Figure 6(e) shows the evolution of power conversion eﬃciency of polymer
+solar cells for fullerene acceptors and non-fullerene acceptors. These are the two major classes
+of acceptors which along with a polymer donor form the active layer of a bulk heterojunction
+polymer solar cell. Observe that more papers with fullerene acceptors are found in earlier
+years with the number dropping in recent years while non-fullerene acceptor based papers
+have become more numerous with time. They also exhibit higher power conversion eﬃciencies
+than their fullerene counterparts in recent years. This is a known trend within the domain
+of polymer solar cells reported in Ref. 42. It is worth noting that the authors realized this
+trend by studying the NLP extracted data and then looking for references to corroborate
+this observation.
+Figure 6(f) shows the number of datapoints extracted by our pipeline over time for the
+various categories described in Table 4. Observe that the number of datapoints of the general
+category have grown exponentially at a rate of 6% per year. Out of the three applications
+considered in Figure 6(f), polymer solar cells have historically had the largest number of
+papers as well as datapoints although that appears to be declining over the past few years.
+Observe that there is a decline in the number of datapoints as well as the number of papers
+19
+in 2020 and 2021. This is likely attributable to the COVID-19 pandemic43 which appears to
+have lead to a drop in the number of experimental papers published that form the input to
+our pipeline.44
+Discussion
+A natural language processing pipeline that extracts material property records from abstracts
+has been built and demonstrated. This however has some limitations in practice that we
+describe below:
+1. Materials property information is multi-modal and can be found in the text, tables,
+and ﬁgures in the body of the paper. Co-referencing material entity mentions across
+large spans of text and across ﬁgures and tables is a challenging problem. In addition to
+this, relation extraction of material entities and property value pairs occurring across
+sentences, are challenges that need to be addressed when extending this work from
+abstracts to full-text.
+2. The current ontology used consists of the most important entity types found in mate-
+rials science literature. This makes it easier to combine material and property infor-
+mation using heuristic rules but misses other information about the material property
+record such as measurement methods or measurement conditions which in most cases
+would inﬂuence the property value.
+3. Converting polymer names to a structure (typically a SMILES string45) is also a bot-
+tleneck to training downstream models as this must be done manually. Tools that can
+reliably and robustly convert images of chemical structures found in the literature to
+SMILES string are an area of future work for the community. The SMILES string so
+generated can be used to generate a structural ﬁngerprint vector of the polymer which
+in turn can serve as the input to a machine learning model. Expanding the scope of
+20
+this pipeline to images in the body of the paper would allow training downstream prop-
+erty models without any additional curation for converting images to SMILES strings.
+Training robust property predictors in this manner would in turn allow the continuous
+and semi-automatic design of new materials, thus addressing a missing link in materials
+informatics. An example of manually converting polymer names to SMILES strings
+followed by the training of a property prediction model for glass transition temperature
+is shown in Supplementary Information Section S5.
+The automated extraction of material property records enables researchers to search
+through literature with greater granularity and ﬁnd materials systems in the range of in-
+terest. It also enables insights to be inferred by analyzing large amounts of literature that
+would not otherwise be possible. As shown in the section “Knowledge extraction”, a diverse
+range of applications were analyzed using this workﬂow to reveal non-trivial albeit known
+insights. This is the ﬁrst work to build a general purpose capability to extract material
+property records from published literature. ∼300, 000 material property records were ex-
+tracted from ∼130, 000 polymer abstracts using this capability. Through our web interface
+(https://polymerscholar.org) the community can conveniently locate material property
+data published in abstracts. As part of this work, we also train and release MaterialsBERT,
+a language model that is ﬁne-tuned on 2.4 million materials science abstracts using Pub-
+MedBERT as the starting point and obtains the best F1 score across three of ﬁve materials
+science NER data sets tested.
+Growing the extracted material property data set further would require extending this
+capability to the body of the paper. This would require more robust methods to associate
+the entities extracted using named entity recognition. A few steps also remain in order to
+utilize the extracted data to produce trained machine learning property prediction models.
+The biggest bottleneck in the case of organic materials is obtaining SMILES strings for
+material entities which can then be used to generate structural ﬁngerprints for downstream
+machine learning models. There is also a wealth of additional information such as processing
+21
+conditions or measurement conditions that are not captured in our ontology. Addressing
+these bottlenecks would enable automatic and continuous updates of materials databases
+that can seamlessly power downstream property predictor machine learning models.
+Methods
+Corpus of papers
+We have created a corpus of ∼2.4 million journal articles from the materials science domain.
+The papers were downloaded from the APIs and websites from publishers such as Elsevier,
+Wiley, Royal Society of Chemistry, American Chemical Society, Springer Nature, Taylor &
+Francis, and the American Institute of Physics. The corpus used in this work is an expanded
+version of the corpus described previously in Ref. 12. 750 abstracts of this corpus were
+annotated and used to train an NER model. Furthermore, the trained NER model along
+with heuristic rules is used to extract material property records from the abstracts of the
+full corpus.
+Preprocessing of documents
+Because the documents in our corpus are HTML formatted, we stripped all HTML tags
+to parse the plain text. Moreover, we replaced HTML superscripts and subscripts (<sup>
+and <sub>) with plain text using the LaTeX convention of ˆ {} and
+{}, respectively. This
+is important in order to extract units of quantities as well as property values reported in
+scientiﬁc notation. Property values recorded in this notation were converted back to ﬂoating-
+point numbers downstream when the numeric value was to be recovered. We also mapped
+characters such as spaces or special characters that have multiple Unicode representations but
+have a similar appearance by creating a custom mapping. For tokenization, i.e., breaking
+up text into units known as tokens which are used for downstream processing, we used
+wordpiece tokenization which is the standard tokenization scheme used with BERT and
+22
+BERT-based models.1,46 For instance ‘The molecular weight of the result ##ant P ##LL
+##A - rich polymer was enhanced .’ is what a sentence would look like post-tokenization.
+The word ‘resultant’ and the polymer ‘PLLA’ have been broken into sub-words tokens. This
+is necessary in order to tokenize arbitrary text inputs using a ﬁxed-sized vocabulary as a
+larger vocabulary would increase the size of the model. Starting with a set of characters
+(alphabets, numbers etc), certain combinations of characters are iteratively merged and
+added to the vocabulary till the vocabulary reaches a certain ﬁxed size.47 The characters to
+be merged are selected based on combinations that maximize the likelihood of the input text.
+This typically breaks up words into meaningful subunits such as ‘resultant’ being separated
+into ‘result’ and ‘##ant’ which reduces the size of the vocabulary. This does not always
+happen though as seen with the example of ‘PLLA’.
+Training MaterialsBERT
+BERT-base, the original BERT model, was trained using an unlabeled corpus that included
+English Wikipedia and the Books Corpus.48 The training objectives included using the
+masked language modeling task, which masks a random subset of the input text and asks
+the language model to predict it and the next sentence prediction task, which determines
+for a given sentence pair whether one sentence follows the other in the training data.1 The
+vocabulary of the tokenizer was ﬁxed at 30,000 tokens. It is known that a domain-speciﬁc
+BERT encoder improves performance on downstream NLP tasks for that domain because
+the vocabulary used for tokenization is more representative of the application of interest
+and because the unlabeled text is also closer to the domain of interest resulting in ”better”
+contextual embeddings.14 BERT-base was pre-trained from scratch using a general English
+language corpus.15
+Even though computationally expensive, pre-training NLP models from scratch has the
+advantage of creating a model with a vocabulary that is customized for the domain of interest.
+To give an idea of how resource-intensive this can be, note that RoBERTa, a similarly pre-
+23
+trained encoder used the computing power of 1024 V100 GPUs for one day.49 As this is not a
+viable route for us, we ﬁne-tuned a model starting from previous checkpoints. The vocabulary
+used while ﬁne-tuning a model in contrast remains the same as the underlying model which is
+a compromise we must accept. We used PubMedBERT as our starting point and ﬁne-tuned
+it using 2.4 million materials science abstracts.14 The PubMedBERT model used here is
+itself pre-trained from scratch using the PubMed corpus (14 million abstracts from PubMed
+as well as full text articles from PubMedCentral), using the BERT-base architecture. We
+picked PubMedBERT as our starting point as its vocabulary is speciﬁc to the biomedical
+domain which overlaps with materials science as material entities are frequently mentioned
+in biomedical papers. During ﬁne-tuning, the model weights of the checkpoint to be used
+are loaded and training is continued using the same training objectives as the model that
+is ﬁne-tuned but using the unlabeled text from the ﬁne-tuning corpus as the input. The
+hyperparameters used during ﬁne-tuning were identical to those used to train PubMedBERT.
+We used the ”Transformers” library for ﬁne-tuning PubMedBERT.50 A similar strategy is
+employed in ChemBERT,16 ClinicalBert,51 and FinBERT.52 We ﬁne-tuned PubMedBERT
+for 3 epochs which took 90 hours on four RTX6000 16 GB GPU’s to obtain MaterialsBERT.
+Material property records extraction
+The trained NER model is one component of a system that is used to extract material
+property records. Each component is explained below:
+1. Train NER model: A subset of our corpus of papers is selected and annotated with a
+given ontology to train an NER model (described in the Section “NER model”). This
+model is used to generate entity labels for abstracts in the corpus.
+2. Pick documents with ‘poly’: The corpus of abstracts is down-selected by searching
+for the string ‘poly’ in the abstract as a proxy for polymer relevant documents.
+3. Run NER model: The NER model previously trained is used for predicting entity
+24
+labels on each polymer relevant document obtained from the previous step.
+4. Abstract ﬁltering: As not all polymer abstracts contain material property informa-
+tion, the output of the NER is used as a heuristic to ﬁlter out those that do. Only
+abstracts with speciﬁc material entities, i.e., POLYMER, POLYMER FAMILY and
+MONOMER as well as the PROPERTY NAME and PROPERTY VALUE tags are
+allowed through this stage. This acts as a second ﬁlter to locate polymer relevant
+documents.
+5. Entity extraction: The material entities, (PROPERTY NAME, PROPERTY VALUE)
+and MATERIAL AMOUNT entities are extracted and processed separately.
+6. Co-reference material entities: This step is applied to co-reference all mentions
+of the same material entity. A common example of this is when a material is men-
+tioned next to its abbreviation. We used the abbreviation detection system in Chem-
+DataExtractor3 to ﬁnd material entity abbreviation pairs. In addition, we co-reference
+material entities that are within a Levenshtein distance53 of one. Co-referencing is a
+tractable problem in abstracts compared to full-text papers as there are no long-range
+dependencies and typically no anaphora resolution is required.54
+7. Normalizing polymer names: Polymers can have several diﬀerent variations in
+names referring to the same chemical entity. In this step, we normalize these variations
+to the most commonly occurring name for that particular polymer.
+For instance,
+‘poly(ethylene)’ and ‘poly-ethylene’ occurring in diﬀerent abstracts are both normalized
+to ‘polyethylene’. This is done using a dictionary lookup on a dataset of polymer name
+clusters that were normalized using the workﬂow described in Ref. 26. Note that we do
+not normalize all polymer names but only the ones which are included in our dictionary.
+In practice, this includes most commonly occurring polymers that have multiple names
+in the literature.
+25
+8. Extract Property Value pairs: The PROPERTY NAME and PROPERTY VALUE
+tag are associated by co-occurrence within a context window. The numeric value of the
+property is separated from the units using regular expressions and all parsed property
+values are converted to a standard set of units. The unit used is the most commonly
+reported unit for that particular property. Any errors reported with the numeric value
+are also parsed using regular expressions.
+9. Extract Material amounts: Entities with the MATERIAL AMOUNT tag are ex-
+tracted and the closest material entity within a context window is associated with
+it.
+10. Relation extraction: In order to obtain a material property record, it is necessary
+to associate the material entities and the property value pair that correspond to a
+single record.
+This problem has been addressed in the literature using supervised
+methods.55,56 However, the annotation process for relation labeling is time-intensive
+and hence we employ heuristics in this work to obtain relations between entities. To
+associate material entities with property value pairs, we associate the closest material
+entity tagged in the same sentence as the property value pair. If no such material
+entity is found then all the material entities mentioned in the abstract are associated
+with the property value pair. This is because, most commonly, an abstract mentions a
+major material system reported in the paper and reports its measured property values.
+This step is reasonable in abstracts, which report this information compactly, using
+heuristic rules. In contrast, the body of the paper would require coreferencing with
+information found in tables and ﬁgures to extract material property records.
+Acknowledgements
+This work was supported by the Oﬃce of Naval Research through grants N00014-19-1-2103
+and N00014-20-1-2175.
+26
+Competing Interests
+The authors declare no competing interests.
+Data and model availability
+The material property data mentioned in this paper can be explored through https://www.
+polymerscholar.org
+References
+(1) Devlin, J.; Chang, M.-W.; Lee, K.; Toutanova, K. Bert: Pre-training of deep bidi-
+rectional transformers for language understanding. arXiv preprint arXiv:1810.04805
+2018,
+(2) Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones, L.; Gomez, A. N.; Kaiser,  L.;
+Polosukhin, I. Attention is all you need. Advances in neural information processing
+systems. 2017; pp 5998–6008.
+(3) Swain, M. C.; Cole, J. M. ChemDataExtractor: a toolkit for automated extraction of
+chemical information from the scientiﬁc literature. Journal of chemical information and
+modeling 2016, 56, 1894–1904.
+(4) Rockt¨aschel, T.; Weidlich, M.; Leser, U. ChemSpot: a hybrid system for chemical
+named entity recognition. Bioinformatics 2012, 28, 1633–1640.
+(5) Hawizy, L.; Jessop, D. M.; Adams, N.; Murray-Rust, P. ChemicalTagger: A tool for
+semantic text-mining in chemistry. Journal of cheminformatics 2011, 3, 17.
+(6) Court, C. J.; Cole, J. M. Auto-generated materials database of Curie and N´eel temper-
+atures via semi-supervised relationship extraction. Scientiﬁc data 2018, 5, 1–12.
+27
+(7) Court, C. J.; Jain, A.; Cole, J. M. Inverse Design of Materials That Exhibit the Mag-
+netocaloric Eﬀect by Text-Mining of the Scientiﬁc Literature and Generative Deep
+Learning. Chemistry of Materials 2021, 33, 7217–7231.
+(8) Tchoua, R. B.; Qin, J.; Audus, D. J.; Chard, K.; Foster, I. T.; de Pablo, J. Blending
+education and polymer science: Semiautomated creation of a thermodynamic property
+database. Journal of chemical education 2016, 93, 1561–1568.
+(9) Tchoua, R. B.; Ajith, A.; Hong, Z.; Ward, L. T.; Chard, K.; Belikov, A.; Audus, D. J.;
+Patel, S.; de Pablo, J. J.; Foster, I. T. Creating training data for scientiﬁc named entity
+recognition with minimal human eﬀort. International Conference on Computational
+Science. 2019; pp 398–411.
+(10) Friedl, J. E. Mastering regular expressions; ” O’Reilly Media, Inc.”, 2006.
+(11) Schwalbe-Koda, D.; Jensen, Z.; Olivetti, E.; G´omez-Bombarelli, R. Graph similarity
+drives zeolite diﬀusionless transformations and intergrowth. Nature materials 2019,
+18, 1177–1181.
+(12) Shetty, P.; Ramprasad, R. Automated knowledge extraction from polymer literature
+using natural language processing. iScience 2020, 24, 101922.
+(13) Tshitoyan, V.; Dagdelen, J.; Weston, L.; Dunn, A.; Rong, Z.; Kononova, O.; Pers-
+son, K. A.; Ceder, G.; Jain, A. Unsupervised word embeddings capture latent knowledge
+from materials science literature. Nature 2019, 571, 95–98.
+(14) Gu, Y.; Tinn, R.; Cheng, H.; Lucas, M.; Usuyama, N.; Liu, X.; Naumann, T.; Gao, J.;
+Poon, H. Domain-speciﬁc language model pretraining for biomedical natural language
+processing. arXiv preprint arXiv:2007.15779 2020,
+(15) Lee, J.; Yoon, W.; Kim, S.; Kim, D.; Kim, S.; So, C. H.; Kang, J. BioBERT: a pre-
+28
+trained biomedical language representation model for biomedical text mining. Bioin-
+formatics 2020, 36, 1234–1240.
+(16) Guo, J.; Ibanez-Lopez, A. S.; Gao, H.; Quach, V.; Coley, C. W.; Jensen, K. F.; Barzi-
+lay, R. Automated Chemical Reaction Extraction from Scientiﬁc Literature. Journal of
+Chemical Information and Modeling 2021,
+(17) Weston, L.; Tshitoyan, V.; Dagdelen, J.; Kononova, O.; Trewartha, A.; Persson, K. A.;
+Ceder, G.; Jain, A. Named entity recognition and normalization applied to large-scale
+information extraction from the materials science literature. Journal of chemical infor-
+mation and modeling 2019, 59, 3692–3702.
+(18) Fleiss, J. L. Measuring nominal scale agreement among many raters. Psychological
+bulletin 1971, 76, 378.
+(19) Tabassum, J.; Lee, S.; Xu, W.; Ritter, A. WNUT-2020 task 1 overview: Extracting
+entities and relations from wet lab protocols. arXiv preprint arXiv:2010.14576 2020,
+(20) Liang, C.; Yu, Y.; Jiang, H.; Er, S.; Wang, R.; Zhao, T.; Zhang, C. Bond: Bert-
+assisted open-domain named entity recognition with distant supervision. Proceedings
+of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data
+Mining. 2020; pp 1054–1064.
+(21) Trewartha, A.; Walker, N.; Huo, H.; Lee, S.; Cruse, K.; Dagdelen, J.; Dunn, A.; Pers-
+son, K. A.; Ceder, G.; Jain, A. Quantifying the advantage of domain-speciﬁc pre-
+training on named entity recognition tasks in materials science. Patterns 2022, 3,
+100488.
+(22) Huang, Z.; Xu, W.; Yu, K. Bidirectional LSTM-CRF models for sequence tagging.
+arXiv preprint arXiv:1508.01991 2015,
+29
+(23) Krallinger, M.; Rabal, O.; Leitner, F.; Vazquez, M.; Salgado, D.; Lu, Z.; Leaman, R.;
+Lu, Y.; Ji, D.; Lowe, D. M., et al. The CHEMDNER corpus of chemicals and drugs
+and its annotation principles. Journal of cheminformatics 2015, 7, 1–17.
+(24) Mysore, S.; Jensen, Z.; Kim, E.; Huang, K.; Chang, H.-S.; Strubell, E.; Flanigan, J.;
+McCallum, A.; Olivetti, E. The materials science procedural text corpus: Annotat-
+ing materials synthesis procedures with shallow semantic structures. arXiv preprint
+arXiv:1905.06939 2019,
+(25) Otsuka, S.; Kuwajima, I.; Hosoya, J.; Xu, Y.; Yamazaki, M. PoLyInfo:
+Polymer
+database for polymeric materials design. 2011 International Conference on Emerging
+Intelligent Data and Web Technologies. 2011; pp 22–29.
+(26) Shetty, P.; Ramprasad, R. Machine-Guided Polymer Knowledge Extraction Using Nat-
+ural Language Processing: The Example of Named Entity Normalization. Journal of
+Chemical Information and Modeling 2021, 61, 5377–5385.
+(27) Palomba, D.; Vazquez, G. E.; D´ıaz, M. F. Prediction of elongation at break for linear
+polymers. Chemometrics and Intelligent Laboratory Systems 2014, 139, 121–131.
+(28) Doan Tran, H.; Kim, C.; Chen, L.; Chandrasekaran, A.; Batra, R.; Venkatram, S.;
+Kamal, D.; Lightstone, J. P.; Gurnani, R.; Shetty, P., et al. Machine-learning predictions
+of polymer properties with Polymer Genome. Journal of Applied Physics 2020, 128,
+171104.
+(29) Zhang, M.; Niu, H.; Wu, D. Polyimide ﬁbers with high strength and high modulus:
+preparation, structures, properties, and applications. Macromolecular rapid communi-
+cations 2018, 39, 1800141.
+(30) Wang, C.; Zhang, S.; Zhang, L.; Xu, Y.; Zhang, L. Evading the strength–ductility trade-
+oﬀdilemma of rigid thermosets by incorporating triple cross-links of varying strengths.
+Polymer Chemistry 2020, 11, 6281–6287.
+30
+(31) Nagasawa, S.; Al-Naamani, E.; Saeki, A. Computer-aided screening of conjugated poly-
+mers for organic solar cell: classiﬁcation by random forest. The Journal of Physical
+Chemistry Letters 2018, 9, 2639–2646.
+(32) Zhang, Z.-G.; Li, Y. Polymerized small-molecule acceptors for high-performance all-
+polymer solar cells. Angewandte Chemie International Edition 2021, 60, 4422–4433.
+(33) Zhang, M.; Ma, X.; Zhang, H.; Zhu, L.; Xu, L.; Zhang, F.; Tsang, C.-S.; Lee, L. Y. S.;
+Woo, H. Y.; He, Z., et al. Metallated terpolymer donors with strongly absorbing irid-
+ium complex enables polymer solar cells with 16.71% eﬃciency. Chemical Engineering
+Journal 2022, 430, 132832.
+(34) Abdelkareem, M. A.; Elsaid, K.; Wilberforce, T.; Kamil, M.; Sayed, E. T.; Olabi, A.
+Environmental aspects of fuel cells: A review. Science of The Total Environment 2021,
+752, 141803.
+(35) Larminie, J.; Dicks, A.; McDonald, M. S. Fuel cell systems explained; J. Wiley Chich-
+ester, UK, 2003; Vol. 2.
+(36) Shaari, N.; Kamarudin, S.; Basri, S.; Shyuan, L.; Masdar, M.; Nordin, D. Enhanced pro-
+ton conductivity and methanol permeability reduction via sodium alginate electrolyte-
+sulfonated graphene oxide bio-membrane. Nanoscale research letters 2018, 13, 1–16.
+(37) Catenaro, E.; Rizzo, D. M.; Onori, S. Experimental analysis and analytical modeling
+of enhanced-Ragone plot. Applied Energy 2021, 291, 116473.
+(38) Shown, I.; Ganguly, A.; Chen, L.-C.; Chen, K.-H. Conducting polymer-based ﬂexible
+supercapacitor. Energy Science & Engineering 2015, 3, 2–26.
+(39) Uppugalla, S.; Srinivasan, P. Polyaniline nanoﬁbers and porous Ni [OH] 2 sheets coated
+carbon fabric for high performance super capacitor. Journal of Applied Polymer Science
+2019, 136, 48042.
+31
+(40) Li, Y.; Yang, Y.; Zhou, J.; Lin, S.; Xu, Z.; Xing, Y.; Zhang, Y.; Feng, J.; Mu, Z.;
+Li, P., et al. Coupled and decoupled hierarchical carbon nanomaterials toward high-
+energy-density quasi-solid-state Na-Ion hybrid energy storage devices. Energy Storage
+Materials 2019, 23, 530–538.
+(41) Javed, M. S.; Lei, H.; Shah, H. U.; Asim, S.; Raza, R.; Mai, W. Achieving high rate and
+high energy density in an all-solid-state ﬂexible asymmetric pseudocapacitor through
+the synergistic design of binder-free 3D ZnCo 2 O 4 nano polyhedra and 2D layered Ti
+3 C 2 T x-MXenes. Journal of Materials Chemistry A 2019, 7, 24543–24556.
+(42) Fu, H.; Wang, Z.; Sun, Y. Polymer donors for high-performance non-fullerene organic
+solar cells. Angewandte Chemie International Edition 2019, 58, 4442–4453.
+(43) Ciotti, M.; Ciccozzi, M.; Terrinoni, A.; Jiang, W.-C.; Wang, C.-B.; Bernardini, S. The
+COVID-19 pandemic. Critical reviews in clinical laboratory sciences 2020, 57, 365–388.
+(44) Gao, J.; Yin, Y.; Myers, K. R.; Lakhani, K. R.; Wang, D. Potentially long-lasting eﬀects
+of the pandemic on scientists. Nature communications 2021, 12, 1–6.
+(45) Weininger, D.; Weininger, A.; Weininger, J. L. SMILES. 2. Algorithm for generation
+of unique SMILES notation. Journal of chemical information and computer sciences
+1989, 29, 97–101.
+(46) Wu, Y.; Schuster, M.; Chen, Z.; Le, Q. V.; Norouzi, M.; Macherey, W.; Krikun, M.;
+Cao, Y.; Gao, Q.; Macherey, K., et al. Google’s neural machine translation sys-
+tem:
+Bridging the gap between human and machine translation. arXiv preprint
+arXiv:1609.08144 2016,
+(47) Song, X.; Salcianu, A.; Song, Y.; Dopson, D.; Zhou, D. Linear-Time WordPiece Tok-
+enization. arXiv e-prints 2020, arXiv–2012.
+32
+(48) Zhu, Y.; Kiros, R.; Zemel, R.; Salakhutdinov, R.; Urtasun, R.; Torralba, A.; Fidler, S.
+Aligning books and movies: Towards story-like visual explanations by watching movies
+and reading books. Proceedings of the IEEE international conference on computer
+vision. 2015; pp 19–27.
+(49) Liu, Y.; Ott, M.; Goyal, N.; Du, J.; Joshi, M.; Chen, D.; Levy, O.; Lewis, M.; Zettle-
+moyer, L.; Stoyanov, V. Roberta: A robustly optimized bert pretraining approach.
+arXiv preprint arXiv:1907.11692 2019,
+(50) Wolf, T. et al. Transformers: State-of-the-Art Natural Language Processing. Proceed-
+ings of the 2020 Conference on Empirical Methods in Natural Language Processing:
+System Demonstrations. Online, 2020; pp 38–45.
+(51) Huang, K.; Altosaar, J.; Ranganath, R. Clinicalbert: Modeling clinical notes and pre-
+dicting hospital readmission. arXiv preprint arXiv:1904.05342 2019,
+(52) Araci, D. Finbert: Financial sentiment analysis with pre-trained language models. arXiv
+preprint arXiv:1908.10063 2019,
+(53) Levenshtein, V. I. Binary codes capable of correcting deletions, insertions, and reversals.
+Soviet physics doklady. 1966; pp 707–710.
+(54) Mitkov, R. Anaphora resolution; Routledge, 2014.
+(55) Wang, L.; Cao, Z.; De Melo, G.; Liu, Z. Relation classiﬁcation via multi-level attention
+cnns. Proceedings of the 54th Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers). 2016; pp 1298–1307.
+(56) Zhou, W.; Lin, H.; Lin, B. Y.; Wang, Z.; Du, J.; Neves, L.; Ren, X. Nero: A neural rule
+grounding framework for label-eﬃcient relation extraction. Proceedings of The Web
+Conference 2020. 2020; pp 2166–2176.
+33
+(57) Williams, C. K.; Rasmussen, C. E. Gaussian processes for machine learning; MIT press
+Cambridge, MA, 2006; Vol. 2.
+(58) Chai, T.; Draxler, R. R. Root mean square error (RMSE) or mean absolute error
+(MAE). Geoscientiﬁc Model Development Discussions 2014, 7, 1525–1534.
+34
+Supplementary Information
+S1. Annotation guidelines
+We annotated abstracts that had material property information and hence the entity types
+deﬁned in our ontology. We only labeled material entities that were explicitly part of the
+material formulation for which a property value pair was reported in the abstract. This was
+done in order to encode some notion of jointly extracting entities and relationships in the
+model through minimal annotation eﬀort.
+1. POLYMER: All polymer material entities that occur in a material formulation for
+which property values are reported in the abstract should be labeled. Abbreviations
+when found next to it in brackets should also be labeled (excluding brackets). This
+includes homopolymers, copolymers and blends.
+This should refer to a polymer name rather than a generic polymer family. If annotating
+multiple polymer entries separated by a forward slash e.g. polyethylene/polypropylene,
+tag each material entity on either side of the slash separately. End-functionalization
+of a polymer can be omitted from the labeled token.
+2. POLYMER FAMILY: All polymeric material entities that refer only to polymer fam-
+ilies (e.g.: polyamide, polyimide, polybenzimadozole etc) that occur in a material
+formulation for which property values are reported in the abstract should be labeled.
+Abbreviations when found next to it in brackets should also be labeled (excluding
+brackets).
+3. ORGANIC: Label all organic compounds that are not polymers and are used in the
+material formulation for which property values are reported. These could be organic
+molecules used as plasticizers, crosslinkers, blended with the polymer or as grafts.
+35
+These are explicitly a part of the material formulation and the extracted record should
+include this information.
+4. MONOMER: Label all monomer repeat units for polymers for which property values
+are reported in the abstract. These are being annotated separately as they are not
+explicitly part of the material formulation of interest but are nevertheless commonly
+reported in abstracts. It is hence necessary to distinguish between ORGANIC additives
+and monomers. Look for contextual cues such as ‘synthesized from’, ‘prepared from’
+or the presence of the word monomer.
+5. INORGANIC: Label all inorganic materials (such as SiO2, TiO2 etc) explicitly used in
+a material formulation.
+6. MATERIAL AMT: Numerical quantity + unit denoting the amount of a material like
+additive or blend for which a property value is reported. This is typically wt % or mol.
+7. PROPERTY NAME: Name of property measured. Label properties for which a cor-
+responding numeric value is reported in the abstract. Label the property name and
+abbreviation in bracket (if present) separately.
+8. PROPERTY VALUE: Numeric value + unit for a reported PROPERTY NAME.
+S2.
+NER Datasets used for testing BERT-based en-
+coders
+1. ChemDNER:23 This is a dataset of 10,000 PubMed abstracts annotated for chem-
+ical entity mentions using 7 diﬀerent entity types such as ABBREVIATION, SYS-
+TEMATIC, FORMULA, TRIVIAL, FAMILY, MULTIPLE, and IDENTIFIERS. The
+dataset is split into 3500 abstracts for train, 3500 validation abstracts, and 3000 test
+abstracts.
+36
+2. Inorganic Synthesis recipes:24 This is a dataset of 230 inorganic synthesis para-
+graphs annotated using 21 entity types that are relevant in the context of materials
+synthesis. 15 paragraphs each are used for validation and testing and the remaining
+200 paragraphs are used for training.
+3. Inorganic Abstracts:17 This is a dataset of 800 abstracts related to inorganic materi-
+als in which 8 diﬀerent entity types related to inorganic materials are annotated namely,
+inorganic material (MAT), symmetry/phase label (SPL), sample descriptor (DSC),
+material property (PRO), material application (APL), synthesis method (SMT), and
+characterization method (CMT). The dataset is split as 640/80/80 for training, vali-
+dation, and testing respectively.
+4. ChemRxnExtractor:16 This is a dataset of 329 organic synthesis paragraphs in which
+the product of the synthesis is labeled using the BIO scheme. The dataset is split into
+251, 41, and 37 paragraphs in the train, validation, and test set respectively.
+S3. Performance of MaterialsBERT on annotated poly-
+mer abstracts NER dataset
+The performance of the various entity types for MaterialsBERT, the best-performing model
+along with the distribution of various entity types in the annotated dataset of polymer
+abstracts is shown in Table S1. It is clear that there is a positive correlation between the
+number of occurrences of each entity type and the performance of the corresponding entity
+type. The ORGANIC entity type has a low F1 score likely because it is diﬃcult to distinguish
+between MONOMER and ORGANIC entity types. The POLYMER FAMILY entity type
+has similarities with the POLYMER entity type which likely lowers the F1 score for this
+entity type as well.
+37
+Table S1: Performance of an NER model using MaterialsBERT as the encoder across various
+entity types in the ontology used in this work on the test set of polymer abstracts. Values
+are reported in %
+Entity type
+Precision
+Recall
+F1
+Occurrence
+POLYMER
+75.9
+83.8
+79.6
+8814
+PROPERTY VALUE
+73.0
+80.0
+76.4
+5749
+PROPERTY NAME
+72.6
+74.7
+73.6
+4486
+ORGANIC
+34.7
+21.0
+26.2
+2173
+MONOMER
+67.1
+77.6
+72.0
+2073
+POLYMER FAMILY
+41.6
+52.1
+46.2
+1476
+INORGANIC
+40.2
+64.7
+49.6
+1261
+MATERIAL AMOUNT
+59.1
+83.9
+79.6
+1140
+S4. Details of extracted data
+The number of entities extracted (accounting for variations in case) from the ∼300, 000
+material property records is shown in Table S2. Note that these material entities are not
+unique materials as for instance, ‘silica’ and ‘SiO2’ would be counted as separate entities but
+are the same material. Similarly for property names, ‘Tg ’ and ‘glass transition temperature’
+are counted as separate entities, even though they correspond to the same property.
+Table S2: Number of entities extracted from the corpus of polymer relevant abstracts for
+key entity types from the ontology used in this work
+Entity type
+Number of extracted entities
+POLYMER
+74396
+MONOMER
+50000
+INORGANIC
+26114
+POLYMER FAMILY
+5109
+ORGANIC
+2769
+PROPERTY NAME
+33642
+The histogram of number of records extracted for each property is shown in Figure S1.
+Only property entities with at least 10 material property records are shown in this plot.
+Observe that the number of material property records appears to be power law distributed
+with a small number of properties having a large number of records associated with them
+38
+Figure S1: Histogram of number of material property records for each property entity. The
+threshold represents the cut-oﬀabove which the number of material property records is
+reported for each property in Table S3
+while the majority of property entities only have a small number of associated records.
+We threshold this plot at 500 material property records and report the number of records
+associated with all properties above this threshold in Table S3. Note that common variations
+in names for each property such as abbreviations (e.g. IEC for ion exchange capacity) or
+plural forms (e.g. activation energies) were accounted for in order to compute the number
+of records. These account for a total of 111279 records, i.e., 37 % of ∼300, 000 material
+property records.
+Note that device properties such as power conversion eﬃciency, open
+circuit voltage etc listed in Table 5 of the main paper are listed in Table S3 as well but are
+more in number as they are not restricted to any particular application.
+Index
+Property name
+Number of material property records
+1
+Molecular weight
+9053
+2
+Power conversion eﬃciency
+8096
+3
+Glass transition temperature
+6155
+4
+Electrical conductivity
+6030
+39
+5
+Ionic conductivity
+4933
+6
+Speciﬁc capacitance
+4916
+7
+Tensile strength
+4382
+8
+Number average molecular weight
+4096
+9
+Water contact angle
+3932
+10
+Discharge capacity
+3632
+11
+Polydispersity index
+3087
+12
+Speciﬁc surface area
+2912
+13
+Gravimetric power density
+2816
+14
+Adsorption capacity
+2555
+15
+Activation energy
+2408
+16
+Open circuit voltage
+2343
+17
+Band gap
+2245
+18
+Viscosity
+2084
+19
+Youngs modulus
+1904
+20
+Gravimetric energy density
+1765
+21
+Short circuit current
+1699
+22
+Melting temperature
+1615
+23
+Sensitivity
+1602
+24
+Dielectric constant
+1534
+25
+Elongation at break
+1499
+26
+Thermal Decomposition Temperature
+1479
+27
+Fill factor
+1431
+28
+Thermal conductivity
+1429
+29
+Water ﬂux
+1371
+30
+Density
+1354
+40
+31
+Current density
+1337
+32
+Limiting Oxygen Index
+1146
+33
+Transmittance
+1135
+34
+Ion exchange capacity
+1034
+35
+Porosity
+1019
+36
+External quantum eﬃciency
+915
+37
+Hole mobility
+846
+38
+Capacity retention
+843
+39
+Luminance
+842
+40
+Compressive strength
+814
+41
+Zeta potential
+784
+42
+Sheet resistance
+768
+43
+Lower critical solution temperature
+712
+44
+CO2 permeability
+685
+45
+Resistivity
+668
+46
+Coulombic eﬃciency
+632
+47
+Crystallization temperature
+605
+48
+Refractive index
+576
+49
+Separation factor
+543
+50
+Impact strength
+512
+51
+Highest occupied molecular orbital
+506
+Table S3: The number of material property records extracted for the most common properties
+reported in the literature. This is not a complete list of extracted properties.
+41
+S5. Training Machine learning models using literature
+extracted data
+(a)
+(b)
+Figure S2: Glass Transition Temperature data a) Parity plot for machine learning model
+trained using literature extracted glass transition temperature data, b) Parity plot for ma-
+chine learning model trained using curated glass transition temperature data with the same
+number of points as used in a). The test set in both cases is drawn from curated data.
+Observe that the test RMSE in both cases is similar
+In addition to the qualitative trends shown in the main paper that demonstrate the
+utility of our workﬂow, we also demonstrate how the data collected through our workﬂow
+can be used as inputs to machine learning models. We trained gaussian process regression
+models with a Matern kernel57 to predict Tg using the material property data extracted from
+our workﬂow. SMILES strings45 were used to encode the structure of the polymer. The
+SMILES strings for a randomly selected subset of NLP extracted neat polymers Tg records
+were added manually. The SMILES string was used as the input to ﬁngerprint the polymer
+and the ﬁngerprint vector along with the literature extracted Tg value was the input to the
+machine learning model. The polymer SMILES string is converted to a feature vector using
+structural descriptors described elsewhere.28 The feature vector consists of atomic triples,
+42
+block level features, i.e., pre-deﬁned fragments such as benzene rings and ketone groups, and
+chain level characteristics that are speciﬁc to a polymer such as length of longest side-chain,
+etc. This ﬁngerprinting scheme leads to up to 600 non-zero ﬁngerprint components.
+Figure S2(a) shows the parity plot for a machine learning model to predict glass transition
+temperature trained using data extracted from literature. For comparison, we also trained a
+model using the same number of data points but with polymers and corresponding Tg values
+randomly sampled from a curated Tg data set reported in Ref. 28 (Figure S2(b)). The test
+set is the same for both cases and is taken from the curated data set. There is an 80-20
+split between the train and test set in both cases. The root mean squared error (RMSE)58
+reported here on the test set is higher than the RMSE of the best Tg models trained on larger
+data sets as reported in Ref. 28 (∼20 K). However, the test RMSE of the 2 plots in Figure
+S2 is comparable, demonstrating that data extracted from literature can be used directly to
+train machine learning models of properties, without manual curation. Thus, despite being
+noisy, NLP extracted data in the context of organics and polymers can be used to train
+machine learning models which is important for NLP extracted data to be used at scale in
+materials informatics.
+43

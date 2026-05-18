@@ -1,0 +1,1175 @@
+Title: Llettuce: An Open Source Natural Language Processing Tool for the Translation of Medical Terms into Uniform Clinical Encoding
+Source URL: http://arxiv.org/abs/2410.09076v2
+--------------------------------------------------
+
+Lettuce: An Open Source Natural Language
+Processing Tool for the Translation of Medical Terms
+into Uniform Clinical Encoding
+James Mitchell-White1,2,3, Reza Omidvar2,3, Benjamin Partridge1,3, Esmond
+Urwin1,3, Karthikeyan Sivakumar2, Ruizhe Li3,4, Andy Rae1, Xiaoyan
+Wang5, Theresia Mina5, Tom Giles1,3, Diego García-Gil7, Tim Beck1, John
+Chambers5,6, Grazziela Figueredo1,3.*, and Philip R Quinlan1,3
+1Centre for Health Informatics, School of Medicine, The University of Nottingham
+2Digital Research Service, The University of Nottingham
+3NIHR Nottingham Biomedical Research Centre
+4School of Computer Science, The University of Nottingham
+5Lee Kong Chian School of Medicine, Nanyang Technological University, Singapore
+6Department of Epidemiology and Biostatistics, School of Public Health, Imperial College
+London, United Kingdom
+7Department of Software Engineering, Andalusian Institute of Data Science and Computational
+Intelligence (DaSCI), University of Granada, 18012, Granada, Spain
+*Corresponding author: g.figueredo@nottingham.ac.uk
+13th March 2026
+Abstract
+Background: Existing solutions for finding the standardized vocabulary con-
+cepts for OMOP, such as the Athena database search and Usagi struggle with se-
+mantic nuances and require substantial manual input.
+Objectives: Lettuce was developed to be an open-source tool for mapping source
+terms to OMOP concepts with configurable pipelines using advanced natural lan-
+guage processing, including large language models and text search, to automate and
+enhance the mapping process.
+Methods: The performance of lettuce pipelines was compared with represent-
+ative lexical search methods using two drug source-term datasets.
+Results: Semantic search pipelines consistently outperformed existing methods,
+with up to a two-fold increase in the correct concept being in the top 10 results.
+Conclusions: This paper introduces Lettuce, an intelligent open-source tool de-
+signed to address the complexities of converting medical terms into OMOP standard
+1
+arXiv:2410.09076v2  [cs.CL]  12 Mar 2026
+concepts. Developed with a focus on GDPR compliance, Lettuce can be deployed
+locally, ensuring data protection while maintaining high performance in converting
+informal medical terms to standardised concepts.
+Keywords: OMOP mapping, LLMs, healthcare data mapping, natural language pro-
+cessing in healthcare data, Data harmonization
+1.
+Introduction
+Making data findable, accessible, interoperable, and reusable (FAIR)[1] is best practice for
+data stewardship, and enables transparent, reproducible research. The Observable Med-
+ical Outcomes Partnership (OMOP) common data model (CDM) is an open community
+standard for making observational healthcare data FAIR [2, 3]. The process of convert-
+ing data to OMOP, however, is complex, and not only requires knowledge of the specific
+domain of the data, but often collaboration from data engineers, software engineers, and
+healthcare professionals. Unified data standards are often applied inconsistently across
+healthcare systems [4, 5], and different mapping choices contributes to this inconsistency.
+In previous work, we developed Carrot Mapper and Carrot-CDM [6] to support the
+OMOP conversion process. Tooling within this space still generally requires manual in-
+tervention to approve or create mappings, where a data engineer needs to find the most
+suitable codification for a medical term taken from the metadata of a source dataset, or
+"source term", though automated mapping tools are available [7, 8, 9]. For transformation
+to OMOP, the mapping must be from this source term to one or more terms taken from
+the Observational Health Data Sciences and Informatics (OHDSI) standardised vocabu-
+laries, a set of medical vocabularies designed to represent all OMOP domains. Solutions
+that help find codifications include searches in the OHDSI Athena database [10], or string
+matching using tools like Usagi [11].
+The Athena website is a platform for searching and exploring various medical termin-
+ologies, vocabularies, and concepts in healthcare research. Users can search for specific
+terms, view their relationships, and explore detailed metadata. Using Athena search at
+scale, however, is complicated. When conducting extensive searches, researchers face chal-
+lenges, including the complexity and overlap of medical vocabularies, the overwhelming
+volume of search results, and technical constraints, such as system performance and data
+handling capabilities.
+Additionally, the standardisation of diverse healthcare datasets
+presents difficulties in ensuring consistency across different terminologies.
+Usagi was developed by OHDSI to facilitate the mapping of source terms to standard
+concepts within the OMOP CDM. It supports the integration and harmonisation of diverse
+healthcare data sources. Usagi employs semi-automated string-matching algorithms to
+suggest potential mappings between local vocabularies and standardised terminologies
+such as SNOMED CT, LOINC, and RxNorm. It is a valuable tool for mapping, but it has
+a few limitations. While it automates part of the mapping process, it requires significant
+2
+manual review, which is time-consuming and prone to human error and uncertainties.
+String-matching can potentially lead to inaccurate mappings, particularly when dealing
+with ambiguous or complex terminologies. The effectiveness of Usagi depends on the
+quality of the standardised vocabularies it uses, and there is a learning curve for new
+users.
+Usagi works well when dealing with data with typographical errors, but not all source
+terms are in formalised language as used in OHDSI vocabularies, and these informal terms
+for medications or conditions may not closely match the string of the formal concept we
+wish to map it to. For example, “Now Foods omega-3” is a supplement found in a self-
+reported patient questionnaire dataset. This supplement is produced by Now Foods, and
+is an omega-3 product derived from fish oil. In this case, the brand of the drug was given
+as input. Before obtaining the OMOP concept, we need to map the reported brand to
+“omega-3 fatty acids”, for which an exact OMOP match is found. Using the Athena search
+engine, for example, the string matching suggests concepts like “Calcium ascorbate 550
+MG Oral Tablet by Now Foods”, “Ubiquinone 90 MG Oral Capsule [Now Coq10] by Now
+Foods” or “Calcium ascorbate 1000 MG Oral Tablet [Now Ester-C] by Now Foods”. This
+indicates that this process of matching loses the semantic information associated with the
+input data.
+Large Language Models (LLMs) are a relatively novel alternative to support OMOP.
+They automate portions of the mapping process while suggesting more semantically relev-
+ant mappings. The use of proprietary tools, such as OpenAI ChatGPT [12] in healthcare,
+however, raises significant concerns, particularly regarding GDPR compliance, data pro-
+tection and reproducibility of results [13, 14]. The handling of sensitive patient data poses
+risks, as inadvertent data leaks or misuse of information could occur. Ensuring that inter-
+actions with OpenAI and other available LLM APIs in the cloud remain within the bounds
+of GDPR is challenging, especially when dealing with identifiable health information.
+In this paper we introduce Lettuce1, a tool created to address these gaps. It is a
+stand-alone, open-source, adaptable natural language processing tool based on LLMs,
+querying systems and text search for the conversion of medical terms into the OMOP
+standard vocabulary. Lettuce is released under the MIT Licence. Medical terms can be
+extracted from Electronic Health Records (EHRs), self-reported patient questionnaires
+and other structured datasets to serve as an input for Lettuce. So for the example above,
+the Lettuce match output for “Now Foods omega-3” is “Fish oil”.
+Lettuce has the following modules and functionalities:
+• Vector search for concept(s)
+• LLM prompting with informal name(s)
+• OMOP CDM database search
+1https://github.com/Health-Informatics-UoN/lettuce
+3
+We demonstrate how Lettuce works and its performance compared to Usagi and Chat-
+GPT on a case study of converting self-reported informal medication names into OMOP
+concepts. Lettuce performance is comparable to OpenAI models and was developed to
+run locally to support healthcare data governance requirements.
+2.
+Methods
+2.1
+Lettuce Architecture
+The Lettuce architecture comprises an OMOP-CDM database and three routes for concept
+retrieval (Figure 1). For each input term, the user selects one pathway to generate a
+ranked set of mapping recommendations. The pathways are: (i) text search, (ii) vector-
+based semantic retrieval, and (iii) retrieval-augmented generation (RAG).
+The system receives a source term—the free-text entity requiring mapping to an
+OMOP concept—together with optional constraints such as target domain or vocabu-
+lary. The output is a ranked list of candidate concepts and their confidence score derived
+from the retrieval strategy employed.
+Figure 1: Lettuce concept mapping search routes
+4
+2.1.1
+Database
+Lettuce operates on standardised vocabularies from the OMOP-CDM, which can be ob-
+tained from the OHDSI Athena repository [10]. Each concept is stored as a row in the
+concept table, containing a unique identifier, a concept name, the source vocabulary, the
+domain of the concept, and additional metadata.
+To support efficient retrieval, Lettuce extends the native OMOP schema with two
+additional components:
+1. Pre-computed lexical features, enabling accelerated keyword search.
+2. Pre-computed dense vector embeddings, implemented using PGVector [15] to sup-
+port similarity search.
+An OMOP-CDM database configured with these features can be deployed using omop-
+lite [16].
+2.1.2
+Text search
+This retrieval pathway uses keyword matching. Lettuce breaks the input term into its
+lexemes — basic word units — after reducing each word to its root form so that variations
+like “fracture” and “fractured” are treated the same. The input is compared with the stored
+lexemes for each concept in the database. Concepts that share the most lexemes with the
+input are ranked highest, and the top-k matches are returned. Lettuce’s lexical search
+mechanism conducts keyword-based retrieval over concept names, optionally filtered by
+domain, vocabulary, or other attributes.
+Storing pre-computed lexemes is much faster than computing them for every query, so
+a column of lexemes is materialised during database set-up. This component works well
+when the input term uses similar wording to an existing OMOP concept. However, it is
+less effective when the correct concept uses different terminology—for example, when two
+terms mean the same thing but do not share similar wording.
+2.1.3
+Vector-Based Semantic Search
+The second retrieval pathway identifies concepts based on semantic similarity rather than
+shared wording. It uses deep learning models known as bidirectional encoders, which are
+trained to understand how words relate to one another within context. These models
+convert text into numerical vectors, called embeddings. In this high-dimensional space,
+terms with similar meanings are located close together, even when their written forms
+differ significantly [17, 18].
+For example, paracetamol and acetaminophen are completely different strings, yet they
+refer to the same substance; their corresponding embeddings therefore should be close
+together. Table 1 shows the cosine similarity calculation between these terms, after they
+are embedded using BGE-small-en-v1.5 [19]. By contrast, paracetamol and piracetam
+5
+paracetamol
+acetaminophen
+piracetam
+ibuprofen
+paracetamol
+1.00
+0.83
+0.70
+0.74
+acetaminophen
+1.00
+0.73
+0.76
+piracetam
+1.00
+0.64
+ibuprofen
+1.00
+Table 1: Example of cosine similarity values between pairs of words, encoded using BGE-
+small-en-v1.5 [19]. Cosine similarity is symmetrical, so the bottom of this table is omitted.
+share some surface-level similarity in spelling, but have unrelated clinical meanings, and
+their embeddings are far apart as shown in the table’s calculations.
+Computing embeddings is computationally expensive, so Lettuce generates embed-
+dings for all the concepts in the CDM in advance, otherwise queries would be prohibitively
+slow. These pre-computed vectors are stored in an embeddings table within the OMOP-
+CDM database. Each concept is represented by a string describing the concept, which is
+encoded using a sentence-transformer model [20]. When a user provides a source term,
+Lettuce encodes it using the same model and calculates its cosine similarity to the stored
+embeddings. The top-(k) closest matches are then returned, together with metadata from
+the concept table. Because the embeddings table is fully integrated into the database,
+vector search results can be filtered by domain or vocabulary in the same way as keyword
+search. Although faster approximate nearest-neighbour search algorithms exist, they in-
+troduce small inaccuracies and require substantial indexing time and storage[21]. Given
+that accuracy is critical for concept mapping, Lettuce opts for exact similarity search
+despite the higher computational cost.
+2.1.4
+Large Language Model Search and Retrieval
+The final retrieval pathway combines semantic search with LLMs to handle cases where
+neither keyword nor embedding-based methods produce a high confidence match. LLMs
+are powerful general-purpose language tools, but they do not contain the OMOP vocabu-
+lary in their internal memory. To make them effective for concept mapping, Lettuce uses
+RAG [22], a technique that supplies the model with relevant information at query time.
+The process begins with vector search.
+If the top embedding is highly similar to
+the user’s input—above a configurable threshold—it is treated as a likely exact match
+and returned.
+If the similarity is lower, Lettuce selects the top semantically relevant
+concepts and inserts them into a prompt given to the LLM; in addition, the prompt asks
+for alternative solutions that are not in the list but could be suitable. These retrieved
+concepts act as context, guiding the model towards accurate, domain-specific reasoning.
+The LLM then produces its suggestion for the appropriate concept. Lettuce validates
+this output by first checking whether it exactly matches an OMOP concept name. If
+it does, that concept is returned. If not, the system performs a keyword search on the
+model’s output and provides the top-k results along with the alternative results produced
+6
+by the LLM. This ensures the model’s reasoning is always grounded in the actual OMOP
+vocabulary. Examples of the prompts used are shown in Section 2.5.3.
+2.2
+Command-line interface (CLI)
+A command line interface can be used to run Lettuce, specifying arguments including
+which components to engage and which filters to apply to search results. The only required
+argument is an --informal_name to use as a search term. For example:
+uv run lettuce-cli --informal_name "Nasonex (for each nostril)"
+will run an LLM-enabled search for “Nasonex (for each nostril)”.
+2.3
+HTTP Application Programming interface
+A Lettuce server can be started instead of the CLI, which then takes HTTP GET re-
+quests. This API is implemented using FastAPI [23]. The Lettuce server endpoints have
+a common format for input and output, designed for presentation by a graphical user
+interface. The parameters for starting a search are described in Table 2. A lightweight,
+low-latency endpoint runs only the text-search feature (GET /search/text-search/<source
+-term>), and is suitable for source terms that are lexically close to an OMOP concept.
+A second endpoint runs the vector search (GET /search/vector-search/<source-term>),
+which can be useful for suggesting concepts that are semantically similar to a source term,
+even if they are lexically dissimilar. The final endpoint (GET /search/ai-search/<source
+-term> runs the RAG pipeline, followed by text search on the LLM output
+The format of the output is a list of suggested concepts, which optionally includes the
+scores and ranks from the functions used to rank suggestions, and metadata describing
+the application, version, and optionally additional information (described in Tables 3, 4
+and 5). In the RAG-based endpoint, the additional information is used to communicate
+the LLM’s response.
+Field
+Type
+Description
+search_term
+str
+The source term to search for
+vocabulary
+List[str] | None
+A list of vocabularies to include.
+If None,
+includes all vocabularies
+domain
+List[str] | None
+A list of domains to include.
+If None, in-
+cludes all domains
+standard_concept
+bool
+If true, only includes standard concepts
+valid_concept
+bool
+If true, excludes concepts that have been in-
+validated
+top_k
+int
+The number of concepts to fetch
+Table 2: Parameters of a request to Lettuce’s API
+7
+Field
+Type
+Description
+concept_name
+str
+The concept_name field from the OMOP
+concept table
+concept_id
+int
+The
+concept_id
+field
+from
+the
+OMOP
+concept table
+domain_id
+str
+The
+domain_id
+field
+from
+the
+OMOP
+concept table
+vocabulary_id
+str
+The vocabulary_id field from the OMOP
+concept table
+concept_class_id
+str
+The concept_class_id field from the OMOP
+concept table
+standard_concept
+Optional[str]
+The standard_concept field from the OMOP
+concept table (optional because the field can
+be NULL)
+invalid_reason
+Optional[str]
+The invalid_reason field from the OMOP
+concept table (optional because the field can
+be NULL)
+ranks
+Optional[Dict[str, int]]
+The ranking of suggestions by any algorithm
+used to rank concepts
+scores
+Optional[Dict[str,int]]
+The scores of suggestions by any algorithm
+used to rank concepts
+Table 3: Suggestion fields used by Lettuce to describe suggested OMOP concepts
+2.4
+Lettuce Inspector
+To evaluate the performance of the Lettuce retrieval pipelines, we developed an inde-
+pendent experimental framework, lettuce-inspector [24], which was used to generate all
+results reported in this manuscript. The framework provides a controlled environment
+for executing mapping tasks, configuring retrieval pipelines, and benchmarking outputs
+against expected gold-standard annotations or data that has been annotated and val-
+idated by data engineering teams. Lettuce-inspector ingests curated mapping datasets,
+executes user-defined pipeline configurations, and computes evaluation metrics tailored
+to OMOP concept mapping. These include both standard retrieval metrics and OMOP-
+specific measures, such as whether a retrieved concept is semantically related to the tar-
+get concept within the vocabulary hierarchy. All experimental outputs are recorded in
+machine-readable JSON format to support downstream aggregation, statistical analysis,
+and visualisation.
+Lettuce-inspector (Figure 2) is designed as a modular experimentation framework
+that enables systematic exploration of the design and algorithmic space underlying the
+four retrieval pipelines described in Section 2. The aim is to identify the most effective
+combination of input data representation, components—embedding strategy, vector search
+8
+Field
+Type
+Description
+assistant
+str
+The name of the assistant used
+to suggest concepts. Defaults to
+"Lettuce"
+version
+str
+The version number of the assist-
+ant
+pipeline
+Optional[str]
+The pipeline used to suggest con-
+cepts
+info
+Optional[Dict[str, any]]
+Any
+other
+information
+for
+metadata
+Table 4: SuggestionMetaData fields
+Field
+Type
+Description
+recommendations
+List[Suggestion]
+The suggestions made by the assistant
+metadata
+SuggestionsMetaData
+Any attached metadata about the run
+Table 5: Suggestions structure
+configuration, LLM model, and supporting modules—for different classes of mapping
+problems. The framework allows controlled investigation of trade-offs between accuracy,
+computational efficiency, model size, and encoding choices that influence results.
+Figure 2: The Lettuce inspector framework for Lettuce benchmarking and optimisation
+The framework enables consistent and repeatable experimentation, allowing us to
+quantify the effectiveness of different pipeline configurations and to determine optimised
+setups for specific mapping tasks while controlling for resource consumption, latency, and
+model complexity.
+9
+2.5
+Experimental Design
+2.5.1
+Lettuce Optimisation
+In this study, to optimise Lettuce pipelines, we evaluated several encoding configurations.
+To test different kinds of retrieval, we compared lexical and semantic search. Okapi best
+match 25 (BM25) [25] is a commonly used algorithm for text search, and is the default
+option for Lucene, the Java library used by Usagi, so is a reasonable representative for
+lexical search methods. We compared this with embedding strategies that used as input:
+(i) concept identifiers and concept names, and (ii) concept names augmented with concept
+identifiers, domain identifiers, and concept class identifiers. Embeddings models encode
+the full context of their input, so providing context in the form of the concept information
+may improve retrieval. Retrieval methods were compared by their retrieval of the human-
+mapped concept in the top 10 suggestions. BM25 was compared with the embedding
+models BGE-small, and PubMedBERT.
+For the LLM-based pipeline, we evaluated the performance of several transformer
+models commonly used in resource-constrained environments: Qwen, Phi-3, Llama, and
+Gemma. The accuracy of LLM suggestions was compared between pipelines with and
+without RAG from 10 concepts retrieved with each retrieval method. All experiments
+were executed on two case studies to assess performance across distinct datasets.
+2.5.2
+Case studies
+The case studies selected contain real world data on medications that need to be mapped
+into OMOP. The first dataset was obtained from Nottingham University Hospitals, in the
+UK; the second data was obtained from the Health for Life in Singapore.
+Nottingham University Hospitals
+A dataset of 250 drugs administered as parts of trials carried out on patients in Notting-
+ham University Hospitals was mapped using Lettuce. Of the original 250, 32 drugs have
+no matching OMOP concept, so the remaining 218 were used to test retrieval methods.
+HELIOS study
+Medication data were obtained from the Health for Life in Singapore (HELIOS) study
+(IRB approval by Nanyang Technological University: IRB-2016-11-030), a phenotyped
+longitudinal population cohort study comprising 10,004 multi-ethnic Asian population
+of Singapore aged 30-85 years [26]. Participants in the HELIOS study were recruited
+from the Singapore general population between 2018 and 2022 and underwent extensive
+clinical, behavioural, molecular and genetic characterisation.
+With rich baseline data
+and long-term follow-up through linkage to national health data, the HELIOS study
+provides a unique and world class resource for biomedical researchers across a wide range
+of disciplines to understand the aetiology and pathogenesis of diverse disease outcomes in
+10
+Asia, with potential to improve health and advance healthcare for Asian populations.
+To facilitate scalable and collaborative research, the HELIOS study implements the
+OMOP-CDM. However, mapping medication data to OMOP concepts poses significant
+challenges, primarily due to the complexities involved in standardising medication names.
+In the HELIOS study, medication data were self-reported and manually entered via nurse-
+administered questionnaires, therefore, medications with brand name, abbreviations, ty-
+pographic misspellings or phonetic errors, or combined medications could be recorded. All
+of these sources of imprecision make mapping to a controlled medical vocabulary more
+difficult and require significant manual data cleaning.
+2.5.3
+Evaluation methods
+Retrieval
+Semantic search in Lettuce follows a similar paradigm to previous lexical search methods,
+like Usagi, where the best n matches to a source term, as measured by some scoring
+function, are presented to the user. Usagi is based on Java’s Lucene library, and uses
+the default retrieval algorithm for Lucene, BM25 [25, 27]. Two semantic search methods
+were compared with BM25. From the Beijing Academy of Artificial Intelligence (BAAI),
+the BAAI general embedding (BGE-small) model is a small (33.4M parameter) encoder
+model developed for retrieval tasks [19]. Using BGE-small, embeddings for each concept
+were created using each concept’s name. A possible weakness of this approach is that
+important context for each concept is held in other fields of the concept table.
+For
+example, there are multiple concepts with the concept name “Monster”, which refer to
+outdated medical terminology and to a village in the Netherlands, which this method
+cannot distinguish. To overcome this limitation, a second method of generating strings for
+embedding was devised, using the domain and concept class from the concept table, so for
+each concept, the string was "<concept name>, [a/an] <concept class id> <domain
+id>". BGE-small is a model for general use, but models trained specifically on biological
+and medical data might produce more relevant embeddings for OMOP mapping. One of
+these, PubmedBERT-embeddings [28], was trained on PubMed abstracts, and was used
+to generate embeddings from concept names. Each retrieval method was assessed by how
+well it could return the target concept in the top 10 results.
+Model choice
+The weights for many models are available for use. When Lettuce development started,
+the Llama 3.1 model with 8 billion parameters was selected. Four models were selected
+for comparison by their performance on the MMLU-Pro [29] benchmark: Phi-4, with 14
+billion parameters; Gemma-3, with 12 billion parameters; and Qwen2.5, with 14 billion
+parameters [30, 31]. A 4-bit quantised version of each model was used. A smaller model,
+Llama 3.2, with 3 billion parameters, was used for comparison, quantised to 6 bits.
+11
+Retrieval augmented generation
+RAG has proved useful in tasks where context is important and the whole of the potentially
+required context will not fit in a single prompt [32]. Its applicability to suggesting the
+correct concept from a vocabulary of millions of concepts was tested by comparing the
+performance of an LLM alone with that LLM with the top 10 results from semantic search
+inserted into the prompt.
+Consistent formats were used to prompt the models in testing, using a system prompt
+and a user prompt. The system prompt contains the instructions for the model. The
+prompt used in these cases uses techniques recommended for Llama models [33]. This
+part of the prompt also gives the LLM a role, which has been shown to improve consist-
+ency in responses [34]. Importantly, the prompt includes providing examples of informal
+name/formal name pairs, an effective tactic for LLM prompting [35].
+You are an assistant that suggests formal RxNorm names for a medication.
+You will be given the name of a medication, along with some possibly related
+RxNorm terms.
+If you do not think these terms are related, ignore them
+when making your suggestion.
+Respond only with the formal name of the medication, without any extra
+explanation.
+Examples:
+Informal name: Tylenol
+Response: Acetaminophen
+Informal name: Advil
+Response: Ibuprofen
+Informal name: Motrin
+Response: Ibuprofen
+Informal name: Aleve
+Response: Naproxen
+The RAG prompt includes the instruction (shown in red) to attend to the additional
+context so that the model can apply this effectively.
+Three RAG prompts were used
+that supplied varying context regarding the retrieved items. The simplest supplies only
+the concept_name for each concept, the second also provides the score returned by the
+retrieval method, and the last provides the concept’s domain, vocabulary, concept class,
+and the score from the retrieval method as comma-separated values (CSV). For example,
+for the concept TRAZODONE HCL ORAL TABLET, with a score of 0.051, the representations
+would be:
+• TRAZODONE HCL ORAL TABLET
+12
+• TRAZODONE HCL ORAL TABLET (score = 0.051)
+• TRAZODONE HCL ORAL TABLET, Drug, DPD, Clinical Drug Form, 0.051
+In the CSV representation, the items are preceded by a header describing the number
+of concepts and the column headings. The prompt follows the RAG representation (shown
+in red below) with the source term.
+Possible related terms:
+<For each search result>
+<RAG representation>
+Informal name: {{informal_name}}
+Each combination of LLM and each retrieval method, or the LLM alone, was eval-
+uated for both datasets. For the embeddings models, this included both encoding the
+concept_name and the longer string with a description of the concept class and domain.
+Where RAG was used, the different RAG representations were evaluated.
+Statistical analysis
+The evaluation results for all concept suggestion pipelines were used to assess whether
+RAG is a useful strategy for suggesting concepts. The probability of answering with the
+correct concept name was modelled using binomial regression using a mixed-effects model,
+with the dataset the source term came from, the LLM used, and whether any RAG was
+used as fixed effects, and the source term as a random effect.
+To assess whether the representation of RAG results affected pipeline performance, a
+similar model was fitted to the results of pipelines using RAG, with the dataset, LLM
+used, retrieval method, and RAG representation as fixed effects, and the source term as
+a random effect.
+3.
+Results
+3.1
+Retrieval
+As shown in Table 6, semantic search outperforms lexical search for both case studies.
+For the HELIOS study dataset, BM25 retrieved the target concept in the top 10 results in
+10.25% of cases, while BGE-small embeddings built on the concept name alone retrieved
+the target concept in 22.25% of cases. Introducing context to the concept by adding the
+concept class and domain severely impacted performance, reducing the retrieval of the
+target concept to 17.25%.
+For the NUH dataset, retrieval was generally more successful, as the source terms are
+more similar to OMOP concepts. BM25 was least successful, at 50.9%, and BGE-small
+using the longer strings for embeddings most successful, at 79.8%.
+13
+Accuracy@10
+Method
+Embedding representation
+HELIOS study
+NUH
+BM25
+–
+41 (10.25%)
+111 (50.9%)
+BGE-small
+concept name
+89 (22.25%)
+163 (74.8%)
+with context
+69 (17.25%)
+174 (79.8%)
+PubmedBERT
+concept name
+82 (20.5%)
+165 (75.7%)
+with context
+34 (8.5%)
+115 (52.8%)
+Table 6: Accuracy of retrieving the target concept in the top 10.
+Figures show the
+percentage of source terms for which the target concept was retrieved in the top 10 results
+for each retrieval method.
+Scores were much higher for all methods running on the NUH dataset. BM25 retrieves
+the target concept in 50.9% of cases, and the best scoring semantic search, BGE-small
+with context, scores 79.8%.
+3.2
+Model choice
+Models fitting different resource constraints were selected, and Table 7 shows the perform-
+ance of the different models. Greater model size did not correlate with better accuracy
+on the HELIOS study dataset. In fact, the worst performance for the HELIOS study
+dataset came from the Phi-4 model, which scored 26.5% without RAG. Gemma has the
+best performance without RAG on this dataset, at 35%.
+Accuracy (%)
+Retrieval
+Embedding
+RAG Representation
+HELIOS study
+NUH
+Llama 3.1 8b
+Base Model (No Retrieval)
+30
+55.96
+BM25
+–
+Concept names
+37
+85.78
+Names and scores
+40.5
+85.32
+Concept attributes
+38
+86.7
+BGE-small
+Concept name
+Concept names
+35.75
+87.16
+Names and scores
+38.25
+85.32
+Concept attributes
+38
+88.53
+With context
+Concept names
+36.25
+86.7
+Names and scores
+35.25
+87.16
+Concept attributes
+38.25
+86.7
+PubmedBERT
+Concept name
+Concept names
+37.25
+87.16
+Names and scores
+39.25
+87.16
+14
+Accuracy (%)
+Retrieval
+Embedding
+RAG Representation
+HELIOS study
+NUH
+Concept attributes
+40
+88.07
+With context
+Concept names
+33.25
+81.19
+Names and scores
+34.25
+80.73
+Concept attributes
+37.75
+83.94
+Llama 3.2 3b
+Base Model (No Retrieval)
+28.75
+57.34
+BM25
+–
+Concept names
+35.5
+72.94
+Names and scores
+35
+75.69
+Concept attributes
+35
+76.61
+BGE-small
+Concept name
+Concept names
+33.75
+74.31
+Names and scores
+33.75
+77.52
+Concept attributes
+36
+81.19
+With context
+Concept names
+34.25
+77.06
+Names and scores
+36.75
+68.35
+Concept attributes
+35.5
+79.82
+PubmedBERT
+Concept name
+Concept names
+36
+75.23
+Names and scores
+35.25
+75.23
+Concept attributes
+34.5
+77.52
+With context
+Concept names
+32
+70.18
+Names and scores
+32.75
+69.27
+Concept attributes
+36.75
+79.82
+Gemma 3 12b
+Base Model (No Retrieval)
+35
+64.22
+BM25
+–
+Concept names
+44
+87.61
+Names and scores
+43.25
+87.61
+Concept attributes
+45.5
+88.07
+BGE-small
+Concept name
+Concept names
+38.75
+87.61
+Names and scores
+39.75
+86.24
+Concept attributes
+39.25
+88.99
+With context
+Concept names
+40.75
+89.91
+Names and scores
+42.75
+89.91
+Concept attributes
+39.75
+89.91
+PubmedBERT
+Concept name
+Concept names
+41.75
+88.07
+Names and scores
+39.75
+87.16
+15
+Accuracy (%)
+Retrieval
+Embedding
+RAG Representation
+HELIOS study
+NUH
+Concept attributes
+42
+88.07
+With context
+Concept names
+40.5
+84.86
+Names and scores
+41
+84.4
+Concept attributes
+42.25
+86.24
+Phi-4
+Base Model (No Retrieval)
+26.5
+59.17
+BM25
+–
+Concept names
+27.75
+72.48
+Names and scores
+28
+74.77
+Concept attributes
+30
+73.39
+BGE-small
+Concept name
+Concept names
+28
+71.1
+Names and scores
+27.5
+72.48
+Concept attributes
+30.75
+75.23
+With context
+Concept names
+28.25
+72.48
+Names and scores
+31.75
+73.85
+Concept attributes
+31.25
+73.39
+PubmedBERT
+Concept name
+Concept names
+28.75
+76.15
+Names and scores
+29.25
+74.77
+Concept attributes
+31.25
+76.15
+With context
+Concept names
+25.75
+71.56
+Names and scores
+29.5
+68.35
+Concept attributes
+29.25
+71.56
+Qwen2.5 14b
+Base Model (No Retrieval)
+30.5
+75.23
+BM25
+–
+Concept names
+32.5
+83.03
+Names and scores
+30.75
+84.4
+Concept attributes
+34.25
+84.4
+BGE-small
+Concept name
+Concept names
+29
+80.73
+Names and scores
+32.5
+81.19
+Concept attributes
+29.75
+80.73
+With context
+Concept names
+30.25
+83.03
+Names and scores
+30.75
+84.86
+Concept attributes
+31.25
+83.03
+PubmedBERT
+Concept name
+Concept names
+31.75
+82.11
+Names and scores
+33
+83.94
+16
+Accuracy (%)
+Retrieval
+Embedding
+RAG Representation
+HELIOS study
+NUH
+Concept attributes
+33.5
+84.86
+With context
+Concept names
+30.25
+74.31
+Names and scores
+30.25
+77.06
+Concept attributes
+30.5
+77.52
+Table 7: Percentage accuracy of LLMs generating the target concept. Best results per
+dataset in bold, best method per model in italics.
+3.3
+Retrieval augmented generation
+The best performance was achieved by Gemma using RAG. For the HELIOS study data-
+set, using BM25 as a retrieval method, and supplying the concept attributes, was most
+successful at 45.5%. This was also the best RAG method for Qwen2.5, which achieved
+30.5% accuracy with no RAG, and 34.25% with this combination. On the NUH dataset,
+using the BGE-small retriever with context in the embeddings was most successful, but
+the representation of concepts in the prompt did not affect the outcome.
+Across the datasets, the odds ratio for a correct answer with RAG compared with
+without was 1.62 (P<.001), meaning the odds of the LLM providing the correct answer
+were increased by 62% when RAG is enabled compared with the same LLM without RAG.
+Compared with supplying only the names of retrieved concepts in the prompt, supplying
+the score has an odds ratio of 1.03 (P=.008), and supplying concept attributes has an
+odds ratio of 1.09 (P<.001).
+17
+4.
+Discussion
+Lettuce pipelines perform well on different kinds of datasets in the drug domain. The
+NUH dataset shows that source terms taken from a formal vocabulary can be matched
+well using existing lexical search methods, with a moderate increase in performance using
+semantic search. By contrast, the performance on the HELIOS study dataset shows that
+lexical search is inadequate to the task of matching idiosyncratic, informal source terms,
+whereas semantic search can find the correct concept in the top 10 results around twice as
+often, and an LLM-enabled pipeline can suggest the correct concept in almost half of cases.
+New, more capable models are constantly released, and different users will have different
+resource requirements, so making specific recommendations to use a particular LLM is
+futile. We have presented the lettuce-inspector evaluations to demonstrate how Lettuce
+configurations can be tested. The results do show that providing the LLM with possible
+concepts using RAG is a generally successful strategy, controlling for the model used and
+dataset. Surprisingly, a retrieval method’s performance was not a reliable indicator of how
+well it would perform in RAG; BM25 had the lowest accuracy of all retrieval methods on
+the HELIOS study dataset, half that of BGE-small, but was not significantly worse than
+other retrieval methods for RAG. Configuring the representation of source terms provides
+more marginal benefits. Adding the concept scores increases the odds of a correct response
+with a very modest effect, suggesting the LLM can use the scores as a slight hint, but that
+simply providing the names provides most of the benefit. Adding in concept attributes
+is more helpful, suggesting the models can leverage the added context to make better
+outputs.
+As Lettuce development continues, it will be important to design pipelines that are
+flexible to different OMOP domains. For example, in the retrieval tests, using a longer
+string to reduce retrieval of concepts with similar concept names from different domains
+could severely decrease performance, but in domains with less discrete concepts than
+drugs, this may be necessary. Alternatively, ancillary methods may be employed, such
+as hierarchical classifiers [36] which estimate the domain and concept class of a source
+term, which can then be used to narrow down vector search. These classifiers provide
+an example of a strength of Lettuce’s modular, trainable approach. As well as testing
+specialist models for biomedical terms, such as PubmedBERT, as we have done for the
+drug domain, Lettuce can employ models fine-tuned on OMOP specific tasks, using lettuce
+user feedback for training.
+In production, the prompt for Lettuce does not specify a target vocabulary, instead
+using a dynamic prompt that specifies a domain or domains if specified in the request,
+or “source term” if no domain is specified. Prompt engineering can dramatically increase
+performance of LLM pipelines, and finding a prompt that can effectively instruct an LLM
+to suggest the correct concept across domains will require a systematic approach. This
+prompt may include the results of classifiers to help the LLM narrow down domains. As
+18
+more tools are added to the context provided to the LLM, it may make more sense to
+implement Lettuce as an agent which can employ these tools at its own discretion. Agentic
+LLM pipelines provide a flexible solution to complex problems, and using methods like
+the Model Context Protocol (MCP), new tools can easily be integrated. With automation
+and semi-automation in data pipelines, knowing the reasons for decisions made becomes
+increasingly important for transparency and reproducibility. LLMs cannot reliably report
+on their own reasoning [37], presenting a data provenance problem for pipelines involving
+LLMs. However, tracking an agent’s tool usage and recording the requests and results
+will provide a self-annotating decision process, including any human decisions made in
+mapping, which could inherently provide more insight into the reasons for mapping than
+a manual pipeline.
+These future versions of Lettuce will be developed with careful consideration of the
+needs of the environments in which they need to be deployed. The Lettuce API has been
+designed to integrate with Carrot-mapper, and this integration will continue to drive the
+format of the API.
+Funding
+This research was funded by the National Institute for Health and Care Research Not-
+tingham Biomedical Research Centre and Health Data Research UK (HDR-23002), which
+is funded by the Medical Research Council (UKRI), the National Institute for Health
+Research, the British Heart Foundation, Cancer Research UK, the Economic and So-
+cial Research Council (UKRI), the Engineering and Physical Sciences Research Council
+(UKRI), Health and Care Research Wales, Chief Scientist Office of the Scottish Gov-
+ernment Health and Social Care Directorates, and Health and Social Care Research and
+Development Division (Public Health Agency, Northern Ireland). .
+Conflicts of Interest
+None declared
+Data Availability
+Data access requests can be submitted to the HELIOS Data Access Committee by emailing
+helios_science@ntu.edu.sg for details.
+Code Availability
+The code used to generate the results described can be found in the lettuce-inspector
+repository [24].
+Code for the statistical analysis performed can be found at doi:10.5281/zenodo.18759519
+19
+Authors’ contributions
+• Conceptualization: GF, PRQ, JMW, EU
+• Data curation: JMW
+• Formal analysis: JMW, GF, DGG
+• Funding acquisition: PRQ, GF
+• Investigation: JMW
+• Methodology: GF, JMW
+• Project administration: GF
+• Resources: AR, RL, XW, TM, JC
+• Software: JMW, RO, BP, KS, AR, TG
+• Supervision: PRQ, GF
+• Visualization: GF, JMW, DGG
+• Writing - original draft: GF, JMW, EU, PRQ
+• Writing - review & editing: All authors contributed to review and editing of the
+manuscript
+Abbreviations
+• API: Application programming interface
+• BM25: Okapi Best match 25
+• CDM: Common data model
+• CLI: Command-line interface
+• EHR: Electronic health record
+• FAIR: Findable, accessible, interoperable, reusable
+• HELIOS: Health for Life in Singapore (study)
+• LLM: Large language model
+• NUH: Nottingham University Hospitals
+• OHDSI: Observational Health Data Sciences and Informatics
+20
+• OMOP: Observable Medical Outcomes Partnership
+• RAG: Retrieval augmented generation
+References
+1.
+MD Wilkinson, M Dumontier, IJJ Aalbersberg et al. The FAIR Guiding Principles
+for Scientific Data Management and Stewardship. Scientific Data. 2016; 3(1):160018.
+doi: 10.1038/sdata.2016.18.
+2.
+Data Standardization – OHDSI. url: https://www.ohdsi.org/data-standardization/
+(visited on 13/02/2026).
+3.
+E Jefferson, C Cole, S Mumtaz et al. A Hybrid Architecture (CO-CONNECT) to
+Facilitate Rapid Discovery and Access to Data Across the United Kingdom in Re-
+sponse to the COVID-19 Pandemic: Development Study. Journal of Medical Internet
+Research. 2022; 24(12):e40035. doi: 10.2196/40035.
+4.
+F Hardy, J Heyl, K Tucker et al. Data consistency in the English Hospital Episodes
+Statistics database. BMJ Health Care Inform. 2022; 29(1):e100633. doi: 10.1136/
+bmjhci-2022-100633.
+5.
+RA Cholan, G Pappas, G Rehwoldt et al. Encoding laboratory testing data: case
+studies of the national implementation of HHS requirements and related standards
+in five laboratories. Journal of the American Medical Informatics Association. 2022;
+29(8):1372–1380. doi: 10.1093/jamia/ocac072.
+6.
+S Cox, E Masood, V Panagi et al. Conversion of Sensitive Data to the Observational
+Medical Outcomes Partnership Common Data Model: Protocol for the Development
+and Use of Carrot. JMIR Research Protocols. 2025; 14(1):e60917. doi: 10.2196/
+60917.
+7.
+MC Adams, ML Perkins, C Hudson et al. Breaking Digital Health Barriers Through
+a Large Language Model–Based Tool for Automated Observational Medical Out-
+comes Partnership Mapping: Development and Validation Study. Journal of Medical
+Internet Research. 2025; 27(1):e69004. doi: 10.2196/69004.
+8.
+A Ahmed, S Soby, B Aasman & P Mirhaji. Automated OMOP Concept Mapping
+Using Multi-Agent Large Language Models and Graph-Enhanced Semantic Retrieval.
+url: https://www.ohdsi.org/wp- content/uploads/2025/10/508- Ahmed-
+Automated- OMOP- Concept- Mapping- Using- Multi- Agent- Large- Language-
+Models-and-Graph-Enhanced-Semantic-Retrieval-Report-Adil-Ahmed.pdf
+(visited on 03/03/2026).
+9.
+The Hyve. The Hyve. url: https://www.thehyve.nl/articles/omop-mapping-
+drug-concepts-to-rxnorm (visited on 03/03/2026).
+21
+10.
+Athena. url: https :/ / athena . ohdsi . org / search - terms /start (visited on
+23/05/2025).
+11.
+Usagi. url: https://ohdsi.github.io/Usagi/ (visited on 13/02/2026).
+12.
+ChatGPT. ChatGPT. url: https://chatgpt.com/ (visited on 16/02/2026).
+13.
+ZA Nazi & W Peng. Large Language Models in Healthcare and Medical Domain: A
+Review. Informatics. 2024; 11(3):57. doi: 10.3390/informatics11030057.
+14.
+H Deng, Q Zhou, Z Zhang et al. The Current Status and Prospects of Large Lan-
+guage Models in Medical Application and Research. Chinese Journal of Academic
+Radiology. 2024; 7(4):292–300. doi: 10.1007/s42058-024-00164-x.
+15.
+Pgvector/Pgvector. pgvector. 13th Feb. 2026. url: https://github.com/pgvector/
+pgvector (visited on 13/02/2026).
+16.
+Health-Informatics-UoN/Omop-Lite. University of Nottingham Health Informatics.
+16th Sept. 2025. url: https://github.com/Health-Informatics-UoN/omop-lite
+(visited on 10/02/2026).
+17.
+Y Bengio, R Ducharme, P Vincent & C Janvin. A Neural Probabilistic Language
+Model. J. Mach. Learn. Res. 2003; 3:1137–1155.
+18.
+J Devlin, MW Chang, K Lee & K Toutanova. BERT: Pre-training of Deep Bidirec-
+tional Transformers for Language Understanding. 24th May 2019. doi: 10.48550/
+arXiv.1810.04805. arXiv: 1810.04805 [cs]. url: http://arxiv.org/abs/1810.
+04805 (visited on 13/02/2026). Pre-published.
+19.
+S Xiao, Z Liu, P Zhang & N Muennighoff. C-Pack: Packaged Resources To Advance
+General Chinese Embedding. 2023. arXiv: 2309.07597 [cs.CL].
+20.
+N Reimers & I Gurevych. Sentence-BERT: Sentence Embeddings Using Siamese
+BERT-Networks. 27th Aug. 2019. doi: 10.48550/arXiv.1908.10084. arXiv: 1908.
+10084 [cs]. url: http://arxiv.org/abs/1908.10084 (visited on 13/02/2026).
+Pre-published.
+21.
+YA Malkov & DA Yashunin. Efficient and Robust Approximate Nearest Neighbor
+Search Using Hierarchical Navigable Small World Graphs. IEEE Transactions on
+Pattern Analysis and Machine Intelligence. 2020; 42(4):824–836. doi: 10.1109/
+TPAMI.2018.2889473.
+22.
+P Lewis, E Perez, A Piktus et al. Retrieval-Augmented Generation for Knowledge-
+Intensive NLP Tasks. Advances in Neural Information Processing Systems. 2020.
+23.
+FastAPI. url: https://fastapi.tiangolo.com/ (visited on 13/02/2026).
+24.
+Health-Informatics-UoN/Lettuce-Inspector. University of Nottingham Health Inform-
+atics. 19th Mar. 2025. url: https://github.com/Health- Informatics- UoN/
+lettuce-inspector (visited on 10/02/2026).
+22
+25.
+DK Harman. Overview of the Third Text REtrieval Conference (TREC-3). DIANE
+Publishing, 1995. 593 pp.
+26.
+X Wang, T Mina, N Sadhu et al. The Health for Life in Singapore (HELIOS) Study:
+Delivering Precision Medicine Research for Asian Populations. Nature Communica-
+tions. 2025; 17(1):1. doi: 10.1038/s41467-025-65774-0.
+27.
+S Robertson, H Zaragoza & M Taylor. Simple BM25 Extension to Multiple Weighted
+Fields. Proceedings of the Thirteenth ACM International Conference on Information
+and Knowledge Management. CIKM04: Conference on Information and Knowledge
+Management. Washington D.C. USA: ACM, 13th Nov. 2004:42–49. doi: 10.1145/
+1031171.1031181.
+28.
+Y Gu, R Tinn, H Cheng et al. Domain-Specific Language Model Pretraining for Bio-
+medical Natural Language Processing. CoRR. 2020; abs/2007.15779. arXiv: 2007.
+15779.
+29.
+Y Wang, X Ma, G Zhang et al. MMLU-Pro: A More Robust and Challenging Multi-
+Task Language Understanding Benchmark. Advances in Neural Information Pro-
+cessing Systems. 2024; 37:95266–95290. doi: 10.52202/079017-3018.
+30.
+A Dubey, A Jauhri, A Pandey et al. The Llama 3 Herd of Models. 15th Aug. 2024.
+doi: 10.48550/arXiv.2407.21783. arXiv: 2407.21783 [cs]. url: http://arxiv.
+org/abs/2407.21783 (visited on 19/08/2024). Pre-published.
+31.
+G Team, A Kamath, J Ferret et al. Gemma 3 Technical Report. 2025. arXiv: 2503.
+19786 [cs.CL].
+32.
+P Lewis, E Perez, A Piktus et al. Retrieval-Augmented Generation for Knowledge-
+Intensive NLP Tasks. 12th Apr. 2021. doi: 10.48550/arXiv.2005.11401. arXiv:
+2005.11401 [cs]. url: http://arxiv.org/abs/2005.11401 (visited on 13/02/2026).
+Pre-published.
+33.
+Meta-Llama/Llama-Recipes. Meta Llama. 19th Aug. 2024. url: https://github.
+com/meta-llama/llama-recipes (visited on 13/02/2026).
+34.
+A Kong, S Zhao, H Chen et al. Better Zero-Shot Reasoning with Role-Play Prompt-
+ing. Mar. 2024. arXiv: 2308.07702 [cs].
+35.
+TB Brown, B Mann, N Ryder et al. Language Models Are Few-Shot Learners.
+22nd July 2020. doi: 10.48550/arXiv.2005.14165. arXiv: 2005.14165 [cs].
+url: http://arxiv.org/abs/2005.14165 (visited on 13/02/2026). Pre-published.
+36.
+CN Silla & AA Freitas. A Survey of Hierarchical Classification across Different Ap-
+plication Domains. Data Mining and Knowledge Discovery. 2011; 22(1):31–72. doi:
+10.1007/s10618-010-0175-9.
+23
+37.
+Y Chen, J Benton, A Radhakrishnan et al. Reasoning Models Don’t Always Say What
+They Think. 8th May 2025. doi: 10.48550/arXiv.2505.05410. arXiv: 2505.05410
+[cs]. url: http://arxiv.org/abs/2505.05410 (visited on 10/02/2026). Pre-
+published.
+24

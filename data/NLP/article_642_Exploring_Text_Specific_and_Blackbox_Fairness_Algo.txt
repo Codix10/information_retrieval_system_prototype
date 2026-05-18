@@ -1,0 +1,1315 @@
+Title: Exploring Text Specific and Blackbox Fairness Algorithms in Multimodal Clinical NLP
+Source URL: http://arxiv.org/abs/2011.09625v2
+--------------------------------------------------
+
+Exploring Text Speciﬁc and Blackbox Fairness Algorithms
+in Multimodal Clinical NLP
+John Chen1,2, Ian Berlot-Attwell 1,2, Safwan Hossain 1,2, Xindi Wang 2,3, Frank Rudzicz 1,2,4
+1 University of Toronto, 2 Vector Institute, 3 University of Western Ontario, 4 St. Michael's Hospital
+{johnc, ianberlot, hossa120, frank }@cs.toronto.edu
+xwang842@uwo.ca
+Abstract
+Clinical machine learning is increasingly mul-
+timodal, collected in both structured tabular
+formats and unstructured forms such as free
+text. We propose a novel task of exploring fair-
+ness on a multimodal clinical dataset, adopting
+equalized odds for the downstream medical
+prediction tasks. To this end, we investigate
+a modality-agnostic fairness algorithm - equal-
+ized odds post processing - and compare it to a
+text-speciﬁc fairness algorithm: debiased clin-
+ical word embeddings. Despite the fact that de-
+biased word embeddings do not explicitly ad-
+dress equalized odds of protected groups, we
+show that a text-speciﬁc approach to fairness
+may simultaneously achieve a good balance
+of performance and classical notions of fair-
+ness. We hope that our paper inspires future
+contributions at the critical intersection of clin-
+ical NLP and fairness. The full source code
+is available here: https://github.com/
+johntiger1/multimodal_fairness
+1
+Introduction
+Natural language processing is increasingly lever-
+aged in sensitive domains like healthcare. For such
+critical tasks, the need to prevent discrimination
+and bias is imperative. Indeed, ensuring equal-
+ity of health outcomes across different groups has
+long been a guiding principle of modern health
+care systems (Culyer and Wagstaff, 1993). More-
+over, medical data presents a unique opportunity
+to work with different modalities, speciﬁcally text
+(e.g., patient narratives, admission notes, and dis-
+charge summaries) and numerical or categorical
+data (often denoted tabular data, e.g., clinical mea-
+surements such as blood pressure, weight, or demo-
+graphic information like ethnicity). Multi-modal
+data is not only reﬂective of many real-world set-
+tings, but machine learning models which lever-
+age both structured and unstructured data often
+achieve greater performance than their individual
+constituents (Horng et al., 2017). While prior work
+studied fairness in the text and tabular modalities
+in isolation, there is little work on applying notions
+of algorithmic fairness in the broader multimodal
+setting (Zhang et al., 2020; Chen et al., 2018).
+Our work brings a novel perspective towards
+studying fairness algorithms for models which op-
+erate on both text and tabular data, in this case ap-
+plied to the MIMIC-III clinical dataset (MIMIC-III)
+(Johnson et al., 2016). We evaluate two fairness al-
+gorithms: equalized-odds through post-processing,
+which is agnostic to the underlying classiﬁer, and
+word embedding debiasing which is a text-speciﬁc
+technique. We show that ensembling classiﬁers
+trained on structured and unstructured data, along
+with the aforementioned fairness algorithms, can
+both improve performance and mitigate unfairness
+relative to their constituent components. We also
+achieve strong results on several MIMIC-III clini-
+cal benchmark prediction tasks using a dual modal-
+ity ensemble; these results may be of broader in-
+terest in clinical machine learning (Harutyunyan
+et al., 2019; Khadanga et al., 2019).
+2
+Background
+2.1
+Combining Text and Tabular Data in
+Clinical Machine Learning
+Prior work has shown that combining unstruc-
+tured text with vital sign time series data improves
+performance on clinical prediction tasks. Horng
+et al. (2017) showed that augmenting an SVM with
+text information in addition to vital signs data im-
+proved retrospective sepsis detection. Akbilgic
+et al. (2019) showed that using a text-based risk
+score improves performance on prediction of death
+after surgery for a pediatric dataset. Closest to our
+work, Khadanga et al. (2019) introduced a joint-
+modality neural network which outperforms single-
+modality neural networks on several benchmark
+arXiv:2011.09625v2  [cs.CL]  10 Jun 2021
+prediction tasks for MIMIC-III.
+2.2
+Classical fairness metrics
+Many algorithmic fairness notions fall into one of
+two broad categories: individual fairness enforcing
+fairness across individual samples, and group fair-
+ness seeking fairness across protected groups (e.g.
+race or gender). We focus on a popular group-level
+fairness metric: Equalized Odds (EO) (Hardt et al.,
+2016). Instead of arguing that average classiﬁca-
+tion probability should be equal across all groups
+(also known as Demographic Parity) – which may
+be unfair if the underlying group-speciﬁc base rates
+are unequal – EO allows for classiﬁcation proba-
+bilities to differ across groups only through the
+underlying ground truth. Formally, a binary clas-
+siﬁer bY satisﬁes EO for a set of groups S if, for
+ground truth Y and group membership A:
+Pr( ˆY = 1 | Y = y, A = a) = Pr( ˆY = 1 | Y = y, A = a′)
+∀y ∈{0, 1}, ∀a, a′ ∈S
+In short, the true positive (TP) and true negative
+(TN) rates should be equal across groups.
+2.3
+Equalized Odds Post Processing
+Hardt et al. (2016) proposed a model-agnostic post-
+processing algorithm that minimizes this group
+speciﬁc error discrepancy while considering per-
+formance. Brieﬂy, the post-processing algorithm
+determines group-speciﬁc random thresholds based
+on the intersection of group-speciﬁc ROC curves.
+The multi-modality of our underlying data and the
+importance of privacy concerns in the clinical set-
+ting make post-processing especially attractive as it
+allows fairness to be achieved agnostic to the inner
+workings of the base classiﬁer.
+2.4
+Debiasing word embeddings
+Pretrained word embeddings encode the societal
+biases of the underlying text on which they are
+trained, including gender roles and racial stereo-
+types (Bolukbasi et al., 2016; Zhao et al., 2018;
+Manzini et al., 2019). Recent work has attempted to
+mitigate this bias in context-free embeddings while
+preserving the utility of the embeddings. Bolukbasi
+et al. (2016) analyzed gender subspaces by compar-
+ing distances between word vectors with pairs of
+gender-speciﬁc words to remove bias from gender-
+neutral words. Manzini et al. (2019) extended this
+work to the multi-class setting, enabling debias-
+ing in race and religion. Concurrent to their work,
+(Ravfogel et al., 2020) propose iterative null space
+Figure 1: Experimental setup and ensemble architec-
+ture. Fairness approaches are indicated in dotted boxes.
+projection as a technique to hide information about
+protected attributes by casting it into the null space
+of the classiﬁer. Following the recent popularity of
+BERT and ELMo, Liang et al. (2020) consider ex-
+tending debiasing to sentence-level, contextualized
+representations.
+3
+Experimental Setup
+3.1
+Clinical Prediction Tasks
+MIMIC-III contains deidentiﬁed health data asso-
+ciated with 60,000 intensive care unit (ICU) ad-
+missions (Johnson et al., 2016). It contains both
+unstructured textual data (in the form of clinical
+notes) and structured data (in the form of clini-
+cal time series data and demographic, insurance,
+and other related meta-data). We focus on two
+benchmark binary prediction tasks for ICU stays
+previously proposed by Harutyunyan et al. (2019):
+in-hospital mortality prediction (IHM), which aims
+to predict mortality based on the ﬁrst 48 hours of
+a patient’s ICU stay, and phenotyping, which aims
+to retrospectively predict the acute-care conditions
+that impacted the patient. Following Khadanga
+et al. (2019) we extend the prediction tasks to lever-
+age clinical text linked to their ICU stay. For both
+tasks the classes are higly imbalanced: in the IHM
+task only 13.1% of training examples are positive,
+and the relative imbalance of the labels in the phe-
+notyping class can be seen in Figure 2. To account
+for the label imbalance we evaluate performance
+using AUC ROC and AUC PRC. More details can
+be found in Appendix A.
+3.2
+Fairness Deﬁnition
+Next, we consider how we can extend a deﬁni-
+tion of fairness to this multimodal task. Following
+work by Zhang et al. (2020) in the single-modality
+setting, we examine True Positive and True Nega-
+tive rates on our clinical prediction task between
+different protected groups. Attempting to equal-
+ize these rates corresponds to satisfying Equalized
+Figure 2: Percentage of positive train cases for each of
+the 25 phenotyping tasks. The critical care conditions
+corresponding to the task codes can be found in Table
+3 of the Appendix
+Odds. EO satisﬁes many desiderata within clini-
+cal settings, and has been used in previous clini-
+cal fairness work (Pfohl et al., 2019a; Garb, 1997;
+Pfohl et al., 2019b). While EO does not explic-
+itly incorporate the multimodality of our data, it
+accurately emphasizes the importance of the down-
+stream clinical prediction task on the protected
+groups. Nonetheless, we acknowledge that EO
+alone is insufﬁcient for practical deployment; na¨ıve
+application can result in unacceptable performance
+losses and thus consultations with physicians and
+stakeholders must be held (Rajkomar et al., 2018).
+3.3
+Classiﬁcation Models
+We provide brief descriptions below with details
+available in Appendix B.
+• Structured Data Model: Following Haru-
+tyunyan et al. (2019), we use a channel-wise
+bidirectional Long Short Term Memory net-
+work (bi-LSTM).
+• Unstructured Textual Data: We use a CNN
+encoder to extract the semantic features from
+clinical notes. Importantly, we experiment
+with training word embeddings from scratch
+and utilizing pre-trained BioWordVec embed-
+dings (Zhang et al., 2019).
+• Ensemble: We perform logistic regression on
+the output binary classiﬁcation probabilities
+from the previous models.
+Sensitive
+Group
+Train
+Count
+Test
+Count
+% of Test
+F
+7940
+1415
+44.0 %
+M
+9708
+1778
+56.0 %
+ASIAN
+408
+60
+1.9 %
+BLACK
+1658
+285
+8.9 %
+HISPANIC
+521
+107
+3.3 %
+OTHER
+2655
+459
+14.4 %
+WHITE
+12406
+2282
+71.5 %
+Government
+356
+74
+2.3 %
+Medicaid
+1362
+205
+6.4 %
+Medicare
+9857
+1757
+55.0 %
+Private
+4946
+932
+29.2 %
+Self Pay
+133
+33
+1.0 %
+UNKNOWN
+994
+192
+6.1 %
+Table 1: Distribution of sensitive-attributes over train
+and test data for the In-Hospital Mortality task
+4
+Fairness Setup
+4.1
+Sensitive groups
+Recall that EO explicitly ensures fairness with re-
+spect to sensitive groups while debiasing implic-
+itly depends upon it. Leveraging the demographic
+data in MIMIC-III, we consider ethnicity (divided
+into Asian, Black, Hispanic, White and other), bi-
+ological sex (divided into male and female), and
+insurance type (divided into government, medicare,
+medicaid, self-pay, private, and unknown). With
+the exception of biological sex, the sensitive groups
+are highly imbalanced (see Table 1). Note that
+insurance-type has been shown to be a proxy for
+socioeconomic status (SES) (Chen et al., 2019).
+4.2
+Equalized Odds Post-Processing
+We apply our equalized-odds post processing al-
+gorithm on the predictions of the trained single-
+modality classiﬁers (physiological signal LSTM
+model as well as text-only CNN model) as well
+as the trained ensemble classiﬁer. Note that we
+apply EO postprocessing only once for each exper-
+iment: either on the outputs of the single-modality
+model, or on the ensemble predictions. The fair-
+ness approaches are mutually exclusive: we do not
+consider applying EO postprocessing together with
+debiased word embeddings. We consider using
+both soft prediction scores (interpretable as prob-
+abilities) as well as thresholded hard predictions
+as input to the post-processing algorithm. These
+choices impact the fairness performance trade-off
+as discussed further in Section 5.
+4.3
+Socially Debiased Clinical Word
+Embeddings
+While clinically pre-trained word embeddings may
+improve downstream task performance, they are
+not immune from societal bias (Khattak et al.,
+2019). We socially debias these clinical word em-
+beddings following Manzini et al. (2019). We man-
+ually select sets of social-speciﬁc words (see Ap-
+pendix C) to identify the fairness-relevant social
+bias subspace. Formally, having identiﬁed the basis
+vectors {b1, b2, ..., bn} of the social bias subspace
+B, we can ﬁnd the projection wB of a word embed-
+ding w:
+wB =
+n
+X
+i=1
+⟨w, bi⟩bi
+Next we apply hard debiasing, which will re-
+move bias from existing word embeddings by sub-
+tracting wB, their component in this fairness sub-
+space. This yields w′, our socially debiased word
+embedding:
+w′ =
+w −wB
+∥w −wB∥
+We consider debiasing with respect to race and
+gender. The race debiased embeddings are re-used
+for insurance tasks as empiric research has indi-
+cated that the use of proxy groups in fairness can
+be effective (Gupta et al., 2018) and SES is strongly
+related to race (Williams et al., 2016).
+5
+Results and Analysis
+IHM
+Phenotyping
+AUC
+PRC
+AUC
+ROC
+Macro
+AUCROC
+Overall
+AUCROC
+Harutyunyan et. al
+(2019) – No Text
+0.515
+0.862
+0.776
+0.825
+Khadanga et. al
+(2019) – Ensemble
+0.525
+0.865
+–
+–
+Ours – Text Only
+0.472
+0.815
+0.766
+0.829
+Ours – Text Only
++ BioWordVec
+0.489
+0.841
+0.771
+0.837
+Ours – Ensemble
+0.582
+0.880
+0.822
+0.861
+Ours – Ensemble
++ BioWordVec
+0.582
+0.886
+0.829
+0.870
+Table 2:
+Leveraging clinical pretrained word em-
+beddings improves performance compared to training
+word embeddings from scratch in the text-only model.
+Ensembling the text-only model with the clinical time
+series classiﬁer improves performance further.
+5.1
+Ensembling clinical word embeddings
+with structured data improves
+performance
+Empirically, we observe superior performance to
+prior literature on a suite of clinical prediction tasks
+in Table 2; more tasks are evaluated in Appendix
+Table A. Full hyperparameter settings and code for
+reproducibility can be found here 1. The ensem-
+ble model outperforms both constituent classiﬁers
+(AUC plot on Figure 3). This holds even when fair-
+ness/debiasing techniques are applied, emphasizing
+the overall effectiveness of leveraging multi-modal
+data. However, the ensemble’s improvements in
+performance do not directly translate to improve-
+ments in fairness; see the True Positive (TP) graph
+in Figure 3, where the maximum TP gap remains
+consistent under the ensemble.
+5.2
+Debiased word embeddings and the
+fairness performance trade-off
+Improving fairness usually comes at the cost of re-
+duced performance (Menon and Williamson, 2018).
+Indeed, across all tasks, fairness groups and classi-
+ﬁers, we observe the group-speciﬁc disparities of
+TP and TN rates generally diminish when equalized
+odds post-processing is used (see Appendix F for
+additional results). However, this post-processing
+also leads to a degradation in the AUC. Note that
+we apply EO-post processing on hard (thresholded)
+predictions of the classiﬁers. If instead soft predic-
+tion scores are used as inputs to the post-processing
+step, both the performance degradation and the fair-
+ness improvement are softened (Hardt et al., 2016).
+Generally, word embedding debiasing (WED)
+also helps reduce TP/TN discrepancies, although
+not to the same extent as EO postprocessing. Re-
+markably, in certain tasks, WED also yields a
+performance improvement, even compared to the
+fairness-free, unconstrained ensemble classiﬁer. In
+particular, for the AUC graph in Figure 3, leverag-
+ing debiased word embeddings improves the per-
+formance of the ensemble; at the same time, the
+TP and TN group discrepancy ranges are improved.
+However, we stress that this outcome was not con-
+sistently observed and further investigation is war-
+ranted.
+We emphasize that EO and WED serve differ-
+ent purposes with different motivations. While
+EO explicitly seeks to minimize the TP/TN range
+1https://github.com/johntiger1/
+multimodal_fairness/clinicalnlp
+Figure 3: Plots of TP Rate, TN Rate, and AUC on phenotyping task M for groups deﬁned by sensitive attribute of
+race. Each vertical black line represents a classiﬁer (line style indicating modality); the length of the line represents
+the range of scores over fairness groups. In the TP/TN graphs, a shorter line represents better fairness; there is
+less discrepancy between the maximum and minimum group-speciﬁc TP/TN rates. In the AUC graph (far right),
+the higher the vertical position of the line, the better the performance. EO is effective at reducing the spread in
+TP/TN rates for the ensemble classiﬁer (ﬁrst two graphs) at the cost of performance (far right) graph. Meanwhile,
+debiased word embeddings both improves fairness, reducing the length of the line in the ﬁrst two graphs, while
+achieving superior performance in AUC graph
+between sensitive groups (reﬂected in its perfor-
+mance on the ﬁrst two plots in Figure 3), WED
+seeks to neutralize text-speciﬁc bias in the word-
+embeddings. Despite the difference in goals, and
+despite operating only on the text-modality of the
+dataset, WED is still able to reduce the group-
+speciﬁc TP/TN range; recent work on proxy fair-
+ness in text has shown that indirect correlation be-
+tween bias in text and protected attributes may be
+useful in achieving parity (Romanov et al., 2019).
+Although WED demonstrate some good proper-
+ties with respect to both fairness and performance
+for our speciﬁc dataset and task, we caution that
+they represent only one approach to fairness in NLP
+(Blodgett et al., 2020). Indeed, WED suffers from
+shortcomings related to intersectional fairness (Go-
+nen and Goldberg, 2019), and we encourage further
+discussion into concretely deﬁning fair, real-world
+NLP tasks and developing novel algorithms.
+Our results highlight the important role practi-
+tioners and stakeholders play in algorithmic fair-
+ness on clinical applications. The trade-off between
+performance and fairness, whether between the soft
+and hard labels used for EO, or between EO and de-
+biased word embeddings, must be balanced based
+on numerous real world factors.
+6
+Discussion
+In this paper, we propose a novel multimodal fair-
+ness task for the MIMIC-III dataset, based on equal-
+ized odds. We provide two baselines: a classiﬁer-
+agnostic fairness algorithm (equalized odds post-
+processing) and a text-speciﬁc fairness algorithm
+(debiased word embeddings).
+We observe that
+both methods generally follow the fairness per-
+formance tradeoff seen in single-modality tasks.
+EO is more effective at reducing the disparities in
+group-speciﬁc error rates while word-embedding
+debiasing has better performance. Future work
+can consider more generalized notions of fairness
+such as preferences-based frameworks, or extend
+text-speciﬁc fairness to contextualized word em-
+beddings (Hossain et al., 2020; Zhang et al., 2020).
+Further analysis of the fairness performance trade-
+off, especially in multimodal settings, will facilitate
+equitable decision making in the clinical domain.
+7
+Acknowledgements
+We would like to acknowledge Vector Institute
+for ofﬁce and compute resources. We would also
+like to thank Matt Gardner for his help with an-
+swering questions when using AllenNLP (Gard-
+ner et al., 2017). John Chen and Safwan Hos-
+sain are funded by an Ontario Graduate Scholar-
+ship and a Vector Institute Research Grant. Ian
+Berlot-Attwell is funded by a Canada Graduate
+Scholarships-Master’s, and a Vector Institute Re-
+search Grant. Frank Rudzicz is supported by a
+CIFAR Chair in AI.
+References
+Oguz Akbilgic, Ramin Homayouni, Kevin Heinrich,
+Max Raymond Langham, and Robert Lowell Davis.
+2019. Unstructured text in EMR improves predic-
+tion of death after surgery in children. In Informat-
+ics, volume 6, page 4. Multidisciplinary Digital Pub-
+lishing Institute.
+Su Lin Blodgett, Solon Barocas, Hal Daum´e III, and
+Hanna Wallach. 2020.
+Language (technology) is
+power: A critical survey of” bias” in nlp.
+arXiv
+preprint arXiv:2005.14050.
+Tolga
+Bolukbasi,
+Kai-Wei
+Chang,
+James
+Zou,
+Venkatesh Saligrama, and Adam Tauman Kalai.
+2016. Man is to computer programmer as woman
+is to homemaker? Debiasing word embeddings. In
+NIPS.
+I. Y. Chen, P. Szolovits, and M. Ghassemi. 2019. Can
+AI Help Reduce Disparities in General Medical and
+Mental Health Care? AMA J Ethics, 21(2):167–179.
+Irene Chen, Fredrik D Johansson, and David Sontag.
+2018. Why is my classiﬁer discriminatory? In Ad-
+vances in Neural Information Processing Systems,
+pages 3539–3550.
+AJ Culyer and A Wagstaff. 1993. Equity and equal-
+ity in health and health care. Journal of health eco-
+nomics, 12(4):431–457.
+Howard N. Garb. 1997. Race bias, social class bias,
+and gender bias in clinical judgment. Clinical Psy-
+chology: Science and Practice, 4(2):99–120.
+Matt Gardner, Joel Grus, Mark Neumann, Oyvind
+Tafjord, Pradeep Dasigi, Nelson F. Liu, Matthew
+Peters, Michael Schmitz, and Luke S. Zettlemoyer.
+2017. Allennlp: A deep semantic natural language
+processing platform.
+Hila Gonen and Yoav Goldberg. 2019. Lipstick on a
+pig: Debiasing methods cover up systematic gender
+biases in word embeddings but do not remove them.
+In Proceedings of the 2019 Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies,
+Volume 1 (Long and Short Papers), pages 609–614.
+Maya R. Gupta, Andrew Cotter, Mahdi Milani Fard,
+and Serena Wang. 2018.
+Proxy fairness.
+CoRR,
+abs/1806.11212.
+Moritz Hardt, Eric Price, Eric Price, and Nati Srebro.
+2016. Equality of opportunity in supervised learn-
+ing.
+In D. D. Lee, M. Sugiyama, U. V. Luxburg,
+I. Guyon, and R. Garnett, editors, Advances in Neu-
+ral Information Processing Systems 29, pages 3315–
+3323. Curran Associates, Inc.
+Hrayr Harutyunyan, Hrant Khachatrian, David C. Kale,
+Greg Ver Steeg, and Aram Galstyan. 2019. Multi-
+task learning and benchmarking with clinical time
+series data. Scientiﬁc Data, 6(1):96.
+Steven Horng, David A Sontag, Yoni Halpern, Yacine
+Jernite, Nathan I Shapiro, and Larry A Nathanson.
+2017. Creating an automated trigger for sepsis clini-
+cal decision support at emergency department triage
+using machine learning. PloS one, 12(4).
+Safwan Hossain, Andjela Mladenovic, and Nisarg
+Shah. 2020. Designing fairly fair classiﬁers via eco-
+nomic fairness notions. In Proceedings of The Web
+Conference 2020, pages 1559–1569.
+Alistair Johnson, Tom Pollard, Lu Shen, Li-wei
+Lehman, Mengling Feng, Mohammad Ghassemi,
+Benjamin Moody, Peter Szolovits, Leo Celi, and
+Roger Mark. 2016. MIMIC-III, a freely accessible
+critical care database. Scientiﬁc Data, 3:160035.
+Swaraj Khadanga, Karan Aggarwal, Shaﬁq Joty, and
+Jaideep Srivastava. 2019. Using clinical notes with
+time series data for icu management. arXiv preprint
+arXiv:1909.09702.
+Faiza Khan Khattak, Serena Jeblee, Chlo´e Pou-Prom,
+Mohamed Abdalla, Christopher Meaney, and Frank
+Rudzicz. 2019. A survey of word embeddings for
+clinical text. Journal of Biomedical Informatics: X,
+page 100057.
+Yoon
+Kim.
+2014.
+Convolutional
+neural
+net-
+works for sentence classiﬁcation.
+arXiv preprint
+arXiv:1408.5882.
+Paul Pu Liang, Irene Mengze Li, Emily Zheng,
+Yao
+Chong
+Lim,
+Ruslan
+Salakhutdinov,
+and
+Louis-Philippe Morency. 2020.
+Towards debi-
+asing sentence representations.
+arXiv preprint
+arXiv:2007.08100.
+Thomas Manzini, Lim Yao Chong, Alan W Black,
+and Yulia Tsvetkov. 2019.
+Black is to criminal
+as caucasian is to police: Detecting and removing
+multiclass bias in word embeddings.
+In Proceed-
+ings of the 2019 Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics: Human Language Technologies, Volume 1
+(Long and Short Papers), pages 615–621, Minneapo-
+lis, Minnesota. Association for Computational Lin-
+guistics.
+Aditya Krishna Menon and Robert C Williamson. 2018.
+The cost of fairness in binary classiﬁcation. In Pro-
+ceedings of the 1st Conference on Fairness, Account-
+ability and Transparency, volume 81 of Proceed-
+ings of Machine Learning Research, pages 107–118,
+New York, NY, USA. PMLR.
+F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel,
+B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer,
+R. Weiss, V. Dubourg, J. Vanderplas, A. Passos,
+D. Cournapeau, M. Brucher, M. Perrot, and E. Duch-
+esnay. 2011.
+Scikit-learn:
+Machine learning in
+Python.
+Journal of Machine Learning Research,
+12:2825–2830.
+Stephen Pfohl, Ben Maraﬁno, Adrien Coulet, Fatima
+Rodriguez, Latha Palaniappan, and Nigam H. Shah.
+2019a. Creating fair models of atherosclerotic car-
+diovascular disease risk. In Proceedings of the 2019
+AAAI/ACM Conference on AI, Ethics, and Society,
+AIES ’19, page 271–278, New York, NY, USA. As-
+sociation for Computing Machinery.
+Stephen R. Pfohl, Tony Duan, Daisy Yi Ding, and
+Nigam H. Shah. 2019b. Counterfactual reasoning
+for fair clinical risk prediction. In Proceedings of
+the 4th Machine Learning for Healthcare Confer-
+ence, volume 106 of Proceedings of Machine Learn-
+ing Research, pages 325–358, Ann Arbor, Michigan.
+PMLR.
+Alvin Rajkomar, Michaela Hardt, Michael D. Howell,
+Greg Corrado, and Marshall H. Chin. 2018. Ensur-
+ing fairness in machine learning to advance health
+equity. Annals of Internal Medicine, 169(12):866–
+872.
+Shauli Ravfogel, Yanai Elazar, Hila Gonen, Michael
+Twiton, and Yoav Goldberg. 2020.
+Null it out:
+Guarding protected attributes by iterative nullspace
+projection. arXiv preprint arXiv:2004.07667.
+Alexey Romanov, Maria De-Arteaga, Hanna Wal-
+lach, Jennifer Chayes, Christian Borgs, Alexan-
+dra Chouldechova, Sahin Geyik, Krishnaram Ken-
+thapadi, Anna Rumshisky, and Adam Kalai. 2019.
+What’s in a name? reducing bias in bios without ac-
+cess to protected attributes. In Proceedings of the
+2019 Conference of the North American Chapter of
+the Association for Computational Linguistics: Hu-
+man Language Technologies, Volume 1 (Long and
+Short Papers), pages 4187–4195.
+David R. Williams, Naomi Priest, and Norman B. An-
+derson. 2016.
+Understanding associations among
+race, socioeconomic status, and health:
+Patterns
+and prospects.
+Health psychology :
+ofﬁcial
+journal of the Division of Health Psychology,
+American Psychological Association, 35(4):407–
+411. 27018733[pmid].
+Haoran Zhang,
+Amy X. Lu,
+Mohamed Abdalla,
+Matthew McDermott, and Marzyeh Ghassemi. 2020.
+Hurtful words: Quantifying biases in clinical con-
+textual word embeddings.
+In Proceedings of the
+ACM Conference on Health, Inference, and Learn-
+ing, CHIL ’20, page 110–120, New York, NY, USA.
+Association for Computing Machinery.
+Ye Zhang and Byron Wallace. 2015. A sensitivity anal-
+ysis of (and practitioners’ guide to) convolutional
+neural networks for sentence classiﬁcation.
+arXiv
+preprint arXiv:1510.03820.
+Yijia Zhang, Qingyu Chen, Zhihao Yang, Hongfei Lin,
+and Zhiyong Lu. 2019.
+Biowordvec, improving
+biomedical word embeddings with subword infor-
+mation and mesh. Scientiﬁc data, 6(1):1–9.
+Jieyu Zhao, Yichao Zhou, Zeyu Li, Wei Wang, and Kai-
+Wei Chang. 2018.
+Learning gender-neutral word
+embeddings. In Proceedings of the 2018 Conference
+on Empirical Methods in Natural Language Process-
+ing, pages 4847–4853, Brussels, Belgium. Associa-
+tion for Computational Linguistics.
+A
+Details on Clinical Prediction Tasks
+A.1
+Deﬁning the Multimodal MIMIC-III
+Benchmark Prediction Tasks
+Existing work by (Harutyunyan et al., 2019) previ-
+ously deﬁned four benchmark clinical prediction
+tasks on ICU stays information from the large
+MIMIC-III database.
+They produce a derived
+dataset, focusing on 17 timeseries clinical features,
+without text. The goal is predict the task speciﬁc
+outcome (mortality, phenotyping, decompensation,
+length-of-stay) for the given ICU stay. We utilize
+their derived dataset directly, which provides train-
+ing and test examples for all four tasks, but join
+the derived dataset back with the original to obtain
+linked clinical text. We make the key choice that
+we drop examples without relevant (i.e. no causal
+leakage) extracted clinical notes, as in (Khadanga
+et al., 2019). Thus, we concretely deﬁne the Com-
+bined Modality MIMIC-III Benchmark Prediction
+Task as extending the benchmark clinical predic-
+tion task by (Harutyunyan et al., 2019) to include
+linked clinical text. If there are no notes associated
+with an example, then we remove this instance from
+the task. Note that we also drop ICU stays which
+only have unusable notes due to causal leakage; for
+instance death reports for mortality prediction.
+A.2
+Note extraction
+To extract relevant notes, we build a mapping from
+the derived dataset provided by (Harutyunyan et al.,
+2019) and the MIMIC-III database. For each train-
+ing and test instance in each task, we ﬁnd the clini-
+cal notes in the MIMIC-III database. For the IHM
+task, if we do not ﬁnd any notes within the ﬁrst
+48 hours of their stay, we drop the patient, since
+there is no relevant textual information. Note that
+this is consistent with the original task formulation
+by (Harutyunyan et al., 2019) of in-hospital mor-
+tality prediction using at most the ﬁrst 48 hours of
+clinical data. Furthermore, this follows (Khadanga
+et al., 2019).
+For the phenotyping task, which is not covered
+by (Khadanga et al., 2019), we relax this time con-
+dition. In the original formulation of the task, phe-
+notyping is a retrospective multilabel multiclass
+classiﬁcation task, meaning that all vital signs data
+associated with the ICU stay is provided and can
+be used by the model. Therefore, we only drop the
+patient if there are no notes for the entire ICU stay.
+A.3
+Preprocessing
+We use the same preprocessing as in (Khadanga
+et al., 2019), ﬁnding it to be mildly beneﬁcial for
+performance.
+A.4
+Cohort statistics
+In the medical literature, cohort selection is the
+process of selecting the population of patients for
+inclusion in a study. These patients will then pro-
+vide the training instances for the clinical predic-
+tion task. We report the cohort statistics for our
+binary clinical prediction multimodal tasks.
+A.4.1
+In-Hospital Mortality
+Sensitive
+Group
+Train
+Count
+Test
+Count
+% of Test
+F
+7940
+1415
+44.0 %
+M
+9708
+1778
+56.0 %
+ASIAN
+408
+60
+1.9 %
+BLACK
+1658
+285
+8.9 %
+HISPANIC
+521
+107
+3.3 %
+OTHER
+2655
+459
+14.4 %
+WHITE
+12406
+2282
+71.5 %
+Government
+356
+74
+2.3 %
+Medicaid
+1362
+205
+6.4 %
+Medicare
+9857
+1757
+55.0 %
+Private
+4946
+932
+29.2 %
+Self Pay
+133
+33
+1.0 %
+UNKNOWN
+994
+192
+6.1 %
+A.4.2
+Phenotyping
+Sensitive
+Group
+Train
+Count
+Test
+Count
+% of Test
+F
+15638
+2750
+44%
+M
+19803
+3504
+56%
+ASIAN
+826
+133
+2.1 %
+BLACK
+3378
+575
+9.1 %
+HISPANIC
+1158
+206
+3.3 %
+OTHER
+5004
+854
+13.7 %
+WHITE
+25075
+4486
+71.7 %
+Government
+845
+150
+2.4 %
+Medicaid
+2850
+433
+6.9 %
+Medicare
+18702
+3298
+52.7 %
+Private
+10784
+1923
+30.7 %
+Self Pay
+380
+73
+1.2 %
+UNKNOWN
+1880
+377
+6.0 %
+A.5
+Task Statistics
+A.5.1
+In-Hospital Mortality
+Label
+Train Set Count
+Test Set Count
+0
+15337
+2829
+1
+2311
+364
+A.5.2
+Phenotyping
+Plots of the prevalance of the 25 critical care con-
+ditions can be found in Figures 4 and 2 for the test
+and train sets respectively, a legend that doubles
+as the full list of phenotyping tasks is available in
+Table 3.
+Figure 4: Percentage of positive test cases for each of
+the 25 phenotyping tasks
+B
+Model Details
+B.1
+Structured Data Model
+We use the baseline developed by Harutyunyan
+et al. (2019). The structured data model takes as in-
+put a time-series of 17 clinical variables, which
+are extracted features for the benchmark tasks
+introduced in the same paper.
+The model is a
+channel-wise LSTM where each clinical variable is
+transcoded by a bidirectional LSTM, concatenated
+with the other transcoded sequences and passed to
+a ﬁnal LSTM for prediction.
+B.2
+Unstructured Data Model
+We implement a simple CNN-based encoder (Kim,
+2014; Zhang and Wallace, 2015) to process the
+clinical notes and produce a task-speciﬁc predic-
+tion. We experiment with various settings including
+model architecture, word embedding dimension,
+preprocessing, varying the maximum number of
+tokens, L2 regularization and batch size. Below,
+we report the ﬁnal hyperparameters and settings
+used to generate all plots and reported throughout.
+Our CNNEncoder is built using the AllenNLP
+framework (Gardner et al., 2017). We use 1D ker-
+nel (n-gram) ﬁlter sizes of 2, 3 and 5, learning
+5 ﬁlters for each ﬁlter size. Convolution is done
+on word embedding representations of the input,
+across n-gram windows of the sequence, and are
+Code
+Task
+A
+Acute and unspeciﬁed renal fail-
+ure
+B
+Acute cerebrovascular disease
+C
+Acute myocardial infarction
+D
+Cardiac dysrhythmias
+E
+Chronic kidney disease
+F
+Chronic obstructive pulmonary
+disease and bronchiectasis
+G
+Complications of surgical proce-
+dures or medical care
+H
+Conduction disorders
+I
+Congestive heart failure
+J
+Coronary atherosclerosis and
+other heart disease
+K
+Diabetes mellitus with complica-
+tions
+L
+Diabetes mellitus without com-
+plication
+M
+Disorders of lipid metabolism
+N
+Essential hypertension
+O
+Fluid and electrolyte disorders
+P
+Gastrointestinal hemorrhage
+Q
+Hypertension with complications
+and secondary hypertension
+R
+nonhypertensive
+S
+Other liver diseases
+T
+Other lower respiratory disease
+U
+Other upper respiratory disease
+V
+Pleurisy
+W
+Pneumonia (except that caused
+by tuberculosis or sexually trans-
+mitted disease)
+X
+pneumothorax
+Y
+pulmonary collapse
+Table 3: List of critical care conditions in the phenotyp-
+ing task, and their corresponding alphabetic codes.
+pooled before being combined. The CNNEncoder
+produces a single ﬁxed size vector, and we use a
+simple linear layer on top to perform the classiﬁca-
+tion.
+For all multimodal tasks, we limit the maximum
+number of tokens input to 1536, taking the most
+recent notes ﬁrst (taking care to avoid causal leak-
+age as described in 3.1), and apply preprocessing
+as in (Khadanga et al., 2019). For the decompen-
+sation task, we subsample the number of training
+instances due to engineering and efﬁciency reasons.
+From 2 million possible training instances, we sam-
+ple 50 000 examples, with weighting to balance
+the number of positive and negatively training in-
+stances in a 50/50 split.
+We train for up to 50 epochs, using Adam op-
+timizer with learning rate set to 0.001. When we
+use pretrained word embeddings (either debiased
+or not), we do not ﬁnetune or update them. We
+do not use any L2 regularization or dropout, in-
+stead employing early stopping with patience of 5
+epochs, using validation loss as the stopping crite-
+rion. We use batch size 256. Training is completed
+on 1 NVIDIA Titan Xp with 12 GB of memory.
+B.3
+Ensemble Model
+We use scikit-learn (Pedregosa et al., 2011) with
+the default setting of L2 regularization with C = 1
+C
+Sets of social-speciﬁc Words
+C.1
+Sets of Gender-speciﬁc Words
+• {”he”, ”she”}
+• {”his”, ”hers”}
+• {”son”, ”daughter”}
+• {”father”, ”mother”}
+• {”male”, ”female”}
+• {”boy”, ”girl”}
+• {”uncle”, ”aunt”}
+C.2
+Sets of Racial-speciﬁc Words
+• {”black”, ”caucasian”, ”asian”, ”hispanics”}
+• {”african”, ”caucasian”, ”asian”, ”hispan-
+ics”}
+• {”black”, ”white”, ”asian”, ”hispanics”}
+• {”africa”, ”america”, ”asia”, ”hispanics”}
+• {”africa”, ”america”, ”china”, ”hispanics”}
+• {”africa”, ”europe”, ”asia”, ”hispanics”}
+• {”black”, ”caucasian”, ”asian”, ”latino”}
+• {”african”, ”caucasian”, ”asian”, ”latino”}
+• {”black”, ”white”, ”asian”, ”latino”}
+• {”africa”, ”america”, ”asia”, ”latino”}
+• {”africa”, ”america”, ”china”, ”latino”}
+• {”africa”, ”europe”, ”asia”, ”latino”}
+• {”black”, ”caucasian”, ”asian”, ”spanish”}
+• {”african”, ”caucasian”, ”asian”, ”spanish”}
+• {”black”, ”white”, ”asian”, ”spanish”}
+• {”africa”, ”america”, ”asia”, ”spanish”}
+• {”africa”, ”america”, ”china”, ”spanish”}
+• {”africa”, ”europe”, ”asia”, ”spanish”}
+D
+Hard Debiasing
+Hard debiasing is a debiasing algorithm which in-
+volves two steps: neutralize and equalize. Neutral-
+ization ensures that all the social-neural words in
+the social subspace do not contain bias (e.g. doc-
+tors and nurses). Equalization forces that social-
+speciﬁc words are equidistant to all words in each
+equality set (e.g. the bias components in man and
+woman are in opposite directions but with same
+magnitude) (Bolukbasi et al., 2016; Manzini et al.,
+2019). Following Manzini et al. (2019), hard debi-
+asing is formulated as follows: given a bias social
+subspace B spanned by the vectors {b1, b2, ..., bn},
+the embedding of a word in this subspace is:
+wB =
+n
+X
+i=1
+⟨w, bi⟩bi
+To neutralize, each word w ∈N, where N is the
+set of social-neural words, remove the bias compo-
+nents from the word and the re-embedded word −→
+w
+is obtained as:
+−→
+w =
+w −wB
+∥w −wB ∥
+To equalize, for an equality set E, let µ be the mean
+embeddings of the equlity set E, which is deﬁned
+as:
+µ = w
+E
+X
+w∈E
+For each word w ∈E, the equalization is deﬁned
+as:
+ˆw = (µ −µB) +
+p
+1−∥µ −µB ∥2
+w −wB
+∥w −wB ∥
+When doing racial debiasing, we divide ethnicity
+into groups: White, Black, Asian, and Hispanics.
+We do not contain the ”other” group as it hard to
+deﬁne social-speciﬁc sets and analogies for ”other”.
+E
+Phenotyping Task
+In Figure 3 we plot performance and fairness for
+the phenotyping task, speciﬁcally the detection of
+disorders of lipid metabolism. This task was se-
+lected as it is the phenotyping task with the most
+balanced labels with 16855 negative instances and
+12239 positive instances in the training data. Thus,
+it should be more amenable to EO postprocessing.
+As expected we see that EO postprocessing suc-
+ceeds in reducing the TP/TN ranges at the cost of
+AUC. We also again see that ensembling improves
+performance both before and after postprocessing.
+For this task speciﬁcally we observe that using de-
+biased word embeddings improves AUC compared
+to the non-debiased word embeddings.
+F
+Full Results
+Our experiment universe consisted of the cross
+product between choice of protected attribute (gen-
+der, ethnicity, insurance status), task (phenotyping,
+in-hospital mortality prediction, decompensation),
+hard vs soft EO postprocessing and word embed-
+ding vs debiased word embedding.
+F.1
+Fairness/Performance on the In-Hospital
+Mortality Task
+We provide a more detailed set of graphs for an
+in-hospital mortality prediction task, where we
+used hard EO postprocessing on protected groups
+deﬁned by insurance status.
+We illustrate the
+TP/TN/AUC metrics for each protected group in
+Figure 5.
+In this task conﬁguration, as well as the task con-
+ﬁguration in Figure 3 EO postprocessing is applied
+to hard classiﬁcation of the three classiﬁers in the
+Base Classiﬁer column, to produce the EO Classi-
+ﬁer column. The Debiased Word Embedding (WE)
+column contains an unstructured classiﬁer using
+word embeddings debiased for 4 ethnicities, and an
+ensemble created by merging the aforementioned
+classiﬁer with the structured base classiﬁer. We
+utilize debiasing on ethnicity type as a proxy for
+insurance status, as mentioned in the Discussion.
+Note that EO post-processing sometimes wors-
+ens the TP/TN spread, as in the TP graph for the
+structured classiﬁer. We therefore qualify our EO
+results by noting the limitations of our real-world
+dataset, which include signiﬁcant group and la-
+bel imbalance and non-binary group labels, all of
+which impact the results of EO post-processing
+(see Appendix A.4).
+Finally, on this task conﬁguration, we observe
+that debiased word embeddings are not a panacea.
+We note that WED has slightly worsened the TP
+gap, and does not offer a clear cut performance
+improvement as on the phenotyping task M. There-
+fore, further research is needed to explore when
+and why debiased word embeddings may simulta-
+neously improve fairness and performance. Ulti-
+mately, domain expertise and focus on the down-
+stream impact on the patient experience will be
+critical for leveraging any of these fair machine
+learning models in clinical applications.
+F.2
+Full table of results
+The performance for all model and tasks tried can
+be found in Table 4. Note that debiased word em-
+beddings can improve the performance (micro and
+macro AUC), even compared to an unconstrained
+classiﬁer using clinically relevant BioWordVecem-
+beddings.
+Figure 5: Plot of Fairness and Performance on the in-hospital mortality task. Note that debiased word embeddings
+slightly worsen the TP gap in this task (left most graph), while improving the TN gap (middle graph). EO reduces
+both gaps, at a major cost in performance (right most graph).
+IHM
+Phenotyping
+Decompen.
+AUC
+PRC
+AUC
+ROC
+Macro
+AUC
+ROC
+Micro
+AUC
+ROC
+AUC
+PRC
+AUC
+ROC
+Harutyunyan
+et. al
+(2019)
+– No Text
+0.515
+0.862
+0.776
+0.825
+0.344
+0.911
+Khadanga
+et. al
+(2019)
+– Ensemble
+0.525
+0.865
+–
+–
+0.345
+0.907
+Ours
+– Text Only
+0.472
+0.815
+0.766
+0.829
+0.235
+0.867
+Ours
+– Text Only
++ BioWordVec
+0.489
+0.841
+0.771
+0.837
+0.225
+0.879
+Ours
+– Text Only
++ BioWordVec
++ Debiasing
+0.392
+0.790
+0.831
+0.874
+0.265
+0.331
+Ours
+– Ensemble
+0.582
+0.880
+0.822
+0.861
+0.399
+0.917
+Ours
+– Ensemble
++ BioWordVec
+0.582
+0.886
+0.829
+0.870
+0.404
+0.920
+Ours
+– Ensemble
++ BioWordVec
++ Debiasing
+0.539
+0.870
+0.854
+0.888
+0.405
+0.922
+Table 4:
+Leveraging clinical pretrained word em-
+beddings improves performance compared to training
+word embeddings from scratch in the text-only model.
+Ensembling the text-only model with the clinical time
+series classiﬁer improves performance further. As with
+Khadanga et al. (2019), our results are not directly com-
+parable with Harutyunyan et al. (2019) since we ignore
+patients without any clinical notes.

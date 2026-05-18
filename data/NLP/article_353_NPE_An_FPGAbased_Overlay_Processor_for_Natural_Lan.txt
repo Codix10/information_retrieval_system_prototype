@@ -1,0 +1,1195 @@
+Title: NPE: An FPGA-based Overlay Processor for Natural Language Processing
+Source URL: http://arxiv.org/abs/2104.06535v1
+--------------------------------------------------
+
+NPE: An FPGA-based Overlay Processor for Natural Language
+Processing
+Hamza Khan
+UC Los Angeles
+Asma Khan
+UC Irvine
+Zainab Khan
+Stanford University
+Lun Bin Huang
+Independent Researcher
+Kun Wang
+UC Los Angeles
+Lei He
+UC Los Angeles
+ABSTRACT
+In recent years, transformer-based models have shown state-of-the-
+art results for Natural Language Processing (NLP). In particular, the
+introduction of the BERT language model brought with it break-
+throughs in tasks such as question answering and natural language
+inference, advancing applications that allow humans to interact nat-
+urally with embedded devices. FPGA-based overlay processors have
+been shown as effective solutions for edge image and video process-
+ing applications, which mostly rely on low precision linear matrix
+operations. In contrast, transformer-based NLP techniques employ
+a variety of higher precision nonlinear operations with significantly
+higher frequency. We present NPE, an FPGA-based overlay proces-
+sor that can efficiently execute a variety of NLP models. NPE offers
+software-like programmability to the end user and, unlike FPGA
+designs that implement specialized accelerators for each nonlinear
+function, can be upgraded for future NLP models without requir-
+ing reconfiguration. We demonstrate that NPE can meet real-time
+conversational AI latency targets for the BERT language model
+with 4× lower power than CPUs and 6× lower power than GPUs.
+We also show NPE uses 3× fewer FPGA resources relative to com-
+parable BERT network-specific accelerators in the literature. NPE
+provides a cost-effective and power-efficient FPGA-based solution
+for Natural Language Processing at the edge.
+KEYWORDS
+NLP, FPGA, Overlay, Processor, Accelerator, Nonlinear, BERT, Ma-
+chine Learning
+1
+INTRODUCTION
+One of the most common Natural Language Processing (NLP) tasks
+is sequence transduction, translating an input sequence to an out-
+put sequence. Traditionally, convolutional neural networks (CNNs)
+and recurrent neural networks (RNNs) have been used for this task
+[9, 10]. The Transformer architecture [22] removes all recurrent
+and convolutional components and instead relies on self-attention
+mechanisms, typically showing better computation time and per-
+formance. A transformer is made up of two parts, encoders and de-
+coders. The Bidirectional Encoder Representations from Transform-
+ers (BERT) model [6] incorporates the encoders from transformers
+to generate a state-of-the-art language representation model. When
+it was first introduced, BERT broke records on eleven different
+NLP tasks. Since then, variations of BERT such as RoBERTa [18]
+FPGA ’21, February 28-March 21, 2021, Virtual
+2021. ACM ISBN 978-1-4503-8218-2/21/02...$15.00
+https://doi.org/10.1145/3431920.3439477
+and DistilBERT [20] have shown even better performance and ac-
+curacy. Implementing efficient accelerators for inference of these
+transformer models has proven a challenging task.
+FPGA-based overlay processors have provided effective solutions
+for CNN and other network inference on the edge, allowing for
+flexibility across networks without reconfiguring the FPGA [24–26].
+CNNs consist mostly of linear matrix operations like convolution
+and pooling, and have consistently shown resilience to extreme
+quantization. However, BERT and its successors [13, 15, 18, 20] can-
+not be efficiently accelerated using existing CNN FPGA accelerators.
+Although they compute many matrix multiplications, transformer
+models also introduce complex nonlinear operations that require
+higher precision, and are called with higher frequency. For instance,
+softmax and layer normalization [2] are performed several times in
+each encoder for BERT, and block subsequent computation until
+they are finished processing. As such, it is essential to calculate
+them efficiently while maintaining high throughput. These non-
+linearities must be computed on-device for performance-sensitive
+applications, as sending to a CPU causes significant latency over-
+head and is not practical on the edge.
+Most existing accelerators [11, 19] include specialized units for
+computing each type of nonlinearity. For instance, FTRANS [17],
+the only previously published FPGA accelerator for transformers,
+includes separate softmax and layer normalization modules. Since
+NLP is a constantly-evolving field that may introduce different types
+of nonlinearities, this specialized approach means that an FPGA de-
+sign may need reconfiguration for additional NLP networks. It also
+leads to unnecessary area overhead and under-utilized resources
+across nonlinear operations.
+In this paper we propose NPE, an FPGA-based overlay processor
+for NLP model inference at the edge. As shown in Figure 1, unlike
+most other accelerators, NPE employs a common method for ap-
+proximating different nonlinear functions efficiently and accurately
+without added overhead. The main contributions of our work are
+as follows:
+• We design a software-programmable domain-specific over-
+lay processor with a matrix multiply unit and a multi-precision
+vector unit for NLP processing.
+• We employ a unified piecewise polynomial approach for
+nonlinear function approximation to allow extensibility to
+future nonlinear functions that may be required.
+• We demonstrate that our proposed accelerator can meet the
+real-time latency constraints for conversational AI while
+maintaining 4× and 6× lower power than GPUs and CPUs
+respectively. Our design utilizes 3× fewer FPGA resources
+arXiv:2104.06535v1  [cs.AR]  13 Apr 2021
+Figure 1: BERT network structure, showing how each opera-
+tion would be mapped onto NPE compared to a conventional
+network-specialized accelerator.
+relative to a comparable network-specific transformer FPGA
+accelerator.
+2
+RELATED WORK
+While BERT has been highly optimized at the software level for
+CPU and GPU, little work has been published related to custom
+hardware acceleration of any transformer-based networks, particu-
+larly on FPGAs. Two ASICs have been recently proposed, OPTIMUS
+[19] and 𝐴3 [11], that each accelerate different parts of transformer
+inference. OPTIMUS optimizes matrix multiplication for transform-
+ers by exploiting sparsity. It has dedicated exponential, divider, and
+square root components for nonlinearities, leading to wasted area
+since each is only used a small fraction of the time. 𝐴3 accelerates
+attention mechanisms using various approximation methods. It has
+a very deep pipeline that is specialized for attention, which is inef-
+ficient from an overall design point of view because the multipliers
+and function approximation units cannot be reused even for other
+matrix multiplications. In particular, 𝐴3 would need to be paired
+with a conventional matrix multiply accelerator to implement BERT.
+At any one time, either the 𝐴3 unit or the main accelerator would be
+computing, leading to many idle resources and wasted performance
+potential.
+To the best of our knowledge, FTRANS [17] is the only currently
+published FPGA accelerator for BERT and related transformer net-
+works. FTRANS takes a very specialized approach for implementing
+transformers, in which it has dedicated encoder and decoder mod-
+ules. Each of these modules has many specialized components. For
+example, the attention head module contains components for soft-
+max and layer normalization, as well as five unique PE banks to
+perform each matrix multiply subroutine required (see Table 1 for
+the computation in an attention layer). While it is sufficient to im-
+plement transformers, FTRANS is not flexible enough to handle
+any non-transformer network. As the NLP state-of-the-art evolves
+and new network variants emerge, the FTRANS architecture may
+have to be extensively redesigned to adapt.
+3
+BACKGROUND
+3.1
+Conversational AI
+Low power and low latency NLP is a prerequisite for conversa-
+tional AI at the network edge. Conversational AI allows people to
+interact naturally with machines in a dialogue. For instance, a user
+may ask a question to a smart speaker and expect a human-like
+response almost immediately. For this response to seem natural,
+it must be returned within 300 milliseconds. In these 300 ms, the
+device must perform several complex steps including speech-to-
+text, user authentication, and natural language processing. As a
+result, any single model’s inference should be complete within 10-
+15 milliseconds. Recently, many efforts have been made by the GPU
+community to optimize GPU implementations of BERT to reach
+this threshold.
+3.2
+The BERT Model
+BERT adopts the structure of the encoders from transformers. While
+there are many BERT variants, the particular structure can be de-
+scribed by three parameters: number of encoders 𝐿, number of
+attention heads 𝐴, and hidden layer size 𝐻. We focus on BERTBASE,
+which is composed of 12 encoders, each with 12 attention heads
+and a hidden size of 768 (𝐿= 12, 𝐴= 12, 𝐻= 768). Figure 1 shows
+the general structure for BERT.
+The model starts with an embedding layer that converts each
+input language sequence into features. For instance, an input se-
+quence with 512 tokens in BERTBASE would be converted to a
+512 × 768 matrix, where each token is replaced by a 768-length
+feature vector. Here, a token refers to a few adjacent characters,
+where a word is made up of one or more tokens. The embedding
+step has negligible computation but requires lots of memory. There-
+fore, we assume this initial step is performed off-chip and focus on
+accelerating the computationally-intensive encoders.
+Embedding is followed by 𝐿= 12 encoders. Each encoder per-
+forms four back-to-back operations: multi-headed self-attention,
+layer normalization, feed-forward layers, then layer normalization
+again. The encoder calculation can be decomposed into matrix-
+matrix multiplies followed by one of three primitives: softmax, layer
+normalization, and the GELU activation [12]. Table 1 describes the
+computation in further detail.
+The BERT model is typically trained to handle sequences of up
+to 512 tokens. For any particular task we pick a sequence length
+𝑠𝑒𝑞_𝑙𝑒𝑛≤512, padding any input sequences less than 𝑠𝑒𝑞_𝑙𝑒𝑛
+and truncating any sequences larger than 𝑠𝑒𝑞_𝑙𝑒𝑛. This parameter
+determines the complexity of the operations performed and the
+inference speed. Sequence lengths less than 32 are usually too small
+for practical applications. Typical benchmarks use sequence lengths
+of 64 or 128.
+3.3
+BERT Nonlinear Operations
+3.3.1
+GELU Activation. The GELU activation is defined by the
+following equation:
+GELU(𝑥) = 𝑥𝑃(𝑋≤𝑥) = 𝑥· 1
+2 [1 + erf (𝑥/
+√
+2)]
+(1)
+It is commonly approximated using the tanh function as in Equa-
+tion 2 and can also be approximated directly using a lookup table.
+Table 1: Computation for BERT with A attention heads. 𝑋
+represents the input to an encoder. 𝑋1-𝑋5 represent subse-
+quent outputs after each operation. The computation is bro-
+ken down into matrix-matrix multiplies, softmax, layer nor-
+malization, and GELU.
+Embedding
+𝑋= Embedding(input_sequence)
+Multi-Headed Self-Attention
+for (i = 0 to A - 1)
+𝑄𝑖= 𝑋𝑊𝑄𝑖;
+𝐾𝑖= 𝑋𝑊𝐾𝑖;
+𝑉𝑖= 𝑋𝑊𝑉𝑖
+𝑍𝑖= softmax(𝑄𝑖𝐾𝑖𝑇
+𝑘
+)𝑉𝑖
+where 𝑘is a known constant
+𝑋1 = [𝑍0, ..., 𝑍𝐴−1] 𝑊𝑂
+Layer Normalization A
+𝑋2 = LayerNorm(𝑋+ 𝑋1)
+Feed-Forward
+𝑋3 = GELU(𝑋1 𝑊1 + 𝑏1)
+𝑋4 = 𝑋3 𝑊2 + 𝑏2
+Layer Normalization B
+𝑋5 = LayerNorm(𝑋2 + 𝑋4)
+GELU(𝑥) ≈0.5𝑥(1 + tanh [
+√︁
+2/𝜋(𝑥+ 0.044715𝑥3)])
+(2)
+3.3.2
+Layer Normalization. Layer normalization first requires
+computing the mean and variance of a matrix across rows. Given a
+matrix 𝑥of dimension 𝑁× 𝐾, we compute the mean and variance
+for row 𝑖.
+𝜇𝑖= 1
+𝐾
+𝐾
+∑︁
+𝑘=1
+𝑥𝑖,𝑘;
+𝜎2
+𝑖= 1
+𝐾
+𝐾
+∑︁
+𝑘=1
+(𝑥𝑖,𝑘−𝜇𝑖)2
+(3)
+Then, the mean and variance are applied to each element using
+Equation 4 to get the normalized output ˆ𝑥. Finally, each ˆ𝑥𝑖is scaled
+and shifted by trained vectors𝛾and 𝛽to get the layer normalization
+output 𝑦, as shown in Equation 5.
+ˆ𝑥𝑖,𝑘= 𝑥𝑖,𝑘−𝜇𝑘
+√︃
+𝜎2
+𝑘+ 𝜖
+(4)
+𝑦𝑖,𝑘= ˆ𝑥𝑖,𝑘· 𝛾𝑘+ 𝛽𝑘
+(5)
+3.3.3
+Softmax. The definition of softmax is shown in Equation
+6. Softmax can be difficult to implement in hardware because of
+the exponential and division operations. It can be directly realized
+using dedicated exponential and division units, at the cost of under-
+utilized resources and extra area overhead.
+softmax(𝑥𝑗) =
+𝑒𝑥𝑗
+Í
+𝑖𝑒𝑥𝑖
+(6)
+3.4
+Throughput Requirements of Nonlinear
+Operations
+Since matrix multiply operations depend on the results from pre-
+ceding nonlinear operations, nonlinear processing needs to have
+high enough throughput to not add significant latency overhead.
+The throughput requirement for nonlinear operations can be de-
+termined by the number of elements we need to process and the
+cycles available for processing. We define the cycle budget for a
+nonlinear operation as the number of cycles that the preceding
+matrix multiply takes to process, given the matrix multiply dimen-
+sions and the number of multiplies per cycle. For BERTBASE, given
+2048 multiplies per cycle and a sequence length of 512, we show the
+throughput requirements for each nonlinearity in Table 2. The layer
+normalization after attention and the one after GELU are shown
+separately, since they have different throughput requirements.
+Table 2: Throughput requirements (elements per cycle) for
+different nonlinearities in BERTBASE with sequence length
+of 512 and 2048 multiplies per cycle. The matrix to be pro-
+cessed has dimensions 𝑁× 𝑀.
+Nonlinearity
+N
+M
+Cycle Budget
+Throughput
+% of Overall Cycles
+Softmax
+512
+512
+8,192
+32
+5
+Layer Norm A
+512
+768
+147,456
+2.7
+7.5
+GELU
+512
+3072
+589,824
+2.7
+30
+Layer Norm B
+512
+768
+589,824
+0.7
+30
+The final column of Table 2 indicates percentage of overall cycles
+that depend on each nonlinear computation. Specifically, this value
+shows the percentage of overall matrix multiply cycles that are
+followed by the nonlinearity. For instance, we see that 30% of the
+overall cycle time is spent computing the matrix multiply inputs to
+GELU operations.
+From Table 2, we see that Layer Normalization and GELU both
+require a throughput average of less than three elements per cycle,
+while softmax requires 32 elements per cycle to throughput-match
+the matrix multiply operations. To put this in perspective, this
+means that without additional optimizations we would need to
+perform softmax on a vector of 512 elements in just 16 cycles.
+4
+NONLINEARITY PROCESSING
+4.1
+Nonlinear Function Approximation
+There are dozens of ways to approximate nonlinear functions. We
+first discuss several specialized approaches that are commonly used
+for different nonlinear functions. We then discuss our efficient
+uniform approach to approximate several types of nonlinearities.
+4.1.1
+Specialized Approaches. Approximating complex nonlin-
+ear functions has been a field of interest for many decades. Common
+functions like softmax and square roots have been implemented
+in many different ways over the years using mathematical mod-
+els with varying computational complexities and accuracies. The
+square root function, for example, can be approximated using a
+Taylor Series Expansion [14], the Chebyshev approximation [21],
+the Newton-Raphson algorithm [5], and the CORDIC algorithm
+[1, 23]. It can also be approximated directly using a lookup table
+(LUT). Softmax is also often implemented using one or more LUTs
+for exponential calculation [7, 27].
+For reasonable accuracy with the lookup-based approaches, the
+LUTs typically are large and require a lot of memory. In contrast,
+piecewise linear approaches have shown good accuracy while main-
+taining very small lookup tables [8].
+4.1.2
+Unified Nonlinearity Processing. As previously shown,
+each type of nonlinearity has several ways it can be approximated.
+However, taking a separate approach for each function can lead to
+many times more area and much more underutilized resources. For
+instance, most transformer accelerators have dedicated exponential
+units and dividers for softmax and dedicated square root units for
+layer normalization.
+We take a more unified approach that uses only piecewise polyno-
+mial approximation along with simple vector operations to process
+various nonlinearities. Some functions, like GELU, can directly be
+approximated using piecewise approximation. Others, like soft-
+max, may use piecewise approximation for intermediate functions
+like exponentials or square roots and then use adders, multipli-
+ers, etc. for the remainder of the computation. To implement this
+unified approach, our hardware is optimized for piecewise func-
+tion approximation as well as other operations like multiplication,
+addition/subtraction, and vector reduction (e.g., max, sum).
+4.1.3
+Multi-precision Computation. Unlike matrix multiplies
+and other linear operations, nonlinear computation cannot be fully
+quantized to low-precision data types (such as 8-bit fixed point
+numbers) while maintaining network accuracy. Instead, different
+steps of the nonlinear computation require varying levels of preci-
+sion. For instance, layer normalization may take in a 16-bit fixed
+point number as an input but will need to process the variance cal-
+culations using 32 or even 64-bit fixed point. As such, all supported
+operations (arithmetic, reduction, etc.) need to be flexible enough
+to operate on several different data types.
+4.2
+Piecewise Function Approximation
+4.2.1
+General Piecewise Approximations. Piecewise function
+approximation involves breaking up a nonlinear function of interest
+into smaller regions along a chosen interval, each approximated
+by a simpler function such as a line or polynomial. Continuous
+Piecewise Linear (CPWL) approximations, in particular, use lines
+for approximation where the end point of each region is the same as
+the start point of the next region. Figure 2 shows an approximation
+of 𝑣(𝑥) = √𝑥with just three segments. The starting 𝑥and 𝑣(𝑥)
+values for each segment are called knot samples and nodal values
+respectively.
+Typically, approximation regions are chosen to be either uni-
+form width or non-uniform width. Uniform width segments tend
+to be easier to evaluate but require significantly more segments.
+Non-uniform width segments can better approximate functions
+with fewer segments but require more complex evaluation. The
+advantage of non-uniform segments in terms of total number of
+segments required becomes even more significant when dealing
+with functions that have large mostly-linear regions. In particular,
+consider functions like GELU(x) and √𝑥which are nearly linear
+Figure 2: Piecewise linear approximation of √𝑥on the inter-
+val [0, 2) with three segments.
+except for a very small nonlinear region near zero. Uniform seg-
+mentation would require orders of magnitude more segments than
+non-uniform to approximate the linear regions, leading to signifi-
+cantly more memory usage for the same maximum approximation
+error.
+We can also use a piecewise polynomial approach to approximate
+some functions, which takes more cycles to compute but gives
+higher accuracy. For most functions, including those needed for
+BERT, piecewise linear is enough. We discuss our non-uniform
+continuous piecewise linear segmentation in the following section.
+4.2.2
+Piecewise Linear Approach. The main considerations for
+piecewise linear approximations are the number of segments, seg-
+ment widths, and the best approximation for each segment. Frenzen
+et al. [8] explored the number of segments needed for piecewise
+linear approximation of various common functions using differ-
+ent segmentation techniques. Based on their results, we see that
+it is possible to maintain high accuracy with very few segments
+(even less than 10, depending on accuracy constraints). We use a
+segmentation approach based on [3], which describes one method
+for finding an optimal partition with non-uniform segmentation.
+We find that even sub-optimal segmentation can result in no accu-
+racy loss for BERT inference on the test set. Algorithm 1 gives the
+general computation for evaluating a continuous piecewise linear
+function.
+Algorithm 1 Continuous Piecewise Linear Approximation of a
+function 𝑣(𝑥) based on [3]. Here, the knot samples are 𝑥0, ..., 𝑥𝑁
+and the corresponding nodal values are 𝑣(𝑥0), ..., 𝑣(𝑥𝑁).
+1) Find the sub-interval containing the input value 𝑥given that:
+𝑥𝑖−1 ≤𝑥< 𝑥𝑖
+2) Find the fractional distance 𝛿from 𝑥𝑖−1:
+𝛿= (𝑥−𝑥𝑖−1)/(𝑥𝑖−𝑥𝑖−1)
+3) Determine the final piecewise linear approximation:
+𝑣(𝑥) ≈(1 −𝛿) 𝑣(𝑥𝑖−1) + 𝛿𝑣(𝑥𝑖)
+Finding the sub-interval from Step 1 of Algorithm 1 adds ad-
+ditional complexity. If using uniform segmentation, the segment
+Figure 3: Overall architecture of NPE. The memory read unit (MRU) reads from external memory and writes to the MMU input
+buffer (MIB). The MMU performs matrix multiplication and writes results to its scratchpad memory. The NVU reads from the
+MMU scratchpad memory and writes intermediate results to the MMU input buffers. The memory write unit (MWU) transfers
+final results from the NVU scratchpad to external memory.
+number can be found simply by using the upper bits of the input.
+Since we use non-uniform segmentation, we implement more com-
+plex segment address calculation like that used in [16]. In software,
+this segment address calculation could be performed using Algo-
+rithm 2. On a CPU or GPU, these calculations would take tens of
+instructions. Meanwhile, with specialized hardware, this task can
+easily be done on an FPGA or ASIC within a single clock cycle,
+such as with a priority encoder.
+Algorithm 2 Software evaluation of non-uniform piecewise linear
+segment address for input 𝑥with knot samples 𝑥0, ..., 𝑥𝑁.
+for 𝑖←𝑁, 0 do
+if 𝑥≥𝑥𝑖then
+return i
+end if
+end for
+By itself, piecewise linear approximation is not always accurate
+enough to be used without a large number of segments. However,
+with normalization and range limiting of the fixed point input and
+subsequent denormalization of the output, this approximation can
+maintain high accuracy with only a few segments.
+5
+ACCELERATOR ARCHITECTURE
+In this section, we present the overall architecture of NPE, our
+FPGA overlay processor for NLP. NPE adopts several components
+from OPU [24] including the matrix multiply unit (MMU). Figure 3
+shows the architecture of the accelerator.
+5.1
+Accelerator Modules
+The NPE architecture consists of the following: instruction control
+unit (ICU), memory read unit (MRU), memory write unit (MWU),
+matrix multiply unit (MMU), and the nonlinear vector unit (NVU).
+The ICU sends instructions to each of the modules. Data is ex-
+changed between the functional units through a series of memory
+buffers.
+5.2
+Data Flow
+The memory read unit (MRU) reads data from external memory
+and writes it to the MMU’s input buffer (MIB). The MMU reads
+from the MIB and uses its scratchpad memory (MMEM) both for
+intermediate computations and for its final output. The NVU uses
+its scratchpad memory (NMEM) for its intermediate operations.
+The NVU accesses MMEM for its input data and deposits the final
+results either to the MIB (MMU input buffer) or to the NMEM (NVU
+scratchpad) for subsequent retrieval by the MWU, which writes
+these results to the external memory. The operations of the MRU,
+MWU, MMU and the NVU are pipelined to hide off-chip memory
+latency and to allow for maximum concurrency between these
+units.
+5.3
+Matrix Multiply Unit (MMU)
+The MMU computation consists of five stages: data selection, in-
+ner product, adder tree reduction, accumulation, and quantization.
+Data selection loads the necessary matrix operands from the input
+buffers and rearranges them as needed. The matrix multiplication
+is implemented using an array of PEs, where each PE performs an
+inner product using an array of multipliers followed by an adder
+tree. Then, the PE outputs can be further summed up by another
+adder tree, with the number of final outputs dependent on the ma-
+trix multiplication dimensions. Finally, the inner product outputs
+are accumulated and then quantized.
+The MMU implementation has 128 PEs with 16 multiply accu-
+mulate units each (for a total of 2048 multipliers). These multiply
+accumulate units map to the FPGA’s DSP slices in our implemen-
+tation. There are two versions of the NPE design, one supporting
+8-bit matrix multiplies and the other supporting 16-bit matrix mul-
+tiplies. The 16-bit version uses each DSP slice for a single element
+multiply, for a total throughput of 2048 multiplies per cycle. The
+8-bit version decomposes each DSP slice into two 8-bit multipliers
+with one input in common (due to DSP slice resource constraints).
+On the same board, we can get a throughput of 4096 8-bit multiplies
+per cycle with 2048 DSP slices.
+Figure 4: Overall architecture of the NVU. The LSU transfers data between the VRF and either NMEM, MMEM, or the MIB. The
+vector compute unit (VCU) fetches operands from either the VRF or the SRF and can deposit results back to either the VRF
+or the SRF. The scalar compute unit fetches operands from the SRF and writes results back to the SRF. The microprogram
+controller (MPC) controls the operations of the NVU on a cycle-by-cycle basis.
+5.4
+Matrix Multiply Quantization
+The matrix multiply for transformer networks can be quantized
+to 16-bit fixed point with no perceptible loss in accuracy. Several
+works [4, 28] have also shown the feasibility of 8-bit quantization
+of transformers. As shown in [28], BERT can be implemented with
+8-bit matrix multiplies with minimal accuracy loss. For this reason,
+while we support both 16 and 8-bit matrix multiplies, we plan to use
+8-bit matrix multiply for our implementation. For both the 16-bit
+and the 8-bit matrix multiplies, the output of the MMU is written
+out to the MMEM (MMU scratchpad memory) as 16-bit fixed point
+values. Consequently, the NVU always consumes 16-bit fixed point
+values and generates either 8-bit or 16-bit results for the subsequent
+matrix multiplies.
+5.5
+Software Simulation
+We simulate the architecture in software to validate the accuracy
+constraints of end-to-end BERT model inference. In order to model
+the overall accuracy loss, our simulations take into account the NPE
+modules used as well as the data quantization at each intermediate
+step. In particular, we model the fixed-point quantization effects
+of matrix multiplication and the approximation errors from our
+unified nonlinear processing approach, including piecewise linear
+approximations for various nonlinear operations.
+6
+NONLINEAR VECTOR UNIT (NVU)
+ARCHITECTURE
+The key novel component of NPE’s design is the nonlinear vec-
+tor unit (NVU) that handles high-throughput nonlinear function
+computation with minimal resource overhead. The NVU is a data-
+parallel vector load/store architecture that performs arithmetic and
+logical operations on multiple elements in each clock cycle. The
+arithmetic performance of the NVU is defined by the width of the
+vector registers and the degree of parallelism in the arithmetic
+datapath.
+The NVU, shown in Figure 4, comprises a vector load/store unit
+(LSU), a vector register file (VRF), a vector compute unit (VCU), a
+scalar register file (SRF), a scalar compute unit (SCU), and a mi-
+croprogram controller (MPC). The VRF, the VCU, and the LSU all
+operate on fixed-length vectors. The LSU accesses vectors resident
+in either the NVU memory (NMEM), the MMU memory (MMEM),
+or the MMU input buffer (MIB). The vector compute unit (VCU)
+and scalar compute unit (SCU) are designed to handle 16, 32 and
+64-bit operations to allow for higher bit precision in intermediate
+calculations when required.
+6.1
+Microprogram Controller (MPC)
+The instruction control unit (ICU) of NPE sends instructions to
+all NPE functional units, including the MMU and the NVU. These
+instructions are designed to operate over many clock cycles. The
+NVU interprets these high-level instructions to implement nonlin-
+ear functions like softmax, layer normalization, GELU, etc.
+The microprogram controller (MPC) of the NVU is responsible
+for breaking down ICU instructions into a sequence of VLIW in-
+struction bundles, which are used to control the LSU, the VCU, and
+the SCU. Since the VCU can execute up to three operations concur-
+rently, as many as five instructions can be dispatched by the MPC
+in each micro-instruction cycle. The microprogram corresponding
+to each instruction is stored in the microprogram memory.
+6.2
+Vector Register File (VRF)
+The vector register file (VRF) provides a high-throughput scratch-
+pad for the vector compute unit (VCU). It allows the VCU to exploit
+locality of data across operations. The NVU requires a register file
+with 8 logical read and write ports in order to maintain concur-
+rency of various VCU functional units. However, we implement the
+VRF using dual-port (1R1W) BRAMS with a combination of time
+sharing and data duplication. The resulting register file operates at
+the desired frequency of 200 MHz while requiring less than 5% of
+overall BRAM resources.
+6.3
+NVU Memory (NMEM)
+The NVU memory subsystem (NMEM) serves primarily as scratch-
+pad for the NVU. The memory write unit (MWU) can also read
+results from the NMEM through a dedicated read port. The NMEM
+uses multiple banks of single-port memories, which are designed to
+support loads and stores of entire vectors in a single clock cycle. The
+NMEM can be implemented efficiently using single-port BRAMs
+on the FPGA. The NMEM also has arbitration logic to allow access
+from both the NVU and the MWU. The NMEM also contains logic
+for data permutation, which is required for strided and indexed
+accesses.
+6.4
+Vector Load/Store Unit (LSU)
+The vector load/store unit performs fixed-length vector transfers
+between the vector register file and either the NMEM, the MMEM,
+or the MMU input buffer (MIB). The LSU supports non-strided,
+strided, and indexed loads and stores from the NMEM.
+6.5
+Vector Compute Unit (VCU)
+The vector compute unit (VCU) supports a full complement of
+vector and intra-vector arithmetic (add, subtract, multiply, shift,
+sum, dot product, etc.), logical, compare (<, ≥, =, etc.), min/max
+and permute operations. In addition, specialized capabilities for
+piecewise polynomial approximation have been added, allowing
+the NVU to approximate nonlinear functions more than 10× faster
+than traditional SIMD processors. The VCU reads vectors from
+the VRF or the scalar register file (SRF) and, depending on the
+operation, writes results back to the VRF or SRF. Vector reduction
+results are written to the SRF, and vector-scalar operations fetch
+scalar operands from the SRF.
+The VCU implements multi-precision arithmetic while sharing
+resources between 8, 16, 32, and 64-bit fixed point data types. While
+the MMU only needs to handle a single data type (either 8 or 16-bit
+fixed point), NVU operations typically involve mixed precision in-
+cluding 32 and 64-bit representations for intermediate calculations.
+The VCU can execute up to three operations concurrently.
+6.6
+Scalar Compute Unit (SCU)
+The NVU also includes a scalar compute unit (SCU), which oper-
+ates out of a scalar register file (SRF). Like the VCU, the SCU can
+handle 8, 16, 32, and 64-bit operations. The concurrent operation
+of vector and scalar functional units allow for the computation of
+nonlinear functions of vector reduce operations. For example, the
+NVU is capable of performing an inner product followed by the
+1
+√𝑥operation for layer normalization variance calculations while
+maintaining full throughput.
+6.7
+Scalable Architecture of the NVU
+All operations of the NVU are performed on fixed bit-width vec-
+tor registers which make up the VRF. There are 32 vector reg-
+isters in the VRF. All NVU micro-instructions reference source
+and destination vector registers. The overall performance of the
+NVU can be described by a single parameter, i.e. the vector register
+width (𝑉𝑅𝑊𝐼𝐷𝑇𝐻). The number of elements processed per micro-
+instruction depends on the element size (8, 16, 32, or 64 bits). For
+example, a 𝑉𝑅𝑊𝐼𝐷𝑇𝐻of 256 can hold 32 elements of 8 bits, 16 ele-
+ments of 16 bits, etc. The NVU’s area and performance depend on
+the number of elements that can be processed per micro-instruction.
+7
+THROUGHPUT ANALYSIS
+For initial analysis of NPE’s architecture, we examine the through-
+put requirements for BERT on our architecture. While the MMU
+has both 8-bit and 16-bit variations, we focus on NPE with 16-bit
+MMU and pair it with NVUs of different 𝑉𝑅𝑊𝐼𝐷𝑇𝐻. For the re-
+mainder of this work, we describe the NVU variants based on the
+vector register width 𝑉𝑅𝑊𝐼𝐷𝑇𝐻. NVU-𝑉𝑅𝑊𝐼𝐷𝑇𝐻refers to the
+NVU with 𝑉𝑅𝑊𝐼𝐷𝑇𝐻-bit vector registers. For instance, NVU-256
+means that a vector register is 256 bits. We focus on four NVU sizes
+(NVU-256, NVU-512, NVU-1024, and NVU-2048), comparing the
+throughput of each NVU variant to the required BERT throughputs.
+7.1
+NVU Throughput
+Table 3 shows the individual NVU performance results on each
+nonlinear function required for BERT. To normalize the results
+across NVU vector register widths, we give the number of cycles
+needed to process a 512 length array of 16-bit elements and the
+corresponding throughput in elements per cycle.
+Table 3: Throughput (elements per cycle) of NVU with differ-
+ent 𝑉𝑅𝑊𝐼𝐷𝑇𝐻on BERT’s nonlinear functions; cycle count
+to process a 512-element vector is shown in parentheses.
+NVU Width
+Softmax
+Layer Norm
+GELU
+NVU-256
+1.64 (312)
+0.64 (804)
+4
+(128)
+NVU-512
+3.05 (168)
+1.29 (396)
+8
+(64)
+NVU-1024
+4.74 (108)
+2.42 (212)
+16 (32)
+NVU-2048
+6.40 (80)
+4.13 (124)
+32 (16)
+7.2
+BERT Throughput Requirements
+We analyze the effective throughput requirement for each nonlin-
+earity in BERT. This builds on the analysis in Table 2, where we
+established that the worst-case throughput requirement for soft-
+max is 32 elements per cycle to keep up with the MMU. However,
+here we demonstrate that we can relax the worst case requirement
+by taking into account the optimization of overlapping indepen-
+dent computations. Then, we show the final requirements after
+optimization.
+7.2.1
+Overlapping Computation. In most cases, each stage of
+the transformer network computation is dependent on the results
+of the preceding stage. For instance, the feed-forward layer has a
+matrix multiply with GELU followed by a matrix multiply with
+Layer Normalization. The GELU computation must be finished
+before the next matrix multiply is started. This holds true for all
+Layer Normalization and GELU operations in BERT. This means
+that GELU and Layer Normalization must be rate matched with the
+MMU in order to avoid stalling the MMU.
+Fortunately, this is not the case with softmax and parts of the at-
+tention mechanism. We can reduce the throughput requirements of
+softmax by overlapping it with independent matrix computations in
+multi-headed self-attention. For example, the computation in Table
+1 of softmax((𝑄𝑖𝐾𝑖𝑇)/𝑘) can be overlapped with the matrix multi-
+plication 𝑉𝑖= 𝑋𝑊𝑉𝑖. Since computation for each attention head is
+independent, we can also overlap softmax for head 𝑖with some part
+of the computation for the next head 𝑖+ 1. In this way,the through-
+put requirements of the softmax computation can be relaxed by
+more than 4×.
+7.2.2
+Optimized BERT Throughput Requirements. Taking
+overlapping computations into account, we see the throughput
+requirements shown in Table 4. In general, the throughput require-
+ments of matrix multiplies in BERT do not depend on BERT network
+sequence length. However, for some of the attention computation,
+there is a dependence on sequence length. This only affects nonlin-
+earity throughput when we overlap independent matrix multiplies
+with softmax, which is why we see a throughput dependence for
+softmax on sequence length in Table 4.
+Although softmax tends to have very high throughput require-
+ments for higher sequence lengths, it only accounts for a small per-
+centage of overall computation (see Table 2). Layer Normalization
+and GELU are needed for approximately two thirds of the total com-
+putation time but have relatively lower throughput requirements.
+If the NVU’s softmax computation cannot match MMU throughput,
+we may still only get a small inference time overhead. Meanwhile,
+if layer normalization or GELU cannot be throughput-matched, we
+would expect a more noticeable inference time overhead.
+Table 4: Throughput (elements per cycle) required for differ-
+ent BERT input sequence lengths on nonlinear functions for
+NPE (16-bit MMU); Layer Norm A refers to normalization af-
+ter attention and Layer Norm B refers to normalization after
+GELU.
+Sequence Length
+Softmax
+Layer Norm A
+Layer Norm B
+GELU
+64
+0.92
+2.6
+0.6
+2.6
+128
+1.79
+2.6
+0.6
+2.6
+256
+3.39
+2.6
+0.6
+2.6
+512
+6.29
+2.6
+0.6
+2.6
+By comparing results from Tables 3 and 4, we see that NVU-2048
+is more than capable of keeping up with the 16-bit MMU. In fact,
+NVU-1024 can approach or exceed most of the requirements except
+softmax with sequence length 512. Given that softmax only takes
+up a few percentage of computation, and a sequence length of 512
+is not needed for most applications, it is evident that there would
+only be marginal benefit of using NVU-2048 over NVU-1024. For
+this reason, we only analyze NVU-2048 for its inference time, as
+a comparison metric indicating ideal NVU performance (where
+MMU never stalls). Similarly, with the 8-bit MMU, the NVU-2048
+also nearly matches the matrix multiplier throughput and can be
+used as a reference point.
+8
+EVALUATION
+We implement NPE at 200 MHz on the Xilinx Zynq Z-7100 FPGA,
+which has 2,020 DSP slices, 26.5 Mb RAM, and 277k LUTs. We
+look at several NVU variants (NVU-256, NVU-512, and NVU-1024),
+each of which can be paired with either the 8-bit or 16-bit MMU.
+We examine FPGA utilization for each NVU variant separately,
+then show overall FPGA utilization of each of the six resulting
+NPE configurations. We calculate software-simulated inference
+times for BERT for these six configurations and compare them to
+the corresponding NVU-2048 reference inference time. Finally, we
+evaluate NPE’s performance on BERT inference relative to other
+implementations’.
+8.1
+FPGA Utilization
+In Table 5, we individually show the FPGA utilization results for
+several components of the NVU: the NVU memory (NMEM), the
+vector register file (VRF), and the compute units (VCU and SCU).
+Then, in Table 6, we give the cumulative FPGA resource utilization
+for NPE using each NVU variant, both for 8-bit and 16-bit NPE.
+From these results, we see that all the NVU variants are small
+relative to the overall NPE design. Even NVU-1024 uses less than
+three percent of overall flip-flop, DSP slice, and BRAM resources
+each. The larger NVUs do use 7-15% of the overall LUT resources,
+much of which is due to the muxes required for shifting. Despite
+this, the overall design still has many LUTs left over.
+8.2
+Inference Time
+The system simulation gives a cycle count estimate for a single
+inference of BERTBASE, which can be used to determine inference
+time given the operating clock speed. The relative inference times
+Figure 5: BERT inference time percent overhead using NPE
+with 16-bit MMU for different sequence lengths and NVU
+variants. Overhead is relative to the minimum time using
+NVU-2048.
+Table 5: FPGA Resource Utilization for components of NVU-256, NVU-512, and NVU-1024 on Zynq Z-7100.
+Module
+𝑉𝑅𝑊𝐼𝐷𝑇𝐻
+LUT
+FF
+DSP Slices
+BRAM
+F7 Mux
+F8 Mux
+NMEM
+NVU-256
+776 (0.28%)
+1234 (0.22%)
+0
+4 (0.53%)
+0
+0
+VRF
+NVU-256
+156 (0.06%)
+513 (0.09%)
+0
+4 (0.53%)
+0
+0
+VCU+SCU
+NVU-256
+10328 (3.72%)
+1753 (0.32%)
+8 (0.4%)
+0
+3 (<0.01%)
+0
+Total
+NVU-256
+11260 (4.06%)
+3500 (0.63%)
+8 (0.4%)
+8 (1.06%)
+3 (<0.01%)
+0
+NMEM
+NVU-512
+1330 (0.48%)
+2268 (0.41%)
+0
+8 (1.06%)
+0
+0
+VRF
+NVU-512
+306 (0.11%)
+1025 (0.18%)
+0
+8 (1.06%)
+0
+0
+VCU+SCU
+NVU-512
+19549 (7.05%)
+3441 (0.62%)
+16 (0.79%)
+0
+12 (<0.01%)
+5 (<0.01%)
+Total
+NVU-512
+21185 (7.64%)
+6734 (1.21%)
+16 (0.79%)
+16 (2.1%)
+12 (<0.01%)
+5 (<0.01%)
+NMEM
+NVU-1024
+2902 (1.05%)
+4377 (0.79%)
+0
+16 (2.1%)
+350 (0.25%)
+0
+VRF
+NVU-1024
+607 (0.22%)
+2049 (0.37%)
+0
+16 (2.1%)
+0
+0
+VCU/SCU
+NVU-1024
+34423 (12.41%)
+6984 (1.26%)
+32 (1.58%)
+0
+37 (0.03%)
+5 (<0.01%)
+Total
+NVU-1024
+37932 (13.67%)
+13410 (2.42%)
+32 (1.58%)
+32 (4.2%)
+387 (0.28%)
+5 (<0.01%)
+Table 6: Overall FPGA Resource Utilization on Zynq Z-7100
+for NPE with 8-bit and 16-bit MMU with NVU-256, NVU-512,
+and NVU-1024.
+MMU
+𝑉𝑅𝑊𝐼𝐷𝑇𝐻
+LUT
+FF
+DSP Slices
+BRAM
+8-bit
+NVU-256
+165776 (59.76%)
+341151 (61.49%)
+1994 (98.71%)
+345 (45.70%)
+8-bit
+NVU-512
+175701 (63.33%)
+344385 (62.07%)
+2002 (99.10%)
+353 (46.75%)
+8-bit
+NVU-1024
+192448 (69.37%)
+351061 (63.28%)
+2018 (99.90%)
+369 (48.87%)
+16-bit
+NVU-256
+129231 (46.59%)
+250738 (45.19%)
+1995 (98.76%)
+502.5 (66.56%)
+16-bit
+NVU-512
+139156 (50.16%)
+253972 (45.78%)
+2003 (99.16%)
+510.5 (67.61%)
+16-bit
+NVU-1024
+155903 (56.20%)
+260648 (46.98%)
+2019 (99.95%)
+526.5 (69.73%)
+of NPE with 16-bit MMU and NVU-256, NVU-512, and NVU-1024
+are compared to inference time with NVU-2048. For NPE with 16-bit
+MMU, NVU-2048 gives the ideal inference time because it always
+exceeds the MMU throughput.
+Figure 5 shows the percent inference time overhead of NVUs
+of different 𝑉𝑅𝑊𝐼𝐷𝑇𝐻for NPE with 16-bit MMU. We see that in
+all cases GELU does not add latency overhead for any sequence
+length. Overall, NVU-1024 has very little overhead compared to the
+baseline case. The small difference is because layer normalization
+throughput is slightly lower than that which is needed to match
+the MMU. For smaller sequence lengths, NVU-1024 adds less than
+1% latency overhead, NVU-512 adds around 10%, and NVU-256
+adds about 30%. Depending on the use case, these overheads may
+be acceptable given the reduced area costs. For higher sequence
+lengths, NVU-256 begins to show very large overheads of 53% and
+97%.
+Note that inference time overhead alone is not the only criteria
+that should be used to evaluate these options. Even larger overheads
+may be acceptable, as long as the overall inference time including
+overhead is within the target for conversational AI. For this reason,
+the actual inference time is compared below.
+The BERT inference time for NPE with 16-bit and 8-bit MMUs
+with each 𝑉𝑅𝑊𝐼𝐷𝑇𝐻is shown in Figure 6. We see that NPE with
+8-bit MMU can achieve sub-10 ms inference time with sequence
+length of 64 even with NVU-512, but that the inference time in-
+creases proportionally as sequence length increases. For typical
+applications, sequence length of 64 is sufficient. For conversational
+AI, we require within 10-15 ms inference time, which we can clearly
+surpass with NVU-512 and NVU-1024 for both 8 and 16-bit.
+8.3
+Comparison with CPU, GPU, and FPGA
+The authors of the FTRANS transformer FPGA accelerator [17]
+provide inference benchmarks by running RoBERTa, an optimized
+version of BERT with the same model architecture but trained more
+thoroughly. Since BERT and RoBERTa have the same architecture,
+we can compare our BERT accelerator’s inference times with their
+RoBERTa benchmarks. We compare with our NPE with 16-bit and
+8-bit MMUs with NVU-1024 on the Zynq Z-7100. The devices used
+in the benchmark are an i7-8700k CPU, an RTX 5000 GPU, and an
+Ultrascale+ VCU118 FPGA (for FTRANS). The RTX 5000 has 1.52×
+more compute units than our Zynq FPGA and runs at 8.1× higher
+clock frequency. The VCU118 has 6,840 DSP slices and 2,586k logic
+cells (3.39× the DSP slices and 5.82× the logic cells on our board).
+The inference times and relative latencies are shown in Table 7. We
+also give the approximate power consumption of each device.
+Table 7: Throughput (inference/sec) of NPE with NVU-1024
+compared with CPU (i7-8700k), GPU (RTX 5000), and FPGA
+(VCU118). We also give relative throughput compared to
+FTRANS, throughput per DSP slice relative to FTRANS (for
+FPGA implementations), and approximate power consump-
+tion.
+i7-8700k
+RTX 5000
+FTRANS
+NPE (16-bit)
+NPE (8-bit)
+Throughput
+3.76
+57.46
+101.79
+73.69
+135.14
+Relative Speedup
+0.037×
+0.56×
+1× (baseline)
+0.72×
+1.33×
+DSP Slices Utilized
+-
+-
+6,840
+2,020
+2,020
+Throughput per DSP
+-
+-
+0.0148 (1×)
+0.0365 (2.5×)
+0.0669 (4.5×)
+Approximate Power (W)
+80
+120
+25
+20
+20
+From the results, we see that the CPU is far too slow for con-
+versational AI. While the RTX 5000 GPU gets close, it does not
+meet the conversational AI latency targets. However, with a larger
+or more optimized GPU it could meet these requirements, albeit
+with much higher power consumption. Both FTRANS and NPE
+implementations stay within the range needed for conversational
+AI.
+Figure 6: BERT inference time (in ms) with different NVU widths and sequence lengths. Results are shown separately for NPEs
+with 8-bit and 16-bit matrix multiplies.
+8.4
+Benchmarks Discussion
+The biggest benefit of an FPGA implementation of BERT over CPU
+and GPU is with power consumption. From Table 7, we see about
+a 4× power benefit over CPU and 6× over GPU. This difference
+in power consumption is especially important for NLP processing
+on edge devices. While FTRANS and NPE both have comparable
+performance and power, FTRANS uses over 3× more resources than
+NPE since it uses a much larger FPGA. We attribute some of the
+difference in resource consumption to the fact that FTRANS uses
+specialized modules for each transformer and each nonlinearity,
+which leads to additional area and under-utilized components.
+9
+CONCLUSION
+In this paper we propose NPE, an FPGA-based overlay processor
+that is domain-specialized for Natural Language Processing. NPE
+offers software-like programmability and provides a unified frame-
+work to process arbitrarily complex nonlinear functions. If a new
+state-of-the-art NLP model were to surpass transformers in the
+coming years, NPE is most likely flexible enough to adapt to it
+without requiring reconfiguring the FPGA accelerator or adding
+specialized processing modules. NPE can also meet the inference
+latency requirements for conversational AI for the BERT language
+model. Relative to CPU and GPU, NPE has 4× and 6× lower power
+consumption respectively. Our accelerator shows comparable per-
+formance to a transformer model specialized FPGA accelerator, but
+NPE uses 3× lower FPGA resources. Overall, we find that NPE is
+a promising solution for low-cost and low-power NLP network
+inference at the edge.
+REFERENCES
+[1] Ray Andraka. 1998. A survey of CORDIC algorithms for FPGA based computers.
+In Proceedings of the 1998 ACM/SIGDA sixth international symposium on Field
+programmable gate arrays. 191–200.
+[2] Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E Hinton. 2016. Layer normaliza-
+tion. arXiv preprint arXiv:1607.06450 (2016).
+[3] Daniel Berjón, Guillermo Gallego, Carlos Cuevas, Francisco Morán, and Narciso
+García. 2015. Optimal piecewise linear function approximation for GPU-based
+applications. IEEE transactions on cybernetics 46, 11 (2015), 2584–2595.
+[4] Aishwarya Bhandare, Vamsi Sripathi, Deepthi Karkada, Vivek Menon, Sun
+Choi, Kushal Datta, and Vikram Saletore. 2019. Efficient 8-bit quantization
+of transformer neural machine language translation model.
+arXiv preprint
+arXiv:1906.00532 (2019).
+[5] Marius A Cornea-Hasegan, Roger A Golliver, and Peter Markstein. 1999. Correct-
+ness proofs outline for Newton-Raphson based floating-point divide and square
+root algorithms. In Proceedings 14th IEEE Symposium on Computer Arithmetic
+(Cat. No. 99CB36336). IEEE, 96–105.
+[6] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2018. Bert:
+Pre-training of deep bidirectional transformers for language understanding. arXiv
+preprint arXiv:1810.04805 (2018).
+[7] Gaoming Du, Chao Tian, Zhenmin Li, Duoli Zhang, Yongsheng Yin, and Yim-
+ing Ouyang. 2019. Efficient Softmax Hardware Architecture for Deep Neural
+Networks. In Proceedings of the 2019 on Great Lakes Symposium on VLSI. 75–80.
+[8] Christopher L Frenzen, Tsutomu Sasao, and Jon T Butler. 2010. On the number of
+segments needed in a piecewise linear approximation. Journal of Computational
+and Applied mathematics 234, 2 (2010), 437–446.
+[9] Jonas Gehring, Michael Auli, David Grangier, Denis Yarats, and Yann N
+Dauphin. 2017. Convolutional sequence to sequence learning. arXiv preprint
+arXiv:1705.03122 (2017).
+[10] Alex Graves. 2012. Sequence transduction with recurrent neural networks. arXiv
+preprint arXiv:1211.3711 (2012).
+[11] Tae Jun Ham, Sung Jun Jung, Seonghak Kim, Young H Oh, Yeonhong Park, Yoonho
+Song, Jung-Hun Park, Sanghee Lee, Kyoung Park, Jae W Lee, et al. 2020. Aˆ 3:
+Accelerating Attention Mechanisms in Neural Networks with Approximation. In
+2020 IEEE International Symposium on High Performance Computer Architecture
+(HPCA). IEEE, 328–341.
+[12] Dan Hendrycks and Kevin Gimpel. 2016. Gaussian error linear units (gelus).
+arXiv preprint arXiv:1606.08415 (2016).
+[13] Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang, Xiao Chen, Linlin Li, Fang Wang,
+and Qun Liu. 2019. Tinybert: Distilling bert for natural language understanding.
+arXiv preprint arXiv:1909.10351 (2019).
+[14] Taek-Jun Kwon and Jeffrey Draper. 2009. Floating-point division and square root
+using a Taylor-series expansion algorithm. Microelectronics Journal 40, 11 (2009),
+1601–1605.
+[15] Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush
+Sharma, and Radu Soricut. 2019. Albert: A lite bert for self-supervised learning
+of language representations. arXiv preprint arXiv:1909.11942 (2019).
+[16] Dong-U Lee, Wayne Luk, John Villasenor, and Peter YK Cheung. 2003. Non-
+uniform segmentation for hardware function evaluation. In International Confer-
+ence on Field Programmable Logic and Applications. Springer, 796–807.
+[17] Bingbing Li, Santosh Pandey, Haowen Fang, Yanjun Lyv, Ji Li, Jieyang Chen,
+Mimi Xie, Lipeng Wan, Hang Liu, and Caiwen Ding. 2020. FTRANS: energy-
+efficient acceleration of transformers using FPGA. In Proceedings of the ACM/IEEE
+International Symposium on Low Power Electronics and Design. 175–180.
+[18] Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer
+Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. 2019. Roberta: A
+robustly optimized bert pretraining approach. arXiv preprint arXiv:1907.11692
+(2019).
+[19] Junki Park, Hyunsung Yoon, Daehyun Ahn, Jungwook Choi, and Jae-Joon Kim.
+2020. OPTIMUS: OPTImized matrix MUltiplication Structure for Transformer neu-
+ral network accelerator. In Proceedings of Machine Learning and Systems, I. Dhillon,
+D. Papailiopoulos, and V. Sze (Eds.). Vol. 2. 363–378. https://proceedings.mlsys.
+org/paper/2020/file/903ce9225fca3e988c2af215d4e544d3-Paper.pdf
+[20] Victor Sanh, Lysandre Debut, Julien Chaumond, and Thomas Wolf. 2019. Dis-
+tilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter. arXiv
+preprint arXiv:1910.01108 (2019).
+[21] Jun Sawada and Ruben Gamboa. 2002. Mechanical verification of a square root
+algorithm using Taylor’s theorem. In International Conference on Formal Methods
+in Computer-Aided Design. Springer, 274–291.
+[22] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In Advances in neural information processing systems. 5998–6008.
+[23] Jack Volder. 1959. The CORDIC computing technique. In Papers presented at the
+the March 3-5, 1959, western joint computer conference. 257–261.
+[24] Yunxuan Yu, Chen Wu, Tiandong Zhao, Kun Wang, and Lei He. 2019. Opu: An
+fpga-based overlay processor for convolutional neural networks. IEEE Transac-
+tions on Very Large Scale Integration (VLSI) Systems 28, 1 (2019), 35–47.
+[25] Yunxuan Yu, Tiandong Zhao, Kun Wang, and Lei He. 2020. Light-OPU: An
+FPGA-based Overlay Processor for Lightweight Convolutional Neural Networks.
+In The 2020 ACM/SIGDA International Symposium on Field-Programmable Gate
+Arrays. 122–132.
+[26] Yunxuan Yu, Tiandong Zhao, Mingyu Wang, Kun Wang, and Lei He. 2020. Uni-
+OPU: An FPGA-Based Uniform Accelerator for Convolutional and Transposed
+Convolutional Networks. IEEE Transactions on Very Large Scale Integration (VLSI)
+Systems (2020).
+[27] Bo Yuan. 2016. Efficient hardware architecture of softmax layer in deep neural
+network. In 2016 29th IEEE International System-on-Chip Conference (SOCC). IEEE,
+323–326.
+[28] Ofir Zafrir, Guy Boudoukh, Peter Izsak, and Moshe Wasserblat. 2019. Q8bert:
+Quantized 8bit bert. arXiv preprint arXiv:1910.06188 (2019).

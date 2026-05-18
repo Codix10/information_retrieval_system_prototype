@@ -1,0 +1,1837 @@
+Title: Decoding EEG Brain Activity for Multi-Modal Natural Language Processing
+Source URL: http://arxiv.org/abs/2102.08655v2
+--------------------------------------------------
+
+Decoding EEG Brain Activity for Multi-Modal Natural Language
+Processing
+Nora Hollenstein 1,∗, Cedric Renggli 2, Benjamin Glaus 2, Maria Barrett 3,
+Marius Troendle 4, Nicolas Langer 4 and Ce Zhang 2
+1Department of Nordic Studies and Linguistics, University of Copenhagen
+2Department of Computer Science, ETH Zurich, Switzerland
+3Department of Computer Science, IT University of Copenhagen, Denmark
+4Department of Psychology, University of Zurich, Switzerland
+∗Corresponding author: Nora Hollenstein; nora.hollenstein@hum.ku.dk
+Abstract
+Until recently, human behavioral data from reading has mainly been of interest to researchers to
+understand human cognition. However, these human language processing signals can also be beneﬁcial
+in machine learning-based natural language processing tasks. Using EEG brain activity for this purpose
+is largely unexplored as of yet. In this paper, we present the ﬁrst large-scale study of systematically
+analyzing the potential of EEG brain activity data for improving natural language processing tasks,
+with a special focus on which features of the signal are most beneﬁcial. We present a multi-modal
+machine learning architecture that learns jointly from textual input as well as from EEG features. We
+ﬁnd that ﬁltering the EEG signals into frequency bands is more beneﬁcial than using the broadband
+signal. Moreover, for a range of word embedding types, EEG data improves binary and ternary
+sentiment classiﬁcation and outperforms multiple baselines. For more complex tasks such as relation
+detection, only the contextualized BERT embeddings outperform the baselines in our experiments,
+which raises the need for further research. Finally, EEG data shows to be particularly promising when
+limited training data is available.
+Keywords: EEG, frequency bands, brain activity, physiological data, natural language processing, machine
+learning, multimodal learning, neural networks
+1
+Introduction
+Recordings of brain activity play an important role in furthering our understanding of how human language works
+(Ling, Lee, Armstrong, & Nestor, 2019; Murphy, Wehbe, & Fyshe, 2018). The appeal and added value of using
+brain activity signals in linguistic research are intelligible (Stemmer & Connolly, 2012). Computational language
+processing models still struggle with basic linguistic phenomena that humans perform eﬀortlessly (Ettinger,
+2020). Combining insights from neuroscience and artiﬁcial intelligence will take us closer to human-level language
+understanding (McClelland, Hill, Rudolph, Baldridge, & Sch¨utze, 2020). Moreover, numerous datasets of cognitive
+processing signals in naturalistic experiment paradigms with real-world language understanding tasks are becoming
+available (Alday, 2019; Kandylaki & Bornkessel-Schlesewsky, 2019).
+Linzen (2020) advocates for the grounding of NLP models in multi-modal settings to compare the generalization
+abilities of the models to human language learning. Multi-modal learning in machine learning refers to algorithms
+learning from multiple input modalities encompassing various aspects of communication. Developing models that
+1
+arXiv:2102.08655v2  [cs.CL]  13 Jul 2021
+learn from such multi-modal inputs eﬃciently is crucial to advance the generalization capabilities of state-of-the-art
+NLP models. Bisk et al. (2020) posit that text-only training seems to be reaching the point of diminishing
+returns and the next step in the development of NLP is leveraging multi-modal sources of information. Leveraging
+electroencephalography (EEG) and other physiological and behavioral signals seem especially appealing to model
+multi-modal human-like learning processes. Although combining diﬀerent modalities or types of information for
+improving performance seems intuitively appealing, in practice, it is challenging to combine the varying level of
+noise and conﬂicts between modalities (Morency & Baltruˇsaitis, 2017). Therefore, we investigate if and how we
+take advantage of electrical brain activity signals to provide a human inductive bias for these natural language
+processing (NLP) models.
+Two popular NLP tasks are sentiment analysis and relation detection. The goal of both tasks is to automatically
+extract information from text. Sentiment analysis is the task of identifying and categorizing subjective information
+in text. For example, the sentence “This movie is great fun.” contains a positive sentiment, while the sentence
+“This movie is terribly boring.” contains a negative sentiment. Relation detection is the task of identifying semantic
+relationships between entities in the text. In the sentence “Albert Einstein was born in Ulm.”, the relation Birth
+Place holds between the entities “Albert Einstein” and “Ulm”. NLP researchers have made great progress in
+building computational models for these tasks (Barnes, Klinger, & im Walde, 2017; Rotsztejn, Hollenstein, &
+Zhang, 2018). However, these machine learning (ML) models still lack core human language understanding skills
+that humans perform eﬀortlessly (Barnes, Velldal, & Øvrelid, 2020; Poria, Hazarika, Majumder, & Mihalcea, 2020).
+Barnes, Øvrelid, and Velldal (2019) ﬁnd that sentiment models struggle with diﬀerent linguistic elements such as
+negations or sentences containing mixed sentiment towards several target aspects.
+Leveraging Physiological Data for Natural Language Processing
+The increasing wealth of literature on the cognitive neuroscience of language (see reviews by Friederici, 2000;
+Poeppel, 2014; Poeppel, Emmorey, Hickok, & Pylkk¨anen, 2012) enables the use of cognitive signals in applied
+ﬁelds of language processing (e.g., Armeni, Willems, & Frank, 2017). In recent years, natural language processing
+researchers have increasingly leveraged human language processing signals from physiological and neuroimaging
+recordings for both augmenting and evaluating machine learning-based NLP models (e.g., Artemova, Bakarov,
+Artemov, Burnaev, & Sharaev, 2020; Hollenstein, de la Torre, Langer, & Zhang, 2019; Toneva & Wehbe, 2019).
+The approaches taken in those studies can be categorized as encoding or decoding cognitive processing signals.
+Encoding and decoding are complementary operations: encoding uses stimuli to predict brain activity, while
+decoding uses the brain activity to predict information about the stimuli (Naselaris, Kay, Nishimoto, & Gallant,
+2011). In the present study, we focus on the decoding process for predicting information about the text input from
+human brain activity.
+Until now, mostly eye tracking and functional magnetic resonance imaging (fMRI) signals have been leveraged
+for this purpose (e.g., Fyshe, Talukdar, Murphy, & Mitchell, 2014). On the one hand, fMRI recordings provide
+insights into the brain activity with a high spatial resolution, which furthers the research of localization of language-
+related cognitive processes. FMRI features are most often extracted over full sentences or longer text spans, since
+the extraction of word-level signals is highly complex due to the lower temporal resolution and hemodynamic
+delay. The number of cognitive processes and noise included in brain activity signals make feature engineering
+challenging. Machine learning studies leveraging brain activity data rely on standard preprocessing steps such as
+motion correction and spatial smoothing, and then use data-driven approaches to reduce the number of features,
+e.g., principal component analysis (Beinborn, Abnar, & Choenni, 2019). Schwartz, Toneva, and Wehbe (2019), for
+instance, ﬁne-tuned a contextualized language model with brain activity data, which yields better predictions of
+brain activity and does not harm the model’s performance on downstream NLP tasks. On the other hand, eye
+tracking enables us to objectively and accurately record visual behavior with high temporal resolution at low cost.
+Eye tracking is widely used in psycholinguistic studies and it is common to extract well-established theory-driven
+features (Barrett, Bingel, Keller, & Søgaard, 2016; Hollenstein, Barrett, & Beinborn, 2020; Mathias, Kanojia,
+Mishra, & Bhattacharyya, 2020). These established metrics are derived from a large body of psycholinguistic
+research.
+EEG is a non-invasive method to measure electrical brain surface activity. The synchronized activity of
+2
+neurons in the brain produces electrical currents. The resulting voltage ﬂuctuations can be recorded with external
+electrodes on the scalp. Compared to fMRI and other neuroimaging techniques, EEG can be recorded with a
+very high temporal resolution. This allows for more ﬁne-grained language understanding experiments on the
+word-level, which is crucial for applications in NLP (Beres, 2017). To isolate certain cognitive functions, EEG
+signals can be split into frequency bands. For instance, eﬀects related to semantic violations can be found within
+the gamma frequency range (∼30 −100 Hz), with well-formed sentences showing higher gamma levels than
+sentences containing violations (Penolazzi, Angrilli, & Job, 2009). Due to the wide extent of cognitive processes
+and the low signal-to-noise ratio in the EEG data, it is very challenging to isolate speciﬁc cognitive processes, so
+that more and more researchers are relying on machine learning techniques to decode the EEG signals (Aﬀolter,
+Egressy, Pascual, & Wattenhofer, 2020; Pfeiﬀer, Hollenstein, Zhang, & Langer, 2020; P. Sun, Anumanchipalli, &
+Chang, 2020). These challenges are the decisive factors why EEG has not yet been used for NLP tasks. Data-driven
+approaches combined with the possibility of naturalistic reading experiments are now bypassing these challenges.
+Reading times of words in a sentence depend on the amount of information the words convey. This correlation
+can be observed in eye tracking data, but also in EEG data (Frank, Otten, Galli, & Vigliocco, 2015). Thus,
+eye tracking and EEG are complementary measures of cognitive load. Compared to eye tracking, EEG may be
+more cumbersome to record and requires more expertise. Nevertheless, while eye movements indirectly reﬂect
+the cognitive load of text processing, EEG contains more direct and comprehensive information about language
+processing in the human brain. As we show below, this is beneﬁcial for the higher level semantic NLP tasks
+targeted in this work. For instance, word predictability and semantic similarity show distinct patterns of brain
+activity during language comprehension (Ettinger, 2020; Frank & Willems, 2017). The word representations used
+by neural networks and brain activity observed via the process of subjects reading a story can be aligned (Wehbe,
+Vaswani, Knight, & Mitchell, 2014). Moreover, EEG eﬀects that reﬂect syntactical processes can also be found in
+computational models of grammar (Hale, Dyer, Kuncoro, & Brennan, 2018).
+The co-registration of EEG and eye-tracking has become an important tool for studying the temporal dynamics
+of naturalistic reading (Dimigen, Sommer, Hohlfeld, Jacobs, & Kliegl, 2011; Hollenstein et al., 2018; Sato &
+Mizuhara, 2018). This methodology has been increasingly and successfully used to study EEG correlates in the
+time domain (i.e., event-related potentials, ERPs) of cognitive processing in free viewing situations such as reading
+(Degno, Loberg, & Liversedge, 2021). In this context, ﬁxation-related potentials (FRPs), which are the evoked
+electrical responses time-locked to the onset of ﬁxations, have been studied and have received broad interest
+by naturalistic imaging researchers for free viewing studies. In naturalistic reading paradigms, FRPs allow the
+study of the neural dynamics of how novel information from currently ﬁxated text aﬀects the ongoing language
+comprehension process.
+As of yet, the related work relying on EEG signals for NLP is very limited. Sassenhagen and Fiebach (2020)
+ﬁnd that word embeddings can successfully predict the pattern of neural activation. However, their experiment
+design does not include natural reading, but reading isolated words. Hollenstein, de la Torre, et al. (2019) similarly
+ﬁnd that various embedding type are able to predict aggregate word-level activations from natural reading, where
+contextualized embeddings perform best. Moreover, Murphy and Poesio (2010) showed that semantic categories
+can be detected in simultaneous EEG recordings. Muttenthaler, Hollenstein, and Barrett (2020) used EEG signals
+to train an attention mechanism, similar to Barrett, Bingel, Hollenstein, Rei, and Søgaard (2018), who used eye
+tracking signals to induce machine attention with human attention. However, EEG has not yet been leveraged
+for higher-level semantic tasks such as sentiment analysis or relation detection. Deep learning techniques have
+been applied to decode EEG signals (Craik, He, & Contreras-Vidal, 2019), especially for brain-computer interface
+technologies, e.g., Nurse et al. (2016). However, this avenue has not yet been explored when leveraging EEG
+signals to enhance NLP models. Through decoding EEG signals occurring during language understanding, more
+speciﬁcally, during English sentence comprehension, we aim to explore their impact on computational language
+understanding tasks.
+Contributions
+More than a practical application of improving real-world NLP tasks, our main goal is to explore to what extent
+there is additional linguistic processing information in the EEG signal to complement the text input. In this
+3
+present study, we investigate for the ﬁrst time the potential of leveraging EEG signals for augmenting NLP
+models. For the purpose of making language decoding studies from brain activity more interpretable, we follow
+the recommendations of Gauthier and Ivanova (2018): (1) We commit to a speciﬁc mechanism and task, and (2)
+subdivide the input feature space including theoretically founded preprocessing steps. We investigate the impact of
+enhancing a neural network architecture for two common NLP tasks with a range of EEG features. We propose a
+multi-modal network capable of processing textual features and brain activity features simultaneously. We employ
+two diﬀerent well-established types of neural network architectures for decoding the EEG signals throughout the
+entire study. To analyze the impact of diﬀerent EEG features, we perform experiments on sentiment analysis as a
+binary or ternary sentence classiﬁcation task, and relation detection as a multi-class and multi-label classiﬁcation
+task. We investigate the eﬀect of augmenting NLP models with neurophysiolgical data in an extensive study while
+accounting for various dimensions:
+1. We present a comparison of a purely data-driven approach of feature extraction for machine learning, using
+full broadband EEG signals, to a more theoretically motivated approach, splitting the word-level EEG
+features into frequency bands.
+2. We develop two EEG decoding components for our multi-modal ML architecture: A recurrent and a
+convolutional component.
+3. We contrast the eﬀects of these EEG features on multiple word representation types commonly used in NLP.
+We compare the improvements of EEG features as a function of various training data sizes.
+4. We analyze the impact of the EEG features on varying classiﬁcation complexity: from binary classiﬁcation
+to multi-class and multi-label tasks.
+This comprehensive study is completed by comparing the impact of the decoded EEG signals not only to a text-only
+baseline, but also to baselines augmented with eye tracking data as well as random noise. In the next section,
+we describe the materials used in this study and the multi-modal machine learning architecture. Thereafter, we
+present the results of the NLP tasks and discuss the dimensions deﬁned above.
+2
+Materials and Methods
+2.1
+Data
+For the purpose of augmenting natural language processing tasks with brain activity signals, we leverage the
+Zurich Cognitive Language Processing Corpus (ZuCo; Hollenstein et al., 2018; Hollenstein, Troendle, Zhang, &
+Langer, 2020). ZuCo is an openly available dataset of simultaneous EEG and eye tracking data from subjects
+reading naturally occurring English sentences. This corpus consists of two datasets, ZuCo 1.0 and ZuCo 2.0,
+which contain the same type of recordings. We select the normal reading paradigms from both datasets, in which
+participants were instructed to read English sentences in their own pace with no speciﬁc task beyond reading
+comprehension. The participants read one sentence at a time, using a control pad to move to the next sentence.
+This setup facilitated the naturalistic reading paradigm. Descriptive statistics about the datasets used in this work
+are presented in Table 1.
+A detailed description of the entire ZuCo dataset, including individual reading speed, lexical performance,
+average word length, average number of words per sentence, skipping proportion on word level, and eﬀect of word
+length on skipping proportion, can be found in Hollenstein et al. (2018). In the following section, we will describe
+the methods relevant to the subset of the ZuCo data used in the present study.
+2.1.1
+Participants
+For ZuCo 1.0, data were recorded from 12 healthy adults (between 22 and 54 years old; all right-handed; 5 female
+subjects). For ZuCo 2.0, data were recorded from 18 healthy adults (between 23 and 52 years old; 2 left-handed; 10
+female subjects). The native language of all participants is English, originating from Australia, Canada, UK, USA
+or South Africa. In addition, all subjects completed the standardized LexTALE test to assess their vocabulary and
+language proﬁciency (Lexical Test for Advanced Learners of English; Lemh¨ofer & Broersma, 2012). All participants
+4
+ZuCo 1.0
+ZuCo 1.0
+ZuCo 2.0
+Task SR
+Task NR
+Task NR
+Participants
+12
+12
+18
+Sentences
+400
+300
+349
+Words
+7,079
+6,386
+6,828
+Unique word types
+3,080
+2,657
+2,412
+Sentiment Analysis
+✓
+-
+-
+Relation Detection
+-
+✓
+✓
+Table 1: Details about the ZuCo tasks used in this paper. In Task SR participants read sentences from
+movie reviews, and in Task NR sentences from Wikipedia articles.
+gave written consent for their participation and the re-use of the data prior to the start of the experiments. The
+study was approved by the Ethics Commission of the University of Zurich.
+2.1.2
+Reading Materials & Experimental Design
+The reading materials recorded for the ZuCo corpus contain sentences from movie reviews from the Stanford
+Sentiment Treebank (Socher et al., 2013) and Wikipedia articles from a dataset provided by Culotta, McCallum,
+and Betz (2006). These resources were chosen since they provide ground truth labels for the machine learning
+tasks in this work. Table 2 presents a few examples of the sentences read during the experiments.
+For the recording sessions, the sentences were presented one at a time at the same position on the screen. Text
+was presented in black with font size 20-point Arial on a light grey background resulting in a letter height of 0.8
+mm or 0.674°. The lines were triple-spaced, and the words double-spaced. A maximum of 80 letters or 13 words
+were presented per line in all three tasks. Long sentences spanned multiple lines. A maximum of 7 lines for Task 1,
+5 lines for Task 2 and 7 lines for Task 3 were presented simultaneously on the screen.
+During the normal reading tasks included in the ZuCo corpus, the participants were instructed to read the sentences
+naturally, without any speciﬁc task other than comprehension. Participants were told to read the sentences
+normally without any special instructions. Participants were equipped with a control to trigger the onset of the
+next sentence. The task was explained to the subjects orally, followed by instructions on the screen.
+The control condition for this task consisted of single-choice reading comprehension questions about the content
+of the previous sentence. 12% of randomly selected sentences were followed by a control question on a separate
+screen. To test the participants’ reading comprehension, these questions ask about the content of the previous
+sentence. The questions are presented with three answer options, out of which only one is correct.
+2.1.3
+EEG Data
+In this section, we present the EEG data extracted from the ZuCo corpus for this work. We describe the acquisition
+and preprocessing procedures as well as the feature extraction.
+EEG Acquisition and Preprocessing
+High-density EEG data were recorded using a 128-channel EEG
+Geodesic Hydrocel system (Electrical Geodesics, Eugene, Oregon) with a sampling rate of 500 Hz. The recording
+reference was at Cz (vertex of the head), and the impedances were kept below 40 kΩ. All analyses were performed
+using MATLAB 2018b (The MathWorks, Inc., Natick, Massachusetts, United States). EEG data was automatically
+preprocessed using the current version (2.4.3) of Automagic (Pedroni, Bahreini, & Langer, 2019). Automagic is an
+open-source MATLAB toolbox that acts as a wrapper to run currently available EEG preprocessing methods and
+oﬀers objective standardized quality assessment for large studies. The code for the preprocessing can be found
+online.1
+Our preprocessing pipeline consisted of the following steps. First, 13 of the 128 electrodes in the outermost
+circumference (chin and neck) were excluded from further processing as they capture little brain activity and
+mainly record muscular activity. Additionally, 10 EOG electrodes were used for blink and eye movement detection
+1https://github.com/methlabUZH/automagic
+5
+(and subsequent rejection) during ICA. The EOG electrodes were removed from the data after the preprocessing,
+yielding a total number of 105 EEG electrodes. Subsequently, bad channels were detected by the algorithms
+implemented in the EEGLAB plugin clean rawdata2, which removes ﬂatline, low-frequency, and noisy channels.
+A channel was deﬁned as a bad electrode when recorded data from that electrode was correlated at less than 0.85
+to an estimate based on neighboring channels. Furthermore, a channel was deﬁned as bad if it had more line noise
+relative to its signal than all other channels (4 standard deviations). Finally, if a channel had a longer ﬂat-line than
+5 seconds, it was considered bad. These bad channels were automatically removed and later interpolated using a
+spherical spline interpolation (EEGLAB function eeg interp.m). The interpolation was performed as a ﬁnal step
+before the automatic quality assessment of the EEG ﬁles (see below). Next, data was ﬁltered using a high-pass
+ﬁlter (-6dB cut-oﬀ: 0.5 Hz) and a 60 Hz notch ﬁlter was applied to remove line noise artifacts. Thereafter, an
+independent component analysis (ICA) was performed. Components reﬂecting artifactual activity were classiﬁed
+by the pre-trained classiﬁer MARA (Winkler, Haufe, & Tangermann, 2011). MARA is a supervised machine
+learning algorithm that learns from expert ratings. Therefore, MARA is not limited to a speciﬁc type of artifact,
+and should be able to handle eye artifacts, muscular artifacts and loose electrodes equally well. Each component
+being classiﬁed with a probability rating > 0.5 for any class of artifacts was removed from the data. Finally,
+residual bad channels were excluded if their standard deviation exceeded a threshold of 25 µV. After this, the
+pipeline automatically assessed the quality of the resulting EEG ﬁles based on four criteria: A data ﬁle was
+marked as bad-quality EEG and not included in the analysis if (1) the proportion of high-amplitude data points in
+the signals (> 30 µV) was larger than 0.20; (2) more than 20% of time points showed a variance larger than 15
+microvolts across channels; (3) 30% of the channels showed high variance (> 15 µV); (4) the ratio of bad channels
+was higher than 0.3.
+Free viewing in reading is an important characteristic of naturalistic behavior and imposes challenges for
+the analysis of electrical brain activity data. Free viewing in the context of our study refers to the participant’s
+ability to perform self-paced reading given the experimental requirement to keep the head still during data
+recording. In the case of EEG recordings during naturalistic reading, the self-paced timing of eye ﬁxations leads to
+a temporal overlap between successive ﬁxation-related events (Dimigen et al., 2011). In order to isolate the signals
+of interest and correct for temporal overlap in the continuous EEG, several methods using linear-regression-based
+deconvolution modeling have been proposed for estimating the overlap-corrected underlying neural responses to
+events of diﬀerent types (e.g., Ehinger and Dimigen 2019; Smith and Kutas 2015a, 2015b). Here, we used the unfold
+toolbox for MATLAB (Ehinger & Dimigen, 2019).3 Deconvolution modeling is based on the assumption that in
+each channel the recorded signal consists of a combination of time-varying and partially overlapping event-related
+responses and random noise. Thus, the model estimates the latent event-related responses to each type of event
+based on repeated occurrences of the event over time, in our case eye ﬁxations.
+EEG Features
+The fact that ZuCo provides simultaneous EEG and eye tracking data highly facilitates the
+extraction of word-level brain activity signals. Dimigen et al. (2011) demonstrated that EEG indices of semantic
+processing can be obtained in natural reading and compared to eye movement behavior. The eye tracking data
+provides millisecond-accurate ﬁxation times for each word. Therefore, we were able to obtain the brain activity
+during all ﬁxations of a word by computing ﬁxation-related potentials aligned to the onsets of the ﬁxation on a
+given word.
+In this work, we select a range of EEG features with a varying degree of theory-driven and data-driven feature
+extraction. We deﬁne the broadband EEG signal, i.e., the full EEG signal from 0.5-50 Hz as the averaged brain
+activity over all ﬁxations of a word, i.e., its total reading time. We compare the full EEG features, a data-driven
+feature extraction approach, to frequency band features, a more theoretically motivated approach. Diﬀerent
+neurocognitive aspects of language processing during reading are associated with brain oscillations at various
+frequencies. These frequency ranges are known to be associated with certain cognitive functions. We split the
+EEG signal into four frequency bands to limit the bandwidth of the EEG signals to be analyzed. The frequency
+bands are ﬁxed ranges of wave frequencies and amplitudes over a time scale: theta (4-8 Hz), alpha (8.5-13 Hz),
+beta (13.5-30 Hz), and gamma (30.5-49.5 Hz). We elaborate on cognitive and linguistic functions of each of these
+2http://sccn.ucsd.edu/wiki/Plugin list process
+3https://github.com/unfoldtoolbox/unfold/
+6
+Task
+Example Sentence
+Label(s)
+Binary/ternary sentiment analysis
+“The ﬁlm often achieves a mesmerizing poetry.”
+Positive
+Binary/ternary sentiment analysis
+“Flaccid drama and exasperatingly slow journey.”
+Negative
+Ternary sentiment analysis
+“A portrait of an artist.”
+Neutral
+Relation detection
+“He attended Wake Forest University.”
+Education
+Relation detection
+“She attended Beverly Hills High School, but
+left to become an actress.”
+Education,
+Job Title
+Table 2: Example sentences for all three NLP tasks used in this study.
+frequency bands in Section 4.1.
+We then applied a Hilbert transform to each of these time-series, resulting in a complex time-series. The Hilbert
+phase and amplitude estimation method yields results equivalent to sliding window FFT and wavelet approaches
+(Bruns, 2004). We speciﬁcally chose the Hilbert transformation to maintain temporal information for the amplitude
+of the frequency bands to enable the power of the diﬀerent frequencies for time segments deﬁned through ﬁxations
+from the eye-tracking recording. Thus, for each eye-tracking feature we computed the corresponding EEG feature
+in each frequency band. For each EEG eye-tracking feature, all channels were subject to an artifact rejection
+criterion of ±90 µV to exclude trials with transient noise.
+In spite of the high inter-subject variability in EEG data, it has been shown in previous research of machine
+learning applications (Foster, Dharmaretnam, Xu, Fyshe, & Tzanetakis, 2018; Hollenstein, Barrett, et al., 2019),
+that averaging over the EEG features of all subjects yields results almost as good as the single best-performing
+subjects. Hence, we also average the EEG features over all subjects to obtain more robust features. Finally, for
+each word in each sentence, the EEG features consist of a vector of 105 dimensions (one value for each EEG
+channel). For training the ML models, we split all available sentences into sets of 80% for training and 20% for
+testing to ensure that the test data is unseen during training.
+2.1.4
+Eye Tracking Data
+In the following, we describe the eye tracking data recorded for the Zurich Cognitive Language Processing Corpus.
+In this study, we focus on decoding EEG data, but we use eye movement data to compute an additional baseline.
+As mentioned previously, augmenting ML models with eye tracking yields consistent improvements across a range
+of NLP tasks, including sentiment analysis and relation extraction (Hollenstein, Barrett, et al., 2019; Long, Lu,
+Xiang, Li, & Huang, 2017; Mishra, Kanojia, Nagar, Dey, & Bhattacharyya, 2017). Since the ZuCo datasets provide
+simultaneous EEG and eye tracking recordings, we leverage the available eye tracking data to augment all NLP
+tasks with eye tracking features as an additional multi-modal baseline based on cognitive processing features.
+Eye Tracking Acquisition and Preprocessing
+Eye movements were recorded with an infrared video-
+based eye tracker (EyeLink 1000 Plus, SR Research) at a sampling rate of 500 Hz. The EyeLink 1000 tracker
+processes eye position data, identifying saccades, ﬁxations and blinks. Fixations were deﬁned as time periods
+without saccades during which the visual gaze is ﬁxed on a single location. The data therefore consists of (x,y) gaze
+location entries for individual ﬁxations mapped to word boundaries. A ﬁxation lasts around 200–250ms (with large
+variations). Fixations shorter than 100 ms were excluded, since these are unlikely to reﬂect language processing
+(Sereno & Rayner, 2003). Fixation duration depends on various linguistic eﬀects, such as word frequency, word
+familiarity and syntactic category (Clifton, Staub, & Rayner, 2007).
+Eye Tracking Features
+The following features were extracted from the raw data: (1) gaze duration (GD),
+the sum of all ﬁxations on the current word in the ﬁrst-pass reading before the eye moves out of the word; (2)
+total reading time (TRT), the sum of all ﬁxation durations on the current word, including regressions; (3) ﬁrst
+ﬁxation duration (FFD), the duration of the ﬁrst ﬁxation on the prevailing word; (4) go-past time (GPT), the sum
+7
+of all ﬁxations prior to progressing to the right of the current word, including regressions to previous words that
+originated from the current word; (5) number of ﬁxations (nFix), the total amount of ﬁxations on the current word.
+We use these ﬁve features provided in the ZuCo dataset, which cover the extent of the human reading process.
+To increase the robustness of the signal, analogously to the EEG features, the eye tracking features are averaged
+over all subjects (Barrett & Hollenstein, 2020). This results in a feature vector of ﬁve dimensions for each word in
+a sentence. Training and test data were split in the same fashion as the EEG data.
+2.2
+Natural Language Processing Tasks
+In this section, we describe the natural language processing tasks we use to evaluate the multi-modal ML models.
+As usual in supervised machine learning, the goal is to learn a mapping from given input features to an output
+space to predict the labels as accurately as possible. The tasks we consider in our work do not diﬀer much in the
+input deﬁnition as they consist of three sequence classiﬁcation tasks for information extraction from text. The goal
+of a sequence classiﬁcation task is to assign the correct label(s) to a given sentence. The input for all tasks consists
+of tokenized sentences, which we augment with additional features, i.e., EEG or eye tracking. The labels to predict
+vary across the three chosen tasks resulting in varying task diﬃculty. Table 2 provides examples for all three tasks.
+2.2.1
+Task 1 and 2: Sentiment Analysis
+The objective of sentiment analysis is to interpret subjective information in text. More speciﬁcally, we deﬁne
+sentiment analysis as a sentence-level classiﬁcation task. We run our experiments on both binary (positive/negative)
+and ternary (+ neutral) sentiment classiﬁcation. For this task, we leverage only the sentences recorded in the ﬁrst
+task of ZuCo 1.0, since they are part of the Stanford Sentiment Treebank (Socher et al., 2013), and thus directly
+provide annotated sentiment labels for training the ML models. For the ﬁrst task, binary sentiment analysis, we
+use the 263 positive and negative sentences. For the second task, ternary sentiment analysis, we additionally use
+the neutral sentences, resulting in a total of 400 sentences.
+2.2.2
+Task 3: Relation Detection
+Relation classiﬁcation is the task of identifying the semantic relation holding between two entities in text. The
+ZuCo corpus also contains Wikipedia sentences with relation types such as Job Title, Nationality and Political
+Aﬃliation. The sentences in ZuCo 1.0 and ZuCo 2.0, from the normal reading experiment paradigms, include
+11 relation types (Figure 1). In order to further increase the task complexity, we treat this task diﬀerently than
+the sentiment analysis tasks. Since any sentence can include zero, one or more of the relevant semantic relations
+(see example in Table 2, we treat relation detection as a multi-class and multi-label sequence classiﬁcation task.
+Concretely, every sample can be assigned to any possible combination out of the 11 classes including none of
+them. Removing duplicates between ZuCo 1.0 and ZuCo 2.0 resulted in 594 sentences used for training the models.
+Figure 1 illustrates the label and relation distribution of the sentences used to train the relation detection task.
+2.3
+Multi-Modal Machine Learning Architecture
+We present a multi-modal neural architecture to augment the NLP sequence classiﬁcation tasks with any other
+type of data. Although combining diﬀerent modalities or types of information for improving performance seems
+an intuitively appealing task, it is often challenging to combine the varying levels of noise and conﬂicts between
+modalities in practice.
+Previous works using physiological data for improving NLP tasks mostly implement early fusion multi-modal
+methods, i.e., directly concatenating the textual and cognitive embeddings before inputting them into the network.
+For example, Hollenstein and Zhang (2019), Barrett, Gonz´alez-Gardu˜no, Frermann, and Søgaard (2018) and
+Mishra et al. (2017) concatenate textual input features with eye-tracking features to improve NLP tasks such as
+entity recognition, part-of-speech tagging and sentiment analysis, respectively. Concatenating the input features at
+the beginning in only one joint decoder component aims at learning a joint decoder across all modalities at risk of
+implicitly learning diﬀerent weights for each modality. However, recent multi-modal machine learning work has
+shown the beneﬁts of late fusion mechanisms (Ramachandram & Taylor, 2017). Do, Nguyen, Tsiligianni, Cornelis,
+8
+0
+20
+40
+60
+80
+100
+120
+Natoinality
+Job Title
+Death
+Wife
+Plotical Affiliation
+Birth Place
+Employer
+Visited
+Founder
+Awarded
+Education
+Number of sentences
+0
+50
+100
+150
+5
+4
+3
+2
+1
+0
+Number of sentences
+Number of relations
+Figure 1: (left) Label distribution of the 11 relation types in the relation detection dataset. (right) Number
+of relation types per sentence in the relation detection dataset.
+and Deligiannis (2017) argument in favor of concatenating the hidden layers instead of concatenating the features
+at input time. Such multi-modal models have been successfully applied in other areas, mostly combining inputs
+across diﬀerent domains, for instance, learning speech reconstruction from silent videos (Ephrat, Halperin, & Peleg,
+2017), or for text classiﬁcation using images (Kiela, Grave, Joulin, & Mikolov, 2018). Tsai et al. (2019) train a
+multi-modal sentiment analysis model from natural language, facial gestures, and acoustic behaviors.
+Hence, we adopted the late fusion strategy in our work. We present multi-modal models for various NLP tasks,
+combining the learned representations of all input types (i.e., text and EEG features) in a late fusion mechanism
+before conducting the ﬁnal classiﬁcation. Purposefully, this enables the model to learn independent decoders for
+each modality before fusing the hidden representations together. In the present study, we investigate the proposed
+multi-modal machine learning architecture, which learns simultaneously from text and from cognitive data such as
+eye tracking and EEG signals.
+In the following, we ﬁrst describe the uni-modal and multi-modal baseline models we use to evaluate the results.
+Thereafter, we present the multi-modal NLP models that jointly learn from text and brain activity data.
+2.3.1
+Uni-Modal Text Baselines
+For each of the tasks presented above, we train uni-modal models on textual features only. To represent the word
+numerically, we use word embeddings. Word embeddings are vector representations of words, computed so that
+words with similar meaning have a similar representation. To analyze the interplay between various types of word
+embeddings and EEG data, we use the following three embedding types typically used in practice: (1) randomly
+initialized embeddings trained at run time on the sentences provided, (2) GloVe pre-trained embeddings based
+on word co-occurrence statistics (Pennington, Socher, & Manning, 2014)4, and (3) BERT pre-trained contextual
+embeddings (Devlin, Chang, Lee, & Toutanova, 2019)5.
+The randomly initialized word representations deﬁne word embeddings as n-by-d matrices, where n is the
+vocabulary size, i.e., the number of unique words in our dataset, and d is the embedding dimension. Each value in
+that matrix is randomly initialized and will then be trained together with the neural network parameters. We set
+d = 32. This type of embeddings does not beneﬁt from pre-training on large text collections and hence is known to
+perform worse than GloVe or BERT embeddings. We include them in our study to better isolate the impact of the
+EEG features and to limit the learning of the model on the text it is trained on. Non-contextual word embeddings
+such as GloVe encode each word in a ﬁxed vocabulary as a vector. The purpose of these vectors is to encode
+semantic information about a word, such that similar words result in similar embedding vectors. We use the GloVe
+embeddings of d = 300 dimensions that are trained on 6 billion words. The contextualized BERT embeddings were
+pre-trained on multiple layers of transformer models with self-attention (Vaswani et al., 2017). Given a sentence,
+BERT encodes each word into a feature vector of dimension d = 768, which incorporates information from the
+4https://nlp.stanford.edu/projects/glove/
+5https://huggingface.co/bert-base-uncased
+9
+Input Layer
+word embeddings
+d1
+d1
+d1
+d1
+word1
+word2
+words
+…
+e1
+e1
+e1
+e1
+biLSTMs
+Dense Layers
+concatenate hidden states
+prediction
+Dense 
+Layer + 
+Softmax
+…
+…
+EEG features
+word1
+word2
+words
+…
+EEG 
+Decoding 
+Component
+…
+Figure 2: The multi-modal machine learning architecture for the EEG-augmented models. Word em-
+beddings of dimension d are the input for the textual component (yellow); EEG features of dimension
+e for the cognitive component (blue). The text component consists of recurrent layers followed by two
+dense layers with dropout. We test multiple architectures for the EEG component (see Figure 3). Finally,
+the hidden states of both components are concatenated and followed by a ﬁnal dense layer with softmax
+activation for classiﬁcation (green).
+word’s context in the sentence.
+The uni-modal text baseline model consists of a ﬁrst layer taking the embeddings as an input, followed by
+a bidirectional Long-Short Term Memory network (LSTM; Hochreiter & Schmidhuber, 1997), then two fully-
+connected dense layers with dropout between them, and ﬁnally a prediction layer using softmax activation. This
+corresponds to a single component of the multi-modal architecture, i.e., the top component in Figure 2. Following
+best practices (e.g., C. Sun, Qiu, Xu, & Huang, 2019) , we set the weights of BERT to be trainable similarly to the
+randomly initialized embeddings. This process of adjusting the initialized weights of a pre-trained feature extractor
+during the training process, in our case BERT, is commonly known as ﬁne-tuning in the literature (Howard &
+Ruder, 2018). In contrast, the parameters of the GloVe embeddings are ﬁxed to the pre-trained weights and thus
+do not change during training.
+2.3.2
+Multi-Modal Baselines
+To analyze the eﬀectiveness of our multi-modal architecture with EEG signals properly, we not only compare it
+to uni-modal text baselines, but also to multi-modal baselines using the same architecture described in the next
+section for the EEG models, but replacing the features of the second modality with the following alternatives:
+(1) We implement a gaze-augmented baseline, where the ﬁve eye tracking features described in Section 2.1.4 are
+combined with the word embeddings by adding them to the multi-modal model in the same manner as the EEG
+features, as vectors with dimension = 5. The purpose of this baseline is to allow a comparison of multi-modal
+models learning from two diﬀerent types of physiological features. Since the beneﬁts of eye tracking data in ML
+models are well established (Barrett & Hollenstein, 2020; Mathias et al., 2020), this is a strong baseline. (2)
+We further implement a random noise-augmented baseline, where we add uniformly sampled vectors of random
+numbers as the second input data type to the multi-modal model. These random vectors are of the same dimension
+as the EEG vectors (i.e., d = 105). It is well known that the addition of noise to the input data of a neural network
+during training can lead to improvements in generalization performance as a form of regularization (Bishop, 1995).
+Thus, this baseline is relevant because we want to analyze whether the improvements from the EEG signals on the
+NLP tasks are due to its capability of extracting linguistic information and not merely due to additional noise.
+10
+EEG Decoding 
+Component
+Input Layer
+e1
+e1
+e1
+e1
+biLSTMs
+Dense Layers
+…
+EEG features
+word1
+word2
+words
+…
+EEG Decoding Component
+Input Layer
+e1
+e1
+e1
+e1
+EEG features
+word1
+word2
+words
+…
+Conv
+Conv
+Max 
+Pool
+Conv
+Conv
+Conv
+Conv
+Inception Module
+concatenate
+Dense Layers
+…
+flatten
+Figure 3: EEG decoding components: (left) The recurrent model component is analogous to the text
+component and consists of recurrent layers followed by two dense layers with dropout. (right) The
+convolutional inception component consists of an ensemble of convolution ﬁlters of varying lengths which
+are concatenated and ﬂattened before the subsequent dense layers.
+2.3.3
+EEG Models
+To fully understand the impact of the EEG data on the NLP models, we build a model that is able to deal with
+multiple inputs and mixed data. We present a multi-modal model with late decision-level fusion to learn joint
+representations of textual and cognitive input features. We test both a recurrent and a convolutional neural
+architecture for decoding the EEG signals. Figure 2 depicts the main structure of our model and we describe the
+individual components below.
+All input sentences are padded to the maximum sentence length to provide ﬁxed-length text inputs to the model.
+Word embeddings of dimension d are the input for the textual component, where d ∈{32, 300, 768} for randomly
+initialized embeddings, GloVe embeddings and BERT embeddings, respectively. EEG features of dimension e are
+the input for the cognitive component, where e = 105. As described, the text component consists of bidirectional
+LSTM layers followed by two dense layers with dropout. Text and EEG features are given as independent inputs to
+their own respective component of the network. The hidden representations of these are then concatenated before
+being fed to a ﬁnal dense classiﬁcation layer.We also experimented with diﬀerent merging mechanisms to join the
+text and EEG layers of our two-tower model (concatenation, addition, subtraction, maximum). Concatenation
+overall achieved the best results, so we report only these. Although the goal of each network is to learn feature
+transformations for their own modality, the relevant extracted information should be complementary. This is
+achieved, as commonly done in deep learning, through alternatively running inference and back-propagation of
+the data through the entire network enabling information to ﬂow from the component responsible for one input
+modality to the other via the fully connected output layers. To learn a non-linear transformation function for each
+component, we employ the rectiﬁed linear units (ReLu) as activation functions after each hidden layer.
+For the EEG component, we test a recurrent and a convolutional architecture since both have proven useful
+in learning features from time series data for language processing (e.g., Fawaz et al., 2020; Lipton, Berkowitz,
+& Elkan, 2015; Yin, Kann, Yu, & Sch¨utze, 2017). For the recurrent architecture (Figure 3, left), the model
+component is analogous to the text component: it consists of bidirectional LSTM layers followed by two dense
+layers with dropout and ReLu activation functions. For the convolutional architecture (Figure 3, right), we build a
+model component based on the Inception module ﬁrst introduced by Szegedy et al. (2015). An inception module
+is an ensemble of convolutions that applies multiple ﬁlters of varying lengths simultaneously to an input time
+series. This allows the network to automatically extract relevant features from both long and short time series. As
+suggested by Schirrmeister et al. (2017) we used exponential linear unit activations (ELUs; Clevert, Unterthiner,
+& Hochreiter, 2015) in the convolutional EEG decoding model component.
+For binary and ternary sentiment analysis, the ﬁnal dense layer has a softmax activation in order to use the
+maximal output for the classiﬁcation. For the multi-label classiﬁcation case of relation detection, we replace the
+softmax function in the last dense layer of the model with a sigmoid activation to produce independent scores
+for each class. If the score for any class surpasses a certain threshold, the sentence is labeled to contain that
+11
+Parameter
+Range
+LSTM layer dimension
+64, 128, 256, 512
+Number of LSTM layers
+1, 2, 3, 4
+CNN ﬁlters
+14, 16, 18
+CNN kernel sizes
+[1,4,7]
+CNN pool sizes
+3, 5, 7
+Dense layer dimension
+8, 16, 32, 64, 128, 256, 512
+Dropout
+0.1, 0.3, 0.5
+Batch size
+20, 40, 60
+Learning rate
+10−1, 10−2, 10−3, 10−4, 10−5
+Random seeds
+13, 22, 42, 66, 78
+Threshold
+0.3, 0.5, 0.7
+Table 3: Tested value ranges included in the hyper-parameter search for our multi-modal machine learning
+architecture. Threshold only applies to relation detection.
+relation type (opposite to simply taking the max score as the label of the sentence). The threshold is tuned as an
+additional hyper-parameter.
+This multi-modal model with separate components learned for each input data type has several advantages: It
+allows for separate pre-processing of each type of data. For instance, it is able to deal with diﬀering tokenization
+strategies, which is useful in our case since it is challenging to map linguistic tokenization to the word boundaries
+presented to participants during the recordings of eye tracking and brain activity. Moreover, this approach is
+scalable to any number of input types. The generalizability of our model enables the integration of multiple data
+representations, e.g., learning from brain activity, eye movements, and other cognitive modalities simultaneously.
+2.3.4
+Training Setup
+To assess the impact of the EEG signals under fair modelling conditions, the hyper-parameters are tuned individually
+for all baseline models as well as for all eye tracking and EEG augmented models. The ranges of the hyper-
+parameters are presented in Table 3. All results are reported as means over ﬁve independent runs with diﬀerent
+random seeds. In each run, 5-fold cross-validation is performed on a 80% training and 20% test split. The best
+parameters were selected according to the model’s accuracy on the validation set (10% of the training set) across
+all 5 folds. We implemented early stopping with a patience of 80 epochs and a minimum diﬀerence in validation
+accuracy of 10−7. The validation set is used for both parameter tuning and early stopping.
+3
+Results
+In this study, we assess the potential of EEG brain activity data to enhance NLP tasks in a multi-modal architecture.
+We present the results of all augmented models compared to the baseline results. As described above, we select
+the hyper-parameters based on the best validation accuracy achieved for each setting.
+The performance of our models is evaluated based on the comparison between the predicted labels (i.e., positive,
+neutral or negative sentiment for a sentence; or the relation type(s) in a sentence) and the true labels of the test set
+resulting in the number of true positives (TP), true negatives (TN), false positives (FP), and false negatives (FN)
+across the classiﬁed samples. The terms positive and negative refer to the classiﬁer’s prediction, and the terms
+true and false refer to whether that prediction corresponds to the ground truth label. The following decoding
+performance metrics were computed:
+Precision is the fraction of relevant instances among the retrieved instances, and is deﬁned as
+Precision =
+TP
+TP + FP
+(1)
+12
+Randomly initialized
+GloVe
+BERT
+Model
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+Baseline
+0.572
+0.573
+0.552 (0.07)
+0.751
+0.738
+0.728 (0.08)
+0.900
+0.899
+0.893 (0.04)
++ noise
+0.599
+0.574
+0.541 (0.08)
+0.721
+0.715
+0.709 (0.09)
+0.914
+0.916
+0.913 (0.03)
++ ET
+0.615 0.605 0.586 (0.06)
+0.795 0.786
+0.781 (0.06)
+0.913
+0.907
+0.904 (0.05)
++ EEG full
+0.540
+0.538
+0.525 (0.06)
+0.738
+0.729
+0.725 (0.07)
+0.913
+0.909
+0.906 (0.04)
++ EEG θ
+0.602
+0.599 0.584* (0.08)
+0.789
+0.785 0.783+ (0.05)
+0.917
+0.916
+0.913* (0.04)
++ EEG α
+0.610
+0.590
+0.565 (0.05)
+0.763
+0.758
+0.753 (0.05)
+0.912
+0.908
+0.906 (0.03)
++ EEG β
+0.587
+0.578
+0.555 (0.07)
+0.781
+0.777
+0.774+ (0.06)
+0.911
+0.911
+0.907* (0.04)
++ EEG γ
+0.614
+0.591
+0.553 (0.08)
+0.777
+0.773
+0.769* (0.07)
+0.917 0.917 0.915* (0.04)
++θ+α+β+γ
+0.597
+0.597
+0.569 (0.08)
+0.766
+0.764
+0.760* (0.07)
+0.913
+0.913
+0.911* (0.04)
+Table 4: Binary sentiment analysis results of the multi-modal model using the recurrent
+EEG decoding component. We report precision (P), recall (R), F1-score and the standard deviation
+(std) between ﬁve runs. The best results per column are marked in bold . Signiﬁcance is indicated on
+the F1-score with asterisks: * denotes p < 0.05 (uncorrected), + denotes p < 0.003 (Bonferroni corrected
+p-value).
+Randomly initialized
+GloVe
+BERT
+Model
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+Baseline
+0.408
+0.384
+0.351 (0.07)
+0.510
+0.507
+0.496 (0.06)
+0.722
+0.714
+0.710 (0.05)
++ noise
+0.373
+0.399
+0.344 (0.10)
+0.531
+0.519
+0.504 (0.04)
+0.711
+0.706
+0.700 (0.06)
++ ET
+0.424 0.413 0.388 (0.06)
+0.539 0.528 0.513 (0.04)
+0.728
+0.717
+0.714 (0.05)
++ EEG full
+0.391
+0.387
+0.353 (0.07)
+0.505
+0.505
+0.488 (0.07)
+0.724
+0.715
+0.711 (0.06)
++ EEG θ
+0.397
+0.409
+0.360 (0.07)
+0.516
+0.510
+0.498 (0.06)
+0.715
+0.708
+0.704 (0.05)
++ EEG α
+0.390
+0.390
+0.347 (0.08)
+0.520
+0.516
+0.506 (0.05)
+0.720
+0.712
+0.707 (0.05)
++ EEG β
+0.350
+0.370
+0.302 (0.09)
+0.523
+0.519
+0.509 (0.05)
+0.732 0.720 0.717 (0.07)
++ EEG γ
+0.409
+0.397
+0.359 (0.07)
+0.517.
+0.513
+0.502 (0.04)
+0.709
+0.705
+0.697 (0.06)
++θ+α+β+γ
+0.401
+0.400
+0.368 (0.06)
+0.522
+0.516
+0.505 (0.05)
+0.722
+0.717
+0.713 (0.05)
+Table 5: Ternary sentiment analysis results of the multi-modal model using the recurrent
+EEG decoding component. We report precision (P), recall (R), F1-score and the standard deviation
+(std) between ﬁve runs. The best results per column are marked in bold.
+Recall is the fraction of the relevant instances that are successfully retrieved:
+Recall =
+TP
+TP + FN
+(2)
+The F1-score is the harmonic mean combining precision and recall:
+F1 score = 2 · Precision · Recall
+Precision + Recall
+(3)
+For analyzing the results, we report macro-averaged precision (P), recall (R), and F1-score, i.e., the metrics are
+calculated for each label to counteract the label imbalance in the datasets.
+The results for the multi-modal architecture using the recurrent EEG decoding component are presented in
+Table 4 for binary sentiment analysis, Table 5 for ternary sentiment analysis, and Table 6 for relation detection.
+The ﬁrst three rows in each table represent the uni-modal text baseline, the multi-modal noise and eye-tracking
+baselines. This is followed by the multi-modal models augmented with the full broadband EEG signals and each
+of the four frequency bands. Finally, in the last row, we also present the results of a multi-modal model with
+ﬁve components, where text and each frequency band extractors are learned separately and concatenated at the
+end. In both sentiment tasks, the EEG data yields modest but consistent improvements over the text baseline
+for all word embeddings types. However, in the case of relation detection, the addition of either eye tracking or
+13
+Randomly initialized
+GloVe
+BERT
+Model
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+Baseline
+0.404 0.525 0.452 (0.04)
+0.501 0.609 0.539 (0.05)
+0.522 0.788
+0.623 (0.05)
++ noise
+0.420
+0.424
+0.408 (0.07)
+0.577 0.497 0.532 (0.03)
+0.675 0.585
+0.625 (0.03)
++ ET
+0.421
+0.404
+0.402 (0.06)
+0.547 0.476 0.506 (0.04)
+0.661
+0.631
+0.644 (0.03)
++ EEG full
+0.345
+0.343
+0.334 (0.05)
+0.511 0.387 0.432 (0.09)
+0.652
+0.690
+0.668* (0.10)
++ EEG θ
+0.430 0.421
+0.414 (0.07)
+0.582 0.508 0.539 (0.07)
+0.646
+0.736
+0.684* (0.08)
++ EEG α
+0.368
+0.373
+0.358 (0.12)
+0.582 0.515 0.542 (0.06)
+0.652
+0.715
+0.679* (0.07)
++ EEG β
+0.349
+0.340
+0.329 (0.09)
+0.581 0.497 0.532 (0.10)
+0.674
+0.726 0.696+ (0.06)
++ EEG γ
+0.410
+0.399
+0.397 (0.05)
+0.554 0.488 0.514 (0.09)
+0.666.
+0.715
+0.686* (0.07)
++ θ+α+β+γ
+0.370
+0.376
+0.363 (0.09)
+0.554 0.488 0.514 (0.09)
+0.675
+0.646
+0.659 (0.04)
+Table 6: Relation detection results of the multi-modal model using the recurrent EEG decod-
+ing component. We report precision (P), recall (R), F1-score and the standard deviation (std) between
+ﬁve runs. The best results per column are marked in bold. Signiﬁcance is indicated on the F1-score with
+asterisks: * denotes p < 0.05 (uncorrected), + denotes p < 0.003 (Bonferroni corrected p-value).
+Randomly initialized
+GloVe
+BERT
+Model
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+Baseline
+0.572
+0.573
+0.552 (0.07)
+0.751
+0.738
+0.728 (0.08)
+0.900
+0.899
+0.893 (0.04)
++ noise
+0.558
+0.584
+0.528 (0.11)
+0.780
+0.767
+0.762 (0.06)
+0.895
+0.887
+0.883 (0.05)
++ ET
+0.617
+0.623
+0.610 (0.07)
+0.790
+0.790
+0.783 (0.06)
+0.896
+0.887
+0.881 (0.05)
++ EEG full
+0.588
+0.583
+0.572 (0.04)
+0.778
+0.774
+0.772+ (0.05)
+0.928 0.927
+0.926* 0.03
++ EEG θ
+0.564
+0.569
+0.535 (0.08)
+0.805 0.792
+0.791+ (0.04)
+0.922
+0.919 0.917* (0.03)
++ EEG α
+0.596
+0.593
+0.563 (0.08)
+0.775
+0.781
+0.772* (0.08)
+0.920
+0.917 0.916* (0.03)
++ EEG β
+0.605
+0.597
+0.580 (0.08)
+0.802 0.797 0.792+ (0.05)
+0.920
+0.914 0.914* (0.04)
++ EEG γ
+0.640 0.625 0.611+ (0.09)
+0.787
+0.780
+0.776+ (0.05)
+0.905
+0.905
+0.901 (0.04)
++θ+α+β+γ
+0.599
+0.579
+0.558 (0.07)
+0.800
+0.794
+0.786+ (0.05)
+0.909
+0.910
+0.907 (0.04)
+Table 7: Binary sentiment analysis results of the multi-modal model using the convolutional
+EEG decoding component. We report precision (P), recall (R), F1-score and the standard deviation
+(std) between ﬁve runs. The best results per column are marked in bold. Signiﬁcance is indicated on the
+F1-score with asterisks: * denotes p < 0.05 (uncorrected), + denotes p < 0.003 (Bonferroni corrected
+p-value).
+brain activity data is not helpful for randomly initialized embeddings and only beneﬁcial in some settings using
+GloVe embeddings. Nevertheless, the combination of BERT embeddings and EEG data does improve the relation
+detection models. Generally, the results show a decreasing maximal performance per task with increasing task
+complexity measured in terms of the number of classes (see Section 4.5 for a detailed analysis).
+Furthermore, the results for the multi-modal architecture using the convolutional EEG decoding component
+are presented in Table 7 for binary sentiment analysis, Table 8 for ternary sentiment analysis, and Table 9 for
+relation detection. The results of this model architecture yield higher overall results, whereas the trend across
+tasks is similar to the models using the recurrent EEG decoding component, i.e., considerable improvements for
+both sentiment analysis tasks, but for relation detection the most notable improvements are achieved with the
+BERT embeddings. This validates the popular choice of convolutional neural networks for EEG classiﬁcation
+tasks (Craik et al., 2019; Schirrmeister et al., 2017). While recurrent neural networks are often used in NLP and
+linguistic modelling (due to the left-to-right processing mechanism), CNNs have shown better performance at
+learning feature weights from noisy data (e.g., Kvist & Lockvall Rhodin, 2019). Hence, our convolutional EEG
+decoding component is able to better extract the task-relevant linguistic processing information from the input
+data.
+To assess the results, we perform statistical signiﬁcance testing with respect to the text baseline in a bootstrap
+14
+Randomly initialized
+GloVe
+BERT
+Model
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+Baseline
+0.408
+0.384
+0.351 (0.07)
+0.510
+0.507
+0.496 (0.06)
+0.722
+0.714
+0.710 (0.05)
++ noise
+0.359
+0.388
+0.334 (0.09)
+0.494
+0.484
+0.476 (0.07)
+0.715
+0.683
+0.684 (0.05)
++ ET
+0.417
+0.399
+0.372 (0.05)
+0.509
+0.512
+0.500 (0.07)
+0.721
+0.687
+0.670 (0.05)
++ EEG full
+0.365
+0.384
+0.333 (0.08)
+0.488
+0.484
+0.476 (0.06)
+0.738
+0.724 0.723+ (0.04)
++ EEG θ
+0.389
+0.372
+0.330 (0.06)
+0.511
+0.495
+0.477 (0.06)
+0.727
+0.718
+0.716+ (0.05)
++ EEG α
+0.357
+0.382
+0.331 (0.11)
+0.534
+0.525
+0.515+ (0.06)
+0.732
+0.715
+0.713+ (0.04)
++ EEG β
+0.425 0.418 0.378 (0.08)
+0.534 0.529 0.520+ (0.05)
+0.727
+0.717
+0.715 (0.04)
++ EEG γ
+0.404
+0.406
+0.360 (0.08)
+0.539 0.521
+0.514 (0.06)
+0.733 0.725 0.721+ (0.04)
++θ+α+β+γ
+0.384
+0.402
+0.354 (0.10)
+0.517
+0.504
+0.488 (0.05)
+0.733 0.717
+0.715 (0.06)
+Table 8: Ternary sentiment analysis results of the multi-modal model using the convolutional
+EEG decoding component. We report precision (P), recall (R), F1-score and the standard deviation
+(std) between ﬁve runs. The best results per column are marked in bold. Signiﬁcance is indicated on the
+F1-score with asterisks: * denotes p < 0.05 (uncorrected), + denotes p < 0.003 (Bonferroni corrected
+p-value).
+Randomly initialized
+GloVe
+BERT
+Model
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+P
+R
+F1 (std)
+Baseline
+0.404 0.525 0.452 (0.04)
+0.501 0.609 0.539 (0.05)
+0.522 0.788
+0.623 (0.05)
++ noise
+0.424
+0.299
+0.342 (0.06)
+0.547
+0.441
+0.486 (0.06)
+0.532
+0.493
+0.511 (0.07)
++ ET
+0.415
+0.307
+0.345 (0.08)
+0.447
+0.413.
+0.428 (0.07)
+0.558
+0.665
+0.593 (0.13)
++ EEG full
+0.225
+0.225
+0.225 (0.06)
+0.548
+0.408
+0.464 (0.07)
+0.647
+0.664
+0.650 (0.09)
++ EEG θ
+0.437 0.380
+0.400 (0.05)
+0.620
+0.493
+0.547 (0.05)
+0.721 0.698 0.707+ (0.03)
++ EEG α
+0.372
+0.366
+0.352 (0.12)
+0.509
+0.433
+0.461 (0.12)
+0.661
+0.697
+0.675+ (0.08)
++ EEG β
+0.394
+0.328
+0.338 (0.09)
+0.627
+0.479
+0.541 (0.05)
+0.643
+0.646
+0.640 (0.11)
++ EEG γ
+0.405
+0.363
+0.366 (0.09)
+0.646 0.490 0.555 (0.04)
+0.667
+0.699
+0.679+ (0.06)
++ θ+α+β+γ
+0.324
+0.227
+0.257 (0.11)
+0.460
+0.436
+0.437 (0.14)
+0.610
+0.562
+0.584 (0.05)
+Table 9: Relation detection results of the multi-modal model using the convolutional EEG
+decoding component. We report precision (P), recall (R), F1-score and the standard deviation (std)
+between ﬁve runs. The best results per column are marked in bold. Signiﬁcance is indicated on the
+F1-score with asterisks: * denotes p < 0.05 (uncorrected), + denotes p < 0.003 (Bonferroni corrected
+p-value).
+test as described in Dror, Baumer, Shlomov, and Reichart (2018) over the F1-scores of the ﬁve runs of all tasks.
+We compare the results of the multi-modal models using text and EEG data to the uni-modal text baseline. In
+addition, we apply the Bonferroni correction to counteract the problem of multiple comparisons. We choose this
+conservative correction because of the dependencies between the datasets used (Dror, Baumer, Bogomolov, &
+Reichart, 2017). Under the Bonferroni correction, the global null hypothesis is rejected if p < α/N, where N is the
+number of hypotheses (Bonferroni, 1936). In our setting, α = 0.05 and N = 18, accounting for the combination of
+the 3 embedding types and 6 EEG feature sets, namely broadband EEG; θ, α, β and γ frequency bands; and all
+four frequency bands jointly. For instance, in Table 7 the improvements in 6 conﬁgurations out of 18 are also still
+statistically signiﬁcant under the Bonferroni correction (i.e., p < 0.003), showing that EEG signals bring signiﬁcant
+improvements in the sentiment analysis task. In the results tables, we mark signiﬁcant results under both the
+uncorrected and the Bonferroni corrected p-value.
+15
+4
+Discussion
+The results show consistent improvements on both sentiment analysis tasks, whereas the beneﬁts of using EEG
+data are only visible in speciﬁc settings for the relation detection task. EEG performs better than, or at least
+comparable to, eye tracking in many scenarios. This study shows the potential of decoding EEG for NLP and
+provides a good basis for future studies. Despite the limited amount of data, these results suggest that augmenting
+NLP systems with EEG features is a generalizable approach.
+In the following sections, we discuss these results from diﬀerent angles. We contrast the performance of
+diﬀerent EEG features, we compare the EEG results to the text baseline and multi-modal baselines (as described
+in Section 2.3.2), and we analyze the eﬀect of diﬀerent word embedding types. Additionally, we explore the impact
+of varying training set sizes in a data ablation study. Finally, we investigate the possible reasons for the decrease
+in performance for the relation detection task, which we associate with the task complexity. We run all analyses
+with both the recurrent and the convolutional EEG components.
+4.1
+EEG Feature Analysis
+We start by investigating the impact of the various EEG features included in our multi-modal models. Diﬀerent
+neurocognitive aspects of language processing during reading are associated with brain oscillations at various
+frequencies. We ﬁrst give a short overview of the cognitive functions related to EEG frequency bands that are
+found in literature before discussing the insights of our results.
+Theta activity reﬂects cognitive control and working memory (Williams, Kappen, Hassall, Wright, & Krigolson,
+2019), and increases when processing semantic anomalies (Prystauka & Lewis, 2019). Moreover, M. C. Bastiaansen,
+Van Berkum, and Hagoort (2002) showed a frequency-speciﬁc increase in theta power as a sentence unfolds,
+possibly related to the formation of an episodic memory trace, or to incremental verbal working memory load. High
+theta power is also prominent during the eﬀective semantic processing of language (M. C. Bastiaansen, Linden,
+Keurs, Dijkstra, & Hagoort, 2005). Alpha activity has been related to attentiveness (Klimesch, 2012). Both
+theta and alpha ranges are sensitive to the lexical–semantic processes involved in language translation (Grabner,
+Brunner, Leeb, Neuper, & Pfurtscheller, 2007). Beta activity has been involved in higher-order linguistic functions
+such as the discrimination of word categories and the retrieval of action semantics as well as semantic memory,
+and syntactic processes, which support meaning construction during sentence processing. There is evidence that
+suggests that beta frequencies are important for linking past and present inputs and the detection of novelty of
+stimuli, which are essential processes for language perception as well as production (Weiss & Mueller, 2012). Beta
+frequencies also aﬀect decisions regarding relevance (Eugster et al., 2014). In reading, a stronger power-decrease in
+lower beta frequencies has been found for neutral compared to negative words (Scaltritti, Suitner, & Peressotti,
+2020). Contrarily, emotional processing of pictures enhances gamma band power (M¨uller, Keil, Gruber, & Elbert,
+1999). Gamma-band activity has been used to detect emotions (M. Li & Lu, 2009), and increases during syntactic
+and semantic structure building (Prystauka & Lewis, 2019). In the gamma frequency band, a power increase was
+observed during the processing of correct sentences in multiple languages, but this eﬀect was absent following
+semantic violations (Hald, Bastiaansen, & Hagoort, 2006; Penolazzi et al., 2009). Frequency band features have
+often been used in deep learning methods for decoding EEG in other domains, such as mental workload and sleep
+stage classiﬁcation (Craik et al., 2019).
+The results show that our multi-modal models yield better results with ﬁltered EEG frequency bands than
+using the broadband EEG signal on almost all tasks and embedding types, as well as on both EEG decoding
+components. Although all frequency band features show promising results on some embedding types and tasks
+(e.g., BERT embeddings and gamma features for binary sentiment analysis reported in Table 4), the results show
+no clear sign of a single frequency band outperforming the others (neither across tasks for a ﬁxed embedding
+type, nor for a ﬁxed task and across all embedding types). For the sentiment analysis tasks, where both EEG
+decoding components achieve signiﬁcant improvements, theta and beta features most often achieve the highest
+results. As described above, brain activity in each frequency band reﬂects speciﬁc cognitive functions. The positive
+results achieved using theta band EEG features might be explained by the importance of this frequency band
+for successful semantic processing. Theta power is expected to rise with increasing language processing activity
+(Kosch, Schmidt, Thanheiser, & Chuang, 2020). Various studies have shown that theta oscillations are related to
+16
+semantic memory retrieval and can be task-speciﬁc (e.g., M. C. Bastiaansen et al., 2005; Giraud & Poeppel, 2012;
+Marko, Cimrov´a, & Rieˇcansk`y, 2019). Overall, previous research shows how theta correlates with the cognitive
+processing involved in encoding and retrieving verbal stimuli (see Kahana (2006) for a review), which supports our
+results. The good performance of the beta EEG features might on one hand be explained by the eﬀect of the
+emotional connotation of words on the beta response (Scaltritti et al., 2020). On the other hand, the role of beta
+oscillations in syntactic and semantic uniﬁcation operations during language comprehension (M. Bastiaansen &
+Hagoort, 2006; Meyer, 2018) is also supportive of our results.
+Based on the complexity and extent of our results, it is unclear at this point whether a single frequency band
+is more informative for solving NLP tasks. Data-driven methods can help us to tease more information from the
+recordings by allowing us to test broader theories and task-speciﬁc language representations (Murphy et al., 2018),
+but our results also clearly show that restricting the EEG signal to a given frequency band is beneﬁcial. More
+research is required in this area to speciﬁcally isolate the linguistic processing from the ﬁltered EEG signals.
+4.2
+Comparison to Multi-Modal Baselines
+The multi-modal EEG models often outperform the text baselines (at least for the sentiment analysis tasks). We
+now analyze how the EEG models compare to the two augmented baselines described in Section 2.3.2 (i.e., eye
+tracking and models augmented with random noise). We ﬁnd that EEG always performs better than or equal to
+the multi-modal text + eye tracking models. This shows how promising EEG is as a data source for multi-modal
+cognitive NLP. Although eye tracking requires less recording eﬀorts, these results corroborate that EEG data
+contain more information about the cognitive processes occurring in the brain during language understanding.
+As expected, the baselines augmented with random noise perform worse than the pure text baselines in all
+cases except for binary sentiment analysis with BERT embeddings. This model seems to deal exceptionally well
+with added noise. In the case of relation detection, when no improvement is achieved (e.g., for randomly initialized
+embeddings), the added noise harms the models similarly to adding EEG signals. It becomes clear for this task
+that adding the full broadband EEG features is worse than adding random noise (except with BERT embeddings),
+but some of the frequency band features clearly outperform the augmented noise baseline.
+4.3
+Comparison of Embedding Types
+Our baseline results show that contextual embeddings outperform the non-contextual methods across all tasks.
+Arora, May, Zhang, and R´e (2020) also compared randomly initialized, GloVe and BERT embeddings and found
+that with smaller training sets, the diﬀerence in performance between these three embedding types is larger. This
+is in accordance with our results, which show that the type of embedding has a large impact on the baseline
+performance on all three tasks. The improvements of adding EEG data in all three tasks are especially noteworthy
+when using BERT embeddings. In combination with the EEG data, these embeddings achieve improvements
+across all settings, including the full EEG broadband data as well as all individual and combined frequency bands.
+This shows that state-of-the-art contextualized word representations such as BERT are able to interact positively
+with human language processing data in a multi-modal learning scenario.
+Augmenting our baseline with EEG data on the binary sentiment analysis tasks results in approximately +3%
+F1-score across all the diﬀerent embeddings with the recurrent EEG component. The gain is slightly lower at +1%
+for all the embeddings in the ternary sentiment classiﬁcation task. While there is no signiﬁcant gain for relation
+detection with random and GloVe embeddings, the improvements with BERT embeddings reach up to +7%. This
+shows that the improvements gained by adding EEG signals are not only dependent on the task, but also on the
+embedding type. In foresight, this ﬁnding might be useful in the future, when new embeddings will improve the
+baseline performance even further while possibly also increasing the gain from the EEG signals.
+4.4
+Data Ablation
+One of the challenges of NLP is to learn as much as possible from limited resources. Unlike most machine learning
+models, one of the most striking aspects of human learning is the ability to learn new words or concepts from
+limited numbers of examples (Lake, Salakhutdinov, & Tenenbaum, 2015). Using cognitive language processing
+17
+Figure 4: Data ablation for all three word embedding types for the binary sentiment analysis task using
+the recurrent EEG decoding component. The shaded areas represent the standard deviations.
+Figure 5: Data ablation for all three word embedding types for the binary sentiment analysis task using
+the convolutional EEG decoding component. The shaded areas represent the standard deviations.
+data may allow us to take a step towards meta-learning, the process of discovering the cognitive processes that are
+used to tackle a task in the human brain (Griﬃths et al., 2019), and in turn be able to improve the generalization
+abilities of NLP models. Humans can learn from very few examples, while machines, particularly deep learning
+models, typically need many examples. Perhaps this advantage in humans is due to their multi-modal learning
+mechanisms (Linzen, 2020).
+Therefore, we analyze the impact of adding EEG features to our NLP models with less training data. We
+performed data ablation experiments for all three tasks. The most conclusive results were achieved on binary
+sentiment analysis. Randomly initialised embeddings unsurprisingly suﬀer a lot when reducing training data.
+The results are shown in Figure 4 and 5, for both EEG decoding components. We present the results for the
+best-performing frequency bands only. The largest gain from EEG data is obtained with only 50% of the training
+data with GloVe and BERT embeddings, which is as little as 105 training sentences. These experiments emphasize
+the potential of EEG signals for NLP especially when dealing with very small amounts of training data and using
+popular word embedding types.
+4.5
+Task Complexity Ablation
+From the previously described results, one hypothesis on the reason why augmenting the baseline with EEG data
+lowers the performance in the relation detection task with randomly initialized and GloVe embeddings lies in the
+complexity of the task. More concretely, we measure the complexity by counting the number of classes the model
+needs to learn. Generally, more complex tasks (in terms of number of classes) require more data to generalize (see
+for instance J. Li et al., 2018). Therefore, it is clear that with a ﬁxed amount of data, the impact of augmenting
+the feature space with additional information (in this case EEG data) is also less visible for the more complex tasks.
+We see a decrease in performance with increasing complexity over the three evaluated tasks with all embeddings
+except for BERT. Therefore, we validate this hypothesis by simplifying the relation detection task by reducing the
+number of classes from 11 to 2. We create binary relation detection tasks for the two most frequent relation types
+Job Title and Visited (see Figure 1). For example, we classify all the samples containing the relation Job Title
+(184 samples) against all samples with no relation (219 samples).
+We train these additional models with GloVe embeddings, since these did not show any signiﬁcant improvements
+when augmented with EEG data on the full relation detection task. The results for the full broadband EEG
+features and the best frequency band from the previous convolutional results (gamma) are shown in Table 10. It is
+18
+Recurrent EEG Decoding
+Convolutional EEG Decoding
+Job Title vs. None
+Precision
+Recall
+F1-score
+Precision
+Recall
+F1-score
+GloVe
+0.789
+0.776
+0.767 (0.05)
+0.789
+0.776
+0.767 (0.05)
+GloVe + EEG full
+0.792
+0.782
+0.773 (0.06)
+0.796
+0.793
+0.789 (0.05)
+GloVe + EEG γ
+0.780
+0.788
+0.774 (0.1)
+0.817
+0.811
+0.808 (0.03)
+Visited vs. None
+Precision
+Recall
+F1-score
+Precision
+Recall
+F1-score
+GloVe
+0.762
+0.756
+0.734 (0.1)
+0.762
+0.756
+0.734 (0.1)
+GloVe + EEG full
+0.756
+0.759
+0.745 (0.1)
+0.766
+0.758
+0.750 (0.09)
+GloVe + EEG γ
+0.773
+0.768
+0.754 (0.1)
+0.819
+0.795
+0.795 (0.09)
+Table 10: Binary relation detection results for both EEG decoding components for the relation types Job
+Title and Visited using GloVe embeddings. The best result in each column is marked in bold.
+evident that with the simpliﬁcation of the relation detection task into binary classiﬁcation tasks, EEG signals are
+able to boost the performance of the non-contextualized Glove embeddings and achieve considerable improvements
+over the text baseline. The gains are similar as for binary sentiment analysis for both EEG decoding components.
+This conﬁrms our hypothesis that the EEG features tested yield good results on simple tasks, but more research is
+needed to achieve improvements on more complex tasks. Note that, as mentioned previously, this is not the case
+for BERT embeddings, which outperform the baselines on all NLP tasks.
+4.6
+Conclusion
+We presented a large-scale study about leveraging electrical brain activity signals during reading comprehension
+for augmenting machine learning models of semantic language understanding tasks, namely, sentiment analysis
+and relation detection. We analyzed the eﬀects of diﬀerent EEG features and compared the multi-modal models
+to multiple baselines. Moreover, we compared the improvements gained from the EEG signals on three diﬀerent
+types of word embeddings. Not only did we test the eﬀect of varying training set sizes, but also tasks of various
+diﬃculty levels (in terms of number of classes).
+We achieve consistent improvements with EEG across all three embedding types. The models trained with
+BERT embeddings yield signiﬁcant performance increases on all NLP tasks. However, for randomly initialized
+and GloVe embeddings the improvement magnitude decreases for more diﬃcult tasks. For these two types of
+embedding, the improvement for the binary and ternary sentiment analysis tasks ranges between 1-4% F1-score.
+For relation detection, a multi-class and multi-label sequence classiﬁcation task, it was not possible to achieve
+any improvements unless the task complexity is substantially reduced. Therefore, our experiments show that
+state-of-the-art contextualized word embeddings combined with careful EEG feature selection achieve good results
+in multi-modal learning. Moreover, we ﬁnd that in the tasks where the multi-modal architecture does achieve
+considerable improvements, the convolutional EEG decoding component yields even higher results than the
+recurrent component.
+To sum up, we capitalize on the advantages of electroencephalography data to examine if and which EEG
+features can serve to augment language understanding models. While our results show that there is linguistic
+information in the EEG signal complementing the text features, more research is needed to isolate language-speciﬁc
+brain activity features. More generally, this work paves the way for more in-depth EEG-based NLP studies.
+References
+Aﬀolter, N., Egressy, B., Pascual, D., & Wattenhofer, R. (2020). Brain2word: Decoding brain activity for
+language generation. arXiv preprint arXiv:2009.04765.
+Alday, P. M. (2019). M/EEG analysis of naturalistic stories: A review from speech to language processing.
+Language, Cognition and Neuroscience, 34(4), 457–473.
+19
+Armeni, K., Willems, R. M., & Frank, S. (2017). Probabilistic language models in cognitive neuroscience:
+promises and pitfalls. Neuroscience & Biobehavioral Reviews.
+Arora, S., May, A., Zhang, J., & R´e, C. (2020). Contextual embeddings: When are they worth it? arXiv
+preprint arXiv:2005.09117.
+Artemova, E., Bakarov, A., Artemov, A., Burnaev, E., & Sharaev, M. (2020). Data-driven models and
+computational tools for neurolinguistics: a language technology perspective. Journal of Cognitive
+Science, 21(1), 15–52.
+Barnes, J., Klinger, R., & im Walde, S. S. (2017). Assessing state-of-the-art sentiment models on
+state-of-the-art sentiment datasets. In Proceedings of the 8th workshop on computational approaches
+to subjectivity, sentiment and social media analysis (pp. 2–12).
+Barnes, J., Øvrelid, L., & Velldal, E. (2019, August). Sentiment analysis is not solved! assessing and probing
+sentiment classiﬁcation. In Proceedings of the 2019 acl workshop blackboxnlp: Analyzing and interpret-
+ing neural networks for nlp (pp. 12–23). Florence, Italy: Association for Computational Linguistics.
+Retrieved from https://www.aclweb.org/anthology/W19-4802
+DOI: 10.18653/v1/W19-4802
+Barnes, J., Velldal, E., & Øvrelid, L. (2020). Improving sentiment analysis with multi-task learning of
+negation. Natural Language Engineering, 1–21. DOI: 10.1017/S1351324920000510
+Barrett, M., Bingel, J., Hollenstein, N., Rei, M., & Søgaard, A. (2018). Sequence classiﬁcation with
+human attention. In Proceedings of the 22nd conference on computational natural language learning
+(pp. 302–312).
+Barrett, M., Bingel, J., Keller, F., & Søgaard, A. (2016). Weakly supervised part-of-speech tagging using
+eye-tracking data. In Proceedings of the 54th annual meeting of the association for computational
+linguistics (Vol. 2, pp. 579–584).
+Barrett, M., Gonz´alez-Gardu˜no, A. V., Frermann, L., & Søgaard, A. (2018). Unsupervised induction
+of linguistic categories with records of reading, speaking, and writing. In Proceedings of the 2018
+conference of the north american chapter of the association for computational linguistics: Human
+language technologies, volume 1 (long papers) (pp. 2028–2038).
+Barrett, M., & Hollenstein, N. (2020). Sequence labelling and sequence classiﬁcation with gaze: Novel uses
+of eye-tracking data for natural language processing. Language and Linguistics Compass, 14(11),
+1–16.
+Bastiaansen, M., & Hagoort, P. (2006). Oscillatory neuronal dynamics during language comprehension.
+Progress in brain research, 159, 179–196.
+Bastiaansen, M. C., Linden, M. v. d., Keurs, M. t., Dijkstra, T., & Hagoort, P. (2005). Theta responses are
+involved in lexical—semantic retrieval during language processing. Journal of cognitive neuroscience,
+17(3), 530–541.
+Bastiaansen, M. C., Van Berkum, J. J., & Hagoort, P. (2002). Event-related theta power increases in the
+human EEG during online sentence processing. Neuroscience Letters, 323(1), 13–16.
+Beinborn, L., Abnar, S., & Choenni, R. (2019). Robust evaluation of language-brain encoding experiments.
+International Journal of Computational Linguistics and Applications.
+Beres, A. M. (2017). Time is of the essence: A review of electroencephalography (eeg) and event-related
+brain potentials (erps) in language research. Applied psychophysiology and biofeedback, 42(4),
+247–255.
+Bishop, C. M. (1995). Training with noise is equivalent to tikhonov regularization. Neural computation,
+7(1), 108–116.
+Bisk, Y., Holtzman, A., Thomason, J., Andreas, J., Bengio, Y., Chai, J., . . . others (2020). Experience
+grounds language. In Proceedings of the 2020 conference on empirical methods in natural language
+processing (emnlp) (pp. 8718–8735).
+Bonferroni, C. (1936). Teoria statistica delle classi e calcolo delle probabilita. Pubblicazioni del R Istituto
+20
+Superiore di Scienze Economiche e Commericiali di Firenze, 8, 3–62.
+Bruns, A. (2004). Fourier-, Hilbert-and wavelet-based signal analysis: Are they really diﬀerent approaches?
+Journal of neuroscience methods, 137(2), 321–332.
+Clevert, D.-A., Unterthiner, T., & Hochreiter, S. (2015). Fast and accurate deep network learning by
+exponential linear units (elus). arXiv preprint arXiv:1511.07289.
+Clifton, C., Staub, A., & Rayner, K. (2007). Eye movements in reading words and sentences. In Eye
+movements (pp. 341–371). Elsevier.
+Craik, A., He, Y., & Contreras-Vidal, J. L. (2019). Deep learning for electroencephalogram (EEG)
+classiﬁcation tasks: a review. Journal of Neural Engineering, 16(3), 031001.
+Culotta, A., McCallum, A., & Betz, J. (2006). Integrating probabilistic extraction models and data mining
+to discover relations and patterns in text. In Proceedings of the human language technology conference
+of the north american chapter of the association of computational linguistics (pp. 296–303).
+Degno, F., Loberg, O., & Liversedge, S. P. (2021). Co-registration of eye movements and ﬁxation—related
+potentials in natural reading: Practical issues of experimental design and data analysis. Collabra:
+Psychology, 7(1).
+Devlin, J., Chang, M.-W., Lee, K., & Toutanova, K. (2019). BERT: Pre-training of deep bidirectional
+transformers for language understanding. In Proceedings of the 2019 conference of the north american
+chapter of the association for computational linguistics: Human language technologies, volume 1
+(long and short papers) (pp. 4171–4186).
+Dimigen, O., Sommer, W., Hohlfeld, A., Jacobs, A. M., & Kliegl, R. (2011). Coregistration of eye
+movements and EEG in natural reading: analyses and review. Journal of Experimental Psychology:
+General, 140(4), 552.
+Do, T. H., Nguyen, D. M., Tsiligianni, E., Cornelis, B., & Deligiannis, N. (2017). Multiview deep learning
+for predicting Twitter users’ location. arXiv preprint arXiv:1712.08091.
+Dror, R., Baumer, G., Bogomolov, M., & Reichart, R.
+(2017).
+Replicability analysis for natural
+language processing: Testing signiﬁcance with multiple datasets. Transactions of the Association
+for Computational Linguistics, 5, 471–486.
+Dror, R., Baumer, G., Shlomov, S., & Reichart, R. (2018). The hitchhiker’s guide to testing statistical
+signiﬁcance in natural language processing.
+In Proceedings of the 56th annual meeting of the
+association for computational linguistics (volume 1: Long papers) (pp. 1383–1392).
+Ehinger, B. V., & Dimigen, O. (2019). Unfold: an integrated toolbox for overlap correction, non-linear
+modeling, and regression-based EEG analysis. PeerJ, 7, e7838.
+Ephrat, A., Halperin, T., & Peleg, S. (2017). Improved speech reconstruction from silent video. In
+Proceedings of the ieee international conference on computer vision workshops (pp. 455–462).
+Ettinger, A. (2020). What BERT is not: Lessons from a new suite of psycholinguistic diagnostics for
+language models. Transactions of the Association for Computational Linguistics, 8, 34-48.
+Eugster, M. J., Ruotsalo, T., Spap´e, M. M., Kosunen, I., Barral, O., Ravaja, N., . . . Kaski, S. (2014).
+Predicting term-relevance from brain signals. In Proceedings of the 37th international acm sigir
+conference on research & development in information retrieval (pp. 425–434).
+Fawaz, H. I., Lucas, B., Forestier, G., Pelletier, C., Schmidt, D. F., Weber, J., . . . Petitjean, F. (2020).
+Inceptiontime: Finding alexnet for time series classiﬁcation. Data Mining and Knowledge Discovery,
+34(6), 1936–1962.
+Foster, C., Dharmaretnam, D., Xu, H., Fyshe, A., & Tzanetakis, G. (2018). Decoding music in the human
+brain using eeg data. In 2018 ieee 20th international workshop on multimedia signal processing
+(mmsp) (pp. 1–6).
+Frank, S. L., Otten, L. J., Galli, G., & Vigliocco, G. (2015). The ERP response to the amount of
+information conveyed by words in sentences. Brain and Language, 140, 1–11.
+21
+Frank, S. L., & Willems, R. M. (2017). Word predictability and semantic similarity show distinct patterns
+of brain activity during language comprehension. Language, Cognition and Neuroscience, 32(9),
+1192–1203.
+Friederici, A. D. (2000). The developmental cognitive neuroscience of language: a new research domain.
+Brain and language, 71(1), 65–68.
+Fyshe, A., Talukdar, P. P., Murphy, B., & Mitchell, T. M. (2014). Interpretable semantic vectors from
+a joint model of brain-and text-based meaning. In Proceedings of the 52nd annual meeting of the
+association for computational linguistics (volume 1: Long papers) (p. 489-499).
+Gauthier, J., & Ivanova, A. (2018). Does the brain represent words? An evaluation of brain decoding
+studies of language understanding. arXiv preprint arXiv:1806.00591.
+Giraud, A.-L., & Poeppel, D. (2012). Cortical oscillations and speech processing: emerging computational
+principles and operations. Nature neuroscience, 15(4), 511.
+Grabner, R. H., Brunner, C., Leeb, R., Neuper, C., & Pfurtscheller, G. (2007). Event-related eeg theta
+and alpha band oscillatory responses during language translation. Brain Research Bulletin, 72(1),
+57–65.
+Griﬃths, T. L., Callaway, F., Chang, M. B., Grant, E., Krueger, P. M., & Lieder, F. (2019). Doing
+more with less: meta-reasoning and meta-learning in humans and machines. Current Opinion in
+Behavioral Sciences, 29, 24–30.
+Hald, L. A., Bastiaansen, M. C., & Hagoort, P. (2006). Eeg theta and gamma responses to semantic
+violations in online sentence processing. Brain and Language, 96(1), 90–105.
+Hale, J., Dyer, C., Kuncoro, A., & Brennan, J. R. (2018). Finding syntax in human encephalography
+with beam search. In Proceedings of the 56th annual meeting of the association for computational
+linguistics (volume 1: Long papers) (pp. 2727–2736).
+Hochreiter, S., & Schmidhuber, J. (1997). Long short-term memory. Neural Computation, 9(8), 1735–1780.
+Hollenstein, N., Barrett, M., & Beinborn, L. (2020). Towards best practices for leveraging human
+language processing signals for natural language processing. In Proceedings of the second workshop
+on linguistic and neurocognitive resources (pp. 15–27).
+Hollenstein, N., Barrett, M., Troendle, M., Bigiolli, F., Langer, N., & Zhang, C. (2019). Advancing NLP
+with cognitive language processing signals. arXiv preprint arXiv:1904.02682.
+Hollenstein, N., de la Torre, A., Langer, N., & Zhang, C. (2019). CogniVal: A framework for cognitive
+word embedding evaluation. In Proceedings of the 23nd conference on computational natural language
+learning.
+Hollenstein, N., Rotsztejn, J., Troendle, M., Pedroni, A., Zhang, C., & Langer, N. (2018). ZuCo, a
+simultaneous EEG and eye-tracking resource for natural sentence reading. Scientiﬁc Data.
+Hollenstein, N., Troendle, M., Zhang, C., & Langer, N. (2020). ZuCo 2.0: A dataset of physiological
+recordings during natural reading and annotation. In Proceedings of the 12th language resources
+and evaluation conference (pp. 138–146).
+Hollenstein, N., & Zhang, C. (2019). Entity recognition at ﬁrst sight: Improving NER with eye movement
+information. In Proceedings of the 2018 conference of the north american chapter of the association
+for computational linguistics: Human language technologies, volume 1 (long papers).
+Howard, J., & Ruder, S. (2018). Universal language model ﬁne-tuning for text classiﬁcation. In Proceedings
+of the 56th annual meeting of the association for computational linguistics (volume 1: Long papers)
+(pp. 328–339).
+Kahana, M. J. (2006). The cognitive correlates of human brain oscillations. Journal of Neuroscience,
+26(6), 1669–1672.
+Kandylaki, K. D., & Bornkessel-Schlesewsky, I. (2019). From story comprehension to the neurobiology of
+language. Language, Cognition and Neuroscience, 34(4), 405-410.
+22
+Kiela, D., Grave, E., Joulin, A., & Mikolov, T. (2018). Eﬃcient large-scale multi-modal classiﬁcation. In
+Thirty-second aaai conference on artiﬁcial intelligence.
+Klimesch, W. (2012). Alpha-band oscillations, attention, and controlled access to stored information.
+Trends in Cognitive Sciences, 16(12), 606–617.
+Kosch, T., Schmidt, A., Thanheiser, S., & Chuang, L. L. (2020). One does not simply rsvp: Mental
+workload to select speed reading parameters using electroencephalography. In Proceedings of the
+2020 chi conference on human factors in computing systems (pp. 1–13).
+Kvist, E., & Lockvall Rhodin, S. (2019). A comparative study between mlp and cnn for noise reduction
+on images: The impact of diﬀerent input dataset sizes and the impact of diﬀerent types of noise on
+performance.
+Lake, B. M., Salakhutdinov, R., & Tenenbaum, J. B. (2015). Human-level concept learning through
+probabilistic program induction. Science, 350(6266), 1332–1338.
+Lemh¨ofer, K., & Broersma, M. (2012). Introducing LexTALE: A quick and valid lexical test for advanced
+learners of english. Behavior Research Methods, 44(2), 325–343.
+Li, J., Liu, Y., Yin, R., Zhang, H., Ding, L., & Wang, W. (2018). Multi-class learning: From theory to
+algorithm. In Advances in neural information processing systems (pp. 1586–1595).
+Li, M., & Lu, B.-L. (2009). Emotion classiﬁcation based on gamma-band EEG. In Engineering in medicine
+and biology society, 2009. embc 2009. annual international conference of the ieee (pp. 1223–1226).
+Ling, S., Lee, A. C., Armstrong, B. C., & Nestor, A. (2019). How are visual words represented? Insights
+from EEG-based visual word decoding, feature derivation and image reconstruction. Human Brain
+Mapping, 40(17), 5056–5068.
+Linzen, T. (2020). How can we accelerate progress towards human-like linguistic generalization? arXiv
+preprint arXiv:2005.00955.
+Lipton, Z. C., Berkowitz, J., & Elkan, C. (2015). A critical review of recurrent neural networks for
+sequence learning. arXiv preprint arXiv:1506.00019.
+Long, Y., Lu, Q., Xiang, R., Li, M., & Huang, C.-R. (2017). A cognition based attention model for
+sentiment analysis. In Proceedings of the 2017 conference on empirical methods in natural language
+processing (pp. 462–471).
+Marko, M., Cimrov´a, B., & Rieˇcansk`y, I. (2019). Neural theta oscillations support semantic memory
+retrieval. Scientiﬁc reports, 9(1), 1–10.
+Mathias, S., Kanojia, D., Mishra, A., & Bhattacharyya, P. (2020). A survey on using gaze behaviour for
+natural language processing. Proceedings of IJCAI .
+McClelland, J. L., Hill, F., Rudolph, M., Baldridge, J., & Sch¨utze, H. (2020). Placing language in an
+integrated understanding system: Next steps toward human-level performance in neural language
+models. Proceedings of the National Academy of Sciences.
+Meyer, L. (2018). The neural oscillations of speech processing and language comprehension: state of the
+art and emerging mechanisms. European Journal of Neuroscience, 48(7), 2609–2621.
+Mishra, A., Kanojia, D., Nagar, S., Dey, K., & Bhattacharyya, P. (2017). Leveraging cognitive features
+for sentiment analysis. Proceedings of The 20th Conference on Computational Natural Language
+Learning, 156–166.
+Morency, L.-P., & Baltruˇsaitis, T. (2017). Multimodal machine learning: integrating language, vision and
+speech. In Proceedings of the 55th annual meeting of the association for computational linguistics:
+Tutorial abstracts (pp. 3–5).
+M¨uller, M. M., Keil, A., Gruber, T., & Elbert, T. (1999). Processing of aﬀective pictures modulates
+right-hemispheric gamma band eeg activity. Clinical Neurophysiology, 110(11), 1913–1920.
+Murphy, B., & Poesio, M. (2010). Detecting semantic category in simultaneous EEG/MEG recordings. In
+Proceedings of the naacl hlt 2010 ﬁrst workshop on computational neurolinguistics (pp. 36–44).
+23
+Murphy, B., Wehbe, L., & Fyshe, A. (2018). Decoding language from the brain. Language, Cognition,
+and Computational Models, 53.
+Muttenthaler, L., Hollenstein, N., & Barrett, M. (2020). Human brain activity for machine attention.
+arXiv preprint arXiv:2006.05113.
+Naselaris, T., Kay, K. N., Nishimoto, S., & Gallant, J. L. (2011). Encoding and decoding in fMRI.
+NeuroImage, 56(2), 400–410.
+Nurse, E., Mashford, B. S., Yepes, A. J., Kiral-Kornek, I., Harrer, S., & Freestone, D. R.
+(2016).
+Decoding EEG and LFP signals using deep learning: Heading TrueNorth. In Proceedings of the acm
+international conference on computing frontiers (pp. 259–266).
+Pedroni, A., Bahreini, A., & Langer, N. (2019). Automagic: Standardized preprocessing of big EEG data.
+NeuroImage.
+Pennington, J., Socher, R., & Manning, C. D. (2014). Glove: Global vectors for word representation.
+In Proceedings of the 2014 conference on empirical methods in natural language processing (pp.
+1532–1543).
+Penolazzi, B., Angrilli, A., & Job, R. (2009). Gamma EEG activity induced by semantic violation during
+sentence reading. Neuroscience Letters, 465(1), 74–78.
+Pfeiﬀer, C., Hollenstein, N., Zhang, C., & Langer, N. (2020). Neural dynamics of sentiment processing
+during naturalistic sentence reading. NeuroImage, 116934.
+Poeppel, D. (2014). The neuroanatomic and neurophysiological infrastructure for speech and language.
+Current Opinion in Neurobiology, 28, 142–149.
+Poeppel, D., Emmorey, K., Hickok, G., & Pylkk¨anen, L. (2012). Towards a new neurobiology of language.
+Journal of Neuroscience, 32(41), 14125–14131.
+Poria, S., Hazarika, D., Majumder, N., & Mihalcea, R. (2020). Beneath the tip of the iceberg: Current
+challenges and new directions in sentiment analysis research. IEEE Transactions on Aﬀective
+Computing, 1-1. DOI: 10.1109/TAFFC.2020.3038167
+Prystauka, Y., & Lewis, A. G. (2019). The power of neural oscillations to inform sentence comprehension:
+A linguistic perspective. Language and Linguistics Compass, 13(9), e12347.
+Ramachandram, D., & Taylor, G. W. (2017). Deep multimodal learning: A survey on recent advances
+and trends. IEEE Signal Processing Magazine, 34(6), 96–108.
+Rotsztejn, J., Hollenstein, N., & Zhang, C. (2018). ETH-DS3Lab at SemEval-2018 Task 7: Eﬀectively
+combining recurrent and convolutional neural networks for relation classiﬁcation and extraction. In
+Proceedings of the 12th international workshop on semantic evaluation (p. 689-696).
+Sassenhagen, J., & Fiebach, C. J. (2020). Traces of meaning itself: Encoding distributional word vectors
+in brain activity. Neurobiology of Language, 1(1), 54–76.
+Sato, N., & Mizuhara, H. (2018). Successful encoding during natural reading is associated with ﬁxation-
+related potentials and large-scale network deactivation. Eneuro, 5(5).
+Scaltritti, M., Suitner, C., & Peressotti, F. (2020). Language and motor processing in reading and typing:
+Insights from beta-frequency band power modulations. Brain and language, 204, 104758.
+Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J., Glasstetter, M., Eggensperger, K., Tangermann,
+M., . . . Ball, T. (2017). Deep learning with convolutional neural networks for EEG decoding and
+visualization. Human brain mapping, 38(11), 5391–5420.
+Schwartz, D., Toneva, M., & Wehbe, L. (2019). Inducing brain-relevant bias in natural language processing
+models. In Advances in neural information processing systems (pp. 14100–14110).
+Sereno, S. C., & Rayner, K. (2003). Measuring word recognition in reading: Eye movements and
+event-related potentials. Trends in Cognitive Sciences, 7(11), 489–493.
+Smith, N. J., & Kutas, M. (2015a). Regression-based estimation of erp waveforms: Ii. nonlinear eﬀects,
+overlap correction, and practical considerations. Psychophysiology, 52(2), 169–181.
+24
+Smith, N. J., & Kutas, M. (2015b). Regression-based estimation of erp waveforms: I. the rerp framework.
+Psychophysiology, 52(2), 157–168.
+Socher, R., Perelygin, A., Wu, J., Chuang, J., Manning, C. D., Ng, A., & Potts, C. (2013). Recursive
+deep models for semantic compositionality over a sentiment treebank. In Proceedings of the 2013
+conference on empirical methods in natural language processing (pp. 1631–1642).
+Stemmer, B., & Connolly, J. F. (2012). The EEG/ERP technologies in linguistic research. Methodological
+and Analytic Frontiers in Lexical Research, 47, 337.
+Sun, C., Qiu, X., Xu, Y., & Huang, X. (2019). How to ﬁne-tune BERT for text classiﬁcation? In China
+national conference on chinese computational linguistics (pp. 194–206).
+Sun, P., Anumanchipalli, G. K., & Chang, E. F. (2020). Brain2char: A deep architecture for decoding
+text from brain recordings. Journal of Neural Engineering.
+Szegedy, C., Liu, W., Jia, Y., Sermanet, P., Reed, S., Anguelov, D., . . . Rabinovich, A. (2015). Going
+deeper with convolutions. In Proceedings of the ieee conference on computer vision and pattern
+recognition (pp. 1–9).
+Toneva, M., & Wehbe, L. (2019). Interpreting and improving natural-language processing (in machines)
+with natural language-processing (in the brain). In Advances in neural information processing
+systems (pp. 14928–14938).
+Tsai, Y.-H. H., Bai, S., Liang, P. P., Kolter, J. Z., Morency, L.-P., & Salakhutdinov, R. (2019). Multimodal
+transformer for unaligned multimodal language sequences. In Proceedings of the 57th annual meeting
+of the association for computational linguistics (pp. 6558–6569).
+Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., . . . Polosukhin, I. (2017).
+Attention is all you need. In Advances in neural information processing systems (pp. 5998–6008).
+Wehbe, L., Vaswani, A., Knight, K., & Mitchell, T. (2014). Aligning context-based statistical models of
+language with brain activity during reading. In Proceedings of the 2014 conference on empirical
+methods in natural language processing (emnlp) (pp. 233–243).
+Weiss, S., & Mueller, H. M. (2012). “Too many betas do not spoil the broth”: the role of beta brain
+oscillations in language processing. Frontiers in psychology, 3, 201.
+Williams, C. C., Kappen, M., Hassall, C. D., Wright, B., & Krigolson, O. E. (2019). Thinking theta and
+alpha: Mechanisms of intuitive and analytical reasoning. NeuroImage, 189, 574–580.
+Winkler, I., Haufe, S., & Tangermann, M. (2011). Automatic classiﬁcation of artifactual ICA-components
+for artifact removal in EEG signals. Behavioral and Brain Functions, 7(1), 30.
+Yin, W., Kann, K., Yu, M., & Sch¨utze, H. (2017). Comparative study of CNN and RNN for natural
+language processing. arXiv preprint arXiv:1702.01923.
+25

@@ -1,0 +1,1132 @@
+Title: Learning with Latent Structures in Natural Language Processing: A Survey
+Source URL: http://arxiv.org/abs/2201.00490v2
+--------------------------------------------------
+
+Learning with Latent Structures in Natural Language Processing:
+A Survey
+Zhaofeng Wu
+University of Washington
+Allen Institute for Artiﬁcial Intelligence
+zfw7@cs.washington.edu
+Abstract
+While end-to-end learning with fully differentiable models has enabled tremendous success in
+natural language process (NLP) and machine learning, there have been signiﬁcant recent interests in
+learning with latent discrete structures to incorporate better inductive biases for improved end-task
+performance and better interpretability. This paradigm, however, is not straightforwardly amenable
+to the mainstream gradient-based optimization methods. This work surveys three main families of
+methods to learn such models: surrogate gradients, continuous relaxation, and marginal likelihood
+maximization via sampling. We conclude with a review of applications of these methods and an
+inspection of the learned latent structure that they induce.1
+1
+Introduction
+With recent advances in deep learning, end-to-end differentiable modules such as LSTM (Hochreiter and
+Schmidhuber, 1997) and Transformer (Vaswani et al., 2017), coupled with gradient-based optimization,
+have become the mainstream paradigm in NLP and have helped achieve state-of-the-art results in NLP
+without much task-speciﬁc, language-speciﬁc, or linguistically-inspired design (Peters et al., 2018; Devlin
+et al., 2019; Raffel et al., 2020, inter alia).
+On the other hand, human languages possess inherent structures, such as syntactic, semantic, and discourse
+structures (Chomsky, 1965; Heim and Kratzer, 1998). Consequently, NLP systems have historically
+leveraged such structures to improve their quality. This was traditionally done with pipelined systems,
+where a separately trained parser is ﬁrst used to decode an intermediate structure, which is then used
+as input for downstream tasks (Sennrich and Haddow, 2016; Eriguchi et al., 2016; Chen et al., 2017,
+inter alia). This paradigm, however, faces a few challenges. First, its disjoint modules tend to suffer
+from cascading errors. Second, such parsers are usually trained in a supervised fashion which, in order
+to ensure coverage for robustness, can require large amounts of annotated data. Such annotations often
+require domain expertise and, despite recent efforts such as the Universal Dependencies project (Zeman
+et al., 2021), remain difﬁcult and expensive to obtain, especially for low-resource languages and domains.
+Even when sufﬁcient data exist to train a high-quality formalism-speciﬁc parser, this speciﬁc structural
+formalism may not be the optimal one for the downstream task, and it is sometimes advantageous to
+allow the model to discover the best structure targeting the downstream task (Kim et al., 2017; Choi et al.,
+2018; Maillard et al., 2019, inter alia).
+Therefore, previous studies have attempted to jointly train the parser and the downstream predictor and
+allow the parser to induce the best task-speciﬁc structure without the need for structural supervision, a
+1This work is inspired by Martins et al. (2019).
+1
+arXiv:2201.00490v2  [cs.CL]  11 Jan 2022
+Family
+Method
+Structure Discrete Inference
+or Not
+Output
+Algo.
+Surrogate
+STE (Hinton, 2012)
+Both
+
+MAP
+SPIGOT (Peng et al., 2018)
+
+
+MAP
+Relaxation
+softmax
+
+
+sparsemax (Martins and Astudillo, 2016) + †
+
+
+Part-Marginalization
+
+
+Marg.
+SparseMAP (Niculae et al., 2018a)
+
+
+MAP
+Sampling
+Score Function Estimator (Williams, 1992)
+Both
+
+Sampling
+Rectiﬁed Distributions (Louizos et al., 2018)
+
+‡
+Gumbel-Max (Gumbel, 1954)
+
+
+Gumbel-softmax (Jang et al., 2017; Maddison et al., 2017)
+
+
+Perturb-and-Parse (Corro and Titov, 2019a)
+
+
+MAP
+Direct Loss Minimization (McAllester et al., 2010)
+
+
+Table 1: A high-level summary of the family and the methods reviewed in this survey. † sparsemax+ refers to
+sparsemax and other related functions (see Section 5). We list if the methods are primarily used for inducing
+structured or unstructured objects, or both. Methods marked with  may still be employed for structured induction
+when the parser decisions are local, such as transition-based parsers (see Section 7). We also mark if the methods
+yield discrete output, which can be desirable for, for example, interpretability, and sometimes enables specialized
+algorithms (e.g., Hu et al., 2021). ‡Some rectiﬁed distributions still have a non-zero probability to output continuous
+solutions, though they may be discretizable. Finally, we indicate the structured inference algorithms required for
+all methods that are used for inducing structures: MAP, marginalization, or sampling. Depending on the problem,
+there may not exist an efﬁcient version of a particular inference algorithm, affecting the choice of methods.
+paradigm which we review in this survey. Such systems, however, suffer from one major difﬁculty. To
+induce an intermediate discrete structure, the arg max function is usually used to make decisions as a
+layer in the parser. However, the gradient of arg max is either zero (almost everywhere) or undeﬁned, so
+it does not work well with gradient-based optimization methods, the dominant optimization scheme in
+NLP and deep learning.
+In this work, we survey three main families of approaches that tackle the non-differentiability of arg max.
+The ﬁrst family uses biased estimators with some proxy to the true gradient. The second circumvents
+discreteness using continuous relaxation. The last family casts the optimization problem as marginal
+likelihood maximization and uses sampling to approximate the gradient. We summarize these methods
+and several of their key properties in Table 1. We hope this work could catalyze future studies in
+augmenting recent NLP models with structural inductive biases.
+2
+Background: Structure Prediction
+The task of structure prediction aims to automatically extract structures that, in NLP, are often rooted
+in linguistic theories (Smith, 2011). In this survey, we loosely deﬁne “structure” and consider any
+collection of inter-dependent variables as a structure. Abstracting away from speciﬁc formalisms, we
+generically denote any structure with z ∈Z where Z is the set of all possible structures and encodes
+any structural constraints enforced by a formalism.2 As an example, for many bilexical dependency
+formalisms, syntactic (Zeman et al., 2021) or semantic (Ivanova et al., 2012), z can be viewed as a
+collection of binary parts z = [z1, · · · , zn] ∈{0, 1}n2 where each entry denotes the existence of an
+2Z usually depends on x, but we drop this dependency notationally for clarity.
+2
+Surveys
+0
+0
+1
+are
+0
+0
+1
+great
+0
+0
+0
+Surveys        are          great
+nsubj
+cop
+z
+(a) Dependency structure. We show edge labels,
+though they are ignored in z.
+0
+0
+1
+0
+ᖓᬿ
+0
+1
+0
+0
+உঅ
+0
+0
+0
+1
+Surveys        are          great
+z
+✏
+✏
+ᖓᬿ              உঅ
+✏
+(b) Matching structure. A machine translation example is shown
+here, though it can be seen in many other tasks.
+Figure 1: Examples of structures as well as, after ﬂattening the binary entries in the tables, their associated z.
+edge between a pair of words in a sentence. Here, the structural constraint encoded by Z could require,
+for instance, the arborescence structure for syntactic dependencies. As another example, in matching
+problems, the words in a source sentence with length m are matched with the words in a target sentence
+with length n. Accounting for non-matched words by matching them with a special ϵ symbol, z can again
+be viewed as consisting of binary parts, with length (m + 1)(n + 1), where each entry denotes if two
+words are matched. These two types of structures are visualized in Figure 1, and more examples can be
+found in Section 7.
+A parser ﬁnds the highest-scoring structure ˆz = arg maxz∈Z S(z | x; θ) for some input x with some
+scoring function S parameterized by θ. We use π(z | x; θ) to denote a normalized scoring function which
+yields a probability distribution over all z ∈Z. For example, for dependency parsing, a graph-based
+parser is commonly used to produce a score for every part (for the example in Figure 1a, this would be a
+score for every cell), and the scores that correspond to the activated parts in a structure z are summed.
+Speciﬁcally, we can write the scoring function as S(z | x; θ) = z⊤f(x; θ) = z⊤s where s := f(x; θ)
+denotes the per-part score produced by some model f.
+In this survey, for simplicity, we default to settings and terminologies for graph-based dependency parsing.
+3
+Latent Structure Prediction
+As argued in Section 1, it is often desirable to model discrete structures latently as an intermediate
+representation in a system. Speciﬁcally, we still have s = f(x; θ), ˆz = arg maxz∈Z z⊤s as the best
+structure. We then feed ˆz to some downstream task-speciﬁc predictor ˆy = g(ˆz; φ) parameterized by φ
+and incur some loss ℓ= L(ˆy, y). For some applications, the original input x is also used as an input to g
+in addition to the intermediate structure ˆz, but we omit it for clarity.
+g can be seen as a structure encoder. With linguistic structures, for example, it usually takes the form
+of graph neural networks which encodes the structure ˆz. TreeLSTMs (Tai et al., 2015) have been
+widely used (Maillard et al., 2019; Choi et al., 2018), including variants that use different composition
+functions (Hu et al., 2021). With the advent of graph convolutional networks (Kipf and Welling, 2017),
+more works have based themselves on this architecture and its variants (Corro and Titov, 2019b; Wu
+et al., 2021).
+In practice, g can be pretrained before serving as a frozen component in the ﬁnal system (Wu et al., 2019;
+Marcheggiani and Titov, 2017; Wu et al., 2021), or jointly trained with f with separate loss signals using
+multi-task learning (Bowman et al., 2016; Hashimoto et al., 2017). Nevertheless, driven by the desiderata
+outlined in Section 1, in this survey, we only consider the case where f and g are jointly trained using
+only the downstream loss.
+The challenge associated with this paradigm lies in the gradient (or Jacobian, in the case of structured
+output) of arg max, which is either zero (almost everywhere) or undeﬁned (Figure 2a). We hence do not
+3
+−2
+0
+2
+−2
+0
+2
+0
+0.5
+1
+(a) arg max. The gradient is either zero (almost everywhere)
+or undeﬁned.
+−2
+0
+2
+−2
+0
+2
+0
+0.5
+1
+(b) softmax. The gradient is well-deﬁned everywhere.
+Figure 2: Plot of the (a) arg max and (b) softmax functions. Figure is taken from Corro and Titov (2019b).
+have a meaningful gradient with respect to θ for optimization. Below, we introduce three main families
+of methods that tackle this difﬁculty.
+We note that the non-differentiability of arg max poses an issue not only for latent structure prediction,
+but also for non-structural discrete latent decisions, such as in the context of quantization (Hubara et al.,
+2017). Therefore, for most methodological families that we review below, we start with the unstructured
+case. Nevertheless, structure prediction comes with additional difﬁculties. For example, the feasible set is
+usually exponential in the number of structural parts, effectively ruling out enumeration, and it also often
+comes with structural constraints. These methods, therefore, sometimes cannot be directly applied to the
+structural setting and need modiﬁcations to overcome these challenges.
+4
+Surrogate Gradients
+One family of approaches directly optimize L(g(ˆz; φ), y) by introducing some gradient-like quantity for
+backpropagation. Backpropagating through the model described in Section 3 yields a well-deﬁned ∇ˆzℓ.
+However, since arg max is used to obtain ˆz from s, ∇sℓ= 0, and hence ∇θℓ= 0 and the parameters of
+the parser will not be updated.
+In straight-through estimator (STE; Hinton, 2012; Bengio et al., 2013), ∇sℓis manually overridden. For
+example, in the identity STE:
+∇sℓ= ∇ˆzℓ
+(1)
+as if the identity activation ˆz = s were performed in the forward pass (cf. the actual ˆz = arg maxz∈Z z⊤s).
+It effectively “skips” the arg max operation during the backward pass, hence the name “straight-through.”
+Alternatives exist that override the gradient with that of other activation functions including sigmoid (Ben-
+gio et al., 2013) and variants of the tanh (Hubara et al., 2016) and ReLU (Cai et al., 2017) functions.
+This procedure results in a biased estimator for the true gradient. Nevertheless, despite this biased nature
+and its simplicity, it empirically works well (Bengio et al., 2013; Chung et al., 2017). Much research
+in understanding and justifying why such a mismatch between the objective and the learning algorithm
+remains beneﬁcial is still underway. For example, Yin et al. (2019) showed that the gradients provided by
+properly chosen STE variants correlate to the descent direction that minimizes the population loss.
+Being mindful of the structural constraints for STE can help improve the learning process. To see this,
+we ﬁrst examine an alternative formulation of STE as proposed by Mihaylova et al. (2020). Consider the
+4
+Figure 3: Left: When the gradient update yields a point outside of the convex polytope P, we perform a projection
+back to P. Right: When the gradient update yields a point inside P, no projection is needed. Figure is taken from
+Peng et al. (2018).
+hypothetical case where the optimal structure z∗is accessible. It can be used to incur some intermediate
+loss, such as the structured perceptron loss Lstructure(ˆz, z∗) = s⊤ˆz −s⊤z∗.3 This would allow a nonzero
+gradient with respect to s: ∇sℓ= ˆz −z∗. In practice, however, such an optimal structure may not
+always be accessible. Nevertheless, an approximation to the optimal structure can be induced using
+the downstream loss ℓ. One can view ˆz as an “updatable” quantity and use ˜z = ˆz −∇ˆzℓ≈z∗
+for this approximation. Effectively, this procedure performs a one-step gradient descent to induce an
+approximation of the optimal structure. Mihaylova et al. (2020) noted that this formulation recovers the
+identity STE in Equation (1):
+∇sℓ= ˆz −z∗≈ˆz −˜z = ˆz −(ˆz −∇ˆzℓ) = ∇ˆzℓ
+(2)
+Peng et al. (2018) noted that this approximation ˜z can be outside of the feasible set Z or its convex hull
+P = conv(Z). So ˜z can be an invalid, let alone optimal, structure. They proposed the method SPIGOT
+that projects ˜z back to P when it is outside of P:
+˜zSPIGOT = projP(ˆz −∇ˆzℓ) ≈z∗
+(3)
+Then the gradient with respect to s can be similarly calculated: ∇sℓ= ˆz −z∗≈ˆz −˜zSPIGOT. Compared
+to the one-step gradient descent in the case of STE, SPIGOT can be viewed as performing one step of
+projected gradient descent. This process is illustrated in Figure 3.
+Inspired by SPIGOT, Mihaylova et al. (2020) explored more numbers of (projected) gradient update steps,
+an alternative loss based on the CRF loss (Lafferty et al., 2001) in the place of the structured perceptron
+loss, and exponentiated gradient updates (Kivinen and Warmuth, 1997). Nevertheless, they did not
+observe signiﬁcant improvement in the structured case. They hypothesized that an optimal intermediate
+approximation may not overall help learning.
+5
+Continuous Differentiable Relaxation
+Another family of approaches relax the nondifferentiable arg max function with some continuous and
+differentiable function. In general, rather than taking a single ˆz = arg maxz∈Z S(z | x; θ), they consider
+ˆz = Ez∼π(z|x;θ)[z] (or ˆzi = Ez∼π(z|x;θ)[zi] for a speciﬁc part zi in the structure), where π(z | x; θ)
+represents the normalized scores. Writing this out:
+ˆz = Ez∼π(z|x;θ)[z] =
+X
+z∈Z
+π(z | x; θ)z
+(4)
+We can see that, in Equation (4), rather than only considering one best z, it encodes uncertainty in the
+latent space by taking a weighted average of all z. The attention mechanism is a common example of this
+type of softening. In the hard case, a model aligns to the token with the highest compatibility score. This,
+however, is non-differentiable and restricts the focus to only one token. Hence, recent works obtain a
+3Note that the intermediate Lstructure is different from the downstream loss function L.
+5
+Figure 4: The attention distribution as normalized by three different functions. fusedmax and sparsemax produce
+sparser patterns than softmax while the attention distribution fusedmax has more contiguous chunks. Figure is
+taken from Niculae and Blondel (2017).
+distribution among all candidate tokens, a paradigm that has achieved tremendous success (Bahdanau
+et al., 2015; Vaswani et al., 2017, inter alia).
+There can be many different choices of π(·). A straightforward and widely-used choice uses the softmax
+function. Consider ﬁrst some categorical and unstructured latent variable where Z can be seen as the set
+of classes represented as one-hot vectors. Then:
+π(z | x; θ) = z⊤softmax(s)
+(5)
+Nevertheless, one downside of softmax is that it is soft. Even when the temperature parameter (Hinton
+et al., 2015) is sometimes used to induce sparse probabilities (Jang et al., 2017; Zhou and Neubig, 2017;
+Maillard et al., 2019), it never yields completely discrete 0-1 solutions. On the other hand, discreteness is
+sometimes desirable for, for example, interpretability, so many works have sought sparser alternatives to
+softmax that are still differentiable.
+These alternatives are inspired by the equivalence of softmax and arg max coupled with a Shannon
+entropy term as penalty:4
+softmax(s) = arg max
+z∈∆|Z|−1 z⊤s + H(z)
+(6)
+Substituting the entropy term H(z) with other forms of penalty results in functions including sparsemax (Mar-
+tins and Astudillo, 2016), α-entmax (Peters et al., 2019), fusedmax (Niculae and Blondel, 2017), etc.
+As derived in Niculae and Blondel (2017):
+sparsemax(s) = arg max
+z∈∆|Z|−1 z⊤s −1
+2 ∥z∥2
+2
+(7)
+α -entmax(s) = arg max
+z∈∆|Z|−1 z⊤s −
+1
+α(α −1) ∥z∥α
+α
+(8)
+fusedmax(s) = arg max
+z∈∆|Z|−1 z⊤s −1
+2 ∥z∥2
+2 −λ
+X
+i
+|zi −zi−1|
+(9)
+α-entmax, of which sparsemax is a special case, penalizes the norm of the structure, effectively
+encouraging sparser structures. fusedmax builds on sparsemax while including an additional penalty
+term that discourages changes in value between consecutive parts. See Figure 4 for a visualization.
+Figure 5 (left) illustrates the relationship between arg max, softmax, and this family of approaches using
+sparsemax as an example.
+Of course, these arg max-based formulations cannot be naïvely applied since, again, arg max is not
+amenable to gradient-based optimization. Nevertheless, non-zero Jacobians speciﬁc to each of these
+functions have been derived. We refer readers to the original papers for details.
+4For a proof, see the appendix of Niculae et al. (2018b).
+6
+Figure 5: Illustration of the relationship between arg max, softmax, and sparsemax in the probability simplex
+(left), as well as their structured counterpart in the convex hull of all possible structures (right). Figure is taken
+from Niculae et al. (2018a).
+When z is a structure, Ez∼π(z|x;θ)[z] can be intractable to obtain, and people have instead considered the
+part-marginal Ez∼π(z|x;θ)[zi] by marginalizing over exponentially many z. Speciﬁcally:
+π(Zi = zi | x; θ) = Ez∼π(z|x;θ)[zi] =
+X
+z∈Z
+π(z | x; θ)I([z]i = zi)
+(10)
+where I(·) is the indicator function. Of course, directly calculating the right-hand side of Equation (10)
+is still in most cases intractable. Nevertheless, for speciﬁc cases, efﬁcient algorithms exist, typically
+variants of the sum-product algorithm, such as the forward-backward algorithm (Rabiner, 1989) and the
+inside-outside algorithm (Baker, 1979).
+Analogous to sparsemax and related functions in the unstructured case, sparser alternatives to Equa-
+tion (10) have been pursued. While the right-hand side of Equation (10) cannot be directly evaluated,
+with a sparse distribution overs structures π(·), we can only enumerate over structures with a nonzero
+probability which allows tractable inference. This provides an alternative to using sum-product algorithms
+which in some cases are unavailable and, even when available, only provide local features (e.g., the
+probability of an arc between a pair of words), incapable of modeling more global structures which can be
+beneﬁcial (Corro and Titov, 2019b). Niculae et al. (2018a,b) developed the SparseMAP inference strategy
+which produces a combination of only a small number of structures. Figure 5 illustrates its correspondence
+with the unstructured setting. In addition to outperforming the softmax baseline on a variety of tasks, this
+sparse distribution over structures allows for improved interpretability: they discovered that it represents
+legitimate linguistic ambiguity. Niculae and Martins (2020) proposed LP-SparseMAP that builds on
+SparseMAP while allowing approximate inference.
+6
+Marginal Likelihood Maximization via Sampling
+We now reconsider our objective probabilistically as a conditional marginal likelihood model. We want to
+maximize the likelihood of the label y given the input x, p(y | x). Introducing and marginalizing over the
+latent variable z, this can be written as
+p(y | x; θ, φ) =
+X
+z∈Z
+p(y | x, z; φ)p(z | x; θ)
+= Ez∼p(z|x;θ)[p(y | x, z; φ)]
+(11)
+This perspective in fact relates to using continuous relaxation where we considered p(y | x, Ez∼π(z|x;θ)[z]; φ).
+When the function that models the outer probability distribution is convex, though it often is not as
+parameterized by neural networks, by Jensen’s inequality, the continuous relaxation perspective is a lower
+bound of this quantity. Hence, optimizing Equation (11) provides an alternative to continuous relaxation.
+7
+Nevertheless, the challenge of optimizing Equation (11), or back to our formulation, Ez∼π(z|x;θ)[L(g(z; φ), y)],
+with respect to θ lies in the fact that the expectation is taken over a distribution parameterized by θ.
+This makes ∇θEz∼π(z|x;θ)[L(g(z; φ), y)] difﬁcult to calculate. Sometimes this gradient can be directly
+evaluated with special structures and algorithms (e.g., Wiseman et al. (2018)). In this survey, we focus on
+the more general setting where this might be intractable and review two methods that rewrite this quantity
+in forms that allow its approximation via sampling: score function estimator and reparameterization.5
+6.1
+Score Function Estimator
+One class of such methods uses score function estimators, also known as the REINFORCE algorithm (Williams,
+1992), to compute this gradient. They are based on the identity
+∇θπ(z | x; θ) = π(z | x; θ)∇θ log π(z | x; θ)
+(12)
+which leads to
+∇θEz∼π(z|x;θ)[L(g(z))] = ∇θ
+X
+z∈Z
+L(g(z))π(z | x; θ)
+=
+X
+z∈Z
+L(g(z))∇θπ(z | x; θ)
+=
+X
+z∈Z
+L(g(z))π(z | x; θ)∇θ log π(z | x; θ)
+= Ez∼π(z|x;θ)[L(g(z))∇θ log π(z | x; θ)]
+(13)
+This formulation allows approximating the gradient with Monte-Carlo samples.
+The score function estimator can suffer from high variance due to its sampling nature considering the
+exponential number of possible trees and the lack of intermediate rewards. For example, Nangia and
+Bowman (2018) showed that the trees induced by Yogatama et al. (2017), a method based on score
+function estimators, has a self-F1, which is a measure of variance, that is similar to random trees. Hence,
+variance reduction techniques are often employed in practice. For example, a control variate b(x) (Paisley
+et al., 2012) can be subtracted from L:
+∇θEz∼π(z|x;θ)[L(g(z))] = Ez∼π(z|x;θ)[(L(g(z)) −b(x))∇θπ(z | x; θ)]
+(14)
+6.2
+Reparameterization
+An alternative to score function estimators is the reparameterization trick (Kingma and Welling, 2014).
+Suppose we can sample from π(· | x; θ) by ﬁrst sampling a noise γ from a simpler base distribution B
+independent of θ and then apply a transformation h(γ; θ). Then:
+∇θEz∼π(z|x;θ)[L(g(z))] = ∇θ
+X
+z∈Z
+L(g(z))π(z | x; θ)
+= ∇θ
+X
+γ∈supp(B)
+L(g(h(γ; θ)))B(γ)
+=
+X
+γ∈supp(B)
+B(γ)∇θL(g(h(γ; θ)))
+= Eγ∼B[∇θL(g(h(γ; θ)))]
+(15)
+5Technically, this formulation does not apply directly in an autoencoding setup where y = x, because we cannot use two
+separate networks to model p(x | z) and p(z | x). Directly maximizing the probability is often intractable (Ammar et al. (2014)
+being a notable exception), and requires optimizing the evidence lower bound, or ELBO. We omit the technical details for
+brevity, though most methods below also apply to ELBO optimization. See Rush et al. (2018) for a review.
+8
+Figure 6: The Kumaraswamy distribution (dashed curve) and the HardKumaraswamy distribution (solid curve).
+The HardKumaraswamy distribution “stretches” the Kumaraswamy distribution and collapses mass beyond [0, 1].
+Figure is taken from Bastings et al. (2019).
+This allows, once again, Monte-Carlo methods to approximate the original gradient.
+We can compare the score function estimator and reparameterization-based methods by contrasting the
+ﬁnal line in Equations (13) and (15). In reparameterization, we differentiate through the loss function,
+whereas in score function estimator, we only consider the gradient of the log probability of the structure
+and use the loss, or “reward” in reinforcement learning terminologies, as a black-box to drive the
+optimization. The former hence is more informative and empirically yields lower variance (Rush et al.,
+2018). Nevertheless, not all probability distributions are reparameterizable.
+The reparameterization trick was originally introduced to train variational auto-encoders (Kingma and
+Welling, 2014). Thanks to the linearity of the normal distribution, sampling X ∼N(µ, σ2) can be
+equivalently reparameterized as X = h(γ; θ) = µ + σγ where γ ∼N(0, 1), allowing gradients to
+be taken with respect to µ and σ so that they can be learned. Nevertheless, it can be more difﬁcult to
+reparameterize a discrete variable. We review a few methods to do this below.
+6.2.1
+Rectiﬁed Distributions
+Rectifying continuous distributions can ensure a non-trivial probability for discrete solutions. For
+example, Bastings et al. (2019) used a stretch-and-rectify procedure, originally proposed in Louizos
+et al. (2018), to design the continuous HardKumaraswamy distribution (solid curve in Figure 6) that
+is based on the Kumaraswamy distribution (dashed curve in Figure 6; Kumaraswamy, 1980), which is
+reparameterizable. Speciﬁcally, after a base noise is drawn γ ∼unif(0, 1), it is fed through the inverse
+CDF of the Kumaraswamy distribution k = F −1
+K (γ; a, b) ∈(0, 1), stretched t = l + (r −l)k, and
+collapsed z = min(1, max(0, t)). Intuitively, while the original Kumaraswamy distribution does not
+have 0 and 1 in its support, we can stretch it from its original support (0, 1) to [l, r] and collapse the
+probability mass beyond 0 and 1 to the endpoints, allowing a non-trivial probability at these two points.
+This stretch-and-rectify procedure is visualized in Figure 6, and we refer readers to Bastings et al. (2019)
+for more details.
+6.2.2
+Gumbel-Max
+The Gumbel-Max trick (Gumbel, 1954; Maddison et al., 2014) can also be used to reparameterize
+the sampling of discrete variables. To sample from the unnormalized scores s, the Gumbel-Max trick
+perturbs the scores with an additive noise γ ∼Gumbel(0, 1), or equivalently, U ∼unif(0, 1), γ =
+9
+−log(−log(U)). It can be shown that taking
+ˆz = h(γ; θ) = arg max
+z∈Z
+z⊤s + γ = arg max
+z∈Z
+S(z | x; θ) + γ
+(16)
+where Z consists of one-hot vectors, is equivalent to sampling from the softmax-normalized s.6
+However, even with the Gumbel-Max trick, the non-differentiability still exists in Equation (16). There-
+fore, methods introduced in Section 4 or 5 may still be required. With surrogate gradients, it becomes
+Gumbel STE, while with continuous relaxation, it yields Gumbel-softmax (Jang et al., 2017; Maddison
+et al., 2017). The two can be combined, where the forward pass uses a discrete arg max like in STE,
+while the softmax-ed distribution is used in the backward pass (vs. the identity function in identity STE).
+This is sometimes called straight-through Gumbel-softmax (Jang et al., 2017).
+In the structured case, it is intractable to perturb every possible z ∈Z separately. Corro and Titov
+(2019a,b) proposed differentiable Perturb-and-Parse by perturbing scores of each part. Speciﬁcally:
+ˆz = arg max
+z∈Z
+z⊤(s + γ)
+(17)
+This arg max can be solved with max-product algorithms, though these algorithms usually have arg max
+operations within them that break backpropagation (Mensch and Blondel, 2018). Therefore, Corro and
+Titov (2019a,b) relaxed these operations with softmax that preserves the gradient ﬂow. Nevertheless,
+unlike in the unstructured case, sampling using this method is not exact because it perturbs local parts
+rather than the global structure. This is apparent by contrasting Equations (16) and (17).
+6.2.3
+Direct Loss Minimization
+As an alternative to circumventing the non-differentiability introduced by Gumbel-Max using STE
+or Gumbel-softmax, Lorberbom et al. (2019) proposed to adopt direct loss minimization, originally
+introduced by McAllester et al. (2010). Direct loss minimization was developed to optimize arbitrary,
+not necessarily differentiable, loss functions under mild conditions. We state this formally in Theorem 1,
+taken from Song et al. (2016), which is a generalization of the original theorem proposed in McAllester
+et al. (2010):
+Theorem 1. When given a ﬁnite set Y, a scoring function F(x, y, w), a data distribution, as well as a
+task-loss L(y, ˆy), then, under some mild regularity conditions (see the supplementary material of Song
+et al. (2016) for details), the direct loss gradient has the following form:
+∇wE[L(y, yw)] = ± lim
+ϵ→0
+1
+ϵ E[∇wF(x, ydirect, w) −∇wF(x, yw, w)]
+(18)
+with
+yw = arg max
+ˆy∈Y
+F(x, ˆy, w)
+(19)
+ydirect = arg max
+ˆy∈Y
+F(x, ˆy, w) ± ϵL(y, ˆy)
+(20)
+Proof. We refer readers to the supplementary material of Song et al. (2016).
+In Theorem 1, in addition to executing the regular inference procedure to compute yw, one also needs an
+additional loss-adjusted inference for ydirect.
+Lorberbom et al. (2019) adapted Theorem 1 to work with the Gumbel-Max reparameterization in varia-
+tional auto-encoders (VAEs) that allows further expansion of Equation (15) by plugging in Equation (16).
+This is formalized in Theorem 2, taken from their work and adapted to our notation:
+6See the appendix of Maddison et al. (2014) for a proof.
+10
+Theorem 2. Assume that S(z | x; θ) is a smooth function of θ. Then7
+Eγ∼B[∇θL(g(h(γ; θ)))] = Eγ∼B[∇θL(g(ˆz))]
+= ∇θEγ∼B[L(g(ˆz))]
+= lim
+ϵ→0
+1
+ϵ Eγ∼B[∇θS(ˆz(ϵ) | x; θ) −∇θS(ˆz | x; θ)]
+(21)
+with
+ˆz = arg max
+z∈Z
+S(z | x; θ) + γ
+(22)
+ˆz(ϵ) = arg max
+z∈Z
+S(z | x; θ) + γ + ϵL(g(z))
+(23)
+Proof. We refer readers to the supplementary material of Lorberbom et al. (2019).
+The expansion in Equation (21) circumvents the need to take the gradient through the arg max that is
+introduced by Gumbel-Max in Equation (15). Intuitively, the gradient is estimated by slightly perturbing
+ˆz.
+While Equation (21) holds theoretically, one cannot implement the limit easily in a machine learning
+system. Lorberbom et al. (2019) hence treated ϵ as a ﬁxed hyperparameter that controls the bias-variance
+trade-off. Since too small an ϵ could lead to very large gradients, they only considered ϵ ≥0.1. This,
+therefore, leads to a biased estimator for the true gradient. Nevertheless, they compared their method
+with Gumbel-softmax and showed that ϵ better controls the bias-variance trade-off than the temperature
+parameter in Gumbel-softmax.
+In the structured case, direct loss minimization suffers from the same intractability as Gumbel-Max.
+Lorberbom et al. (2019) therefore only considered pairwise structures. We believe attempting to combine
+direct loss minimization and methods such as Perturb-and-Parse would be an interesting future study.
+7
+Applications
+The methods introduced above have been widely adopted for optimizing models with latent discrete
+decisions. We review some applications below. We ﬁrst discuss two settings where a downstream task
+is used as the training signal for latent structure induction, where the latent z can either be a linguistic
+structure or an extractive summary of the input sentence. We also review when the target output is the
+same as the input, an auto-encoding setup, that allows unsupervised structure induction.
+7.1
+Linguistic Structures
+As argued in Section 1, latently inducing a linguistically-inspired structure that aids the downstream
+prediction can provide a useful inductive bias. Typically, a latent tree is induced from text, and some
+structure-encoding model such as TreeLSTM (Tai et al., 2015) or GCN (Kipf and Welling, 2017) is used
+on top of this structure to compose the word-level representations into a sentence representation for the
+ﬁnal prediction for various end tasks.
+We presented graph-based parsing for bilexical dependencies in Section 2. Transition-based parsers, on
+the other hand, uses the scoring function S(z | x; θ) = P
+{a:yield(a)=z}
+Q|a|
+i=1 f(ai | x, a<i; θ), where
+yield(·) is the mapping from a sequence of actions a = [a1, · · · , am], such as SHIFT and REDUCE, to the
+deterministic structure produced by these actions. For constituency parsing, the default choice is the CKY
+algorithm (Cocke, 1969; Kasami, 1965; Younger, 1967), a special case of chart parsing, which determines
+the optimal parse structure with dynamic programming by ﬁnding the optimal split point for spans.
+7Again ignoring the caveat in Footnote 5.
+11
+Transition-based parsing and the CKY algorithm
+are similar in that, in most settings, every decision
+sequence yields a valid structure. Therefore, we can simply backpropagate through the sequence of
+discrete decisions using the methods presented above. In this manner: Maillard and Clark (2018) trained
+a latent shift-reduce parser with STE. Maillard et al. (2019) induced a latent constituency structure with
+continuous relaxation using a softmax to normalize over all possible split points. Bogin et al. (2021)
+used a similar architecture to improve compositional generalization for grounded question answering.
+Yogatama et al. (2017) learned a policy network for a latent dependency parser.
+Kim et al. (2019)
+trained an unsupervised recurrent neural network grammar (Dyer et al., 2016) that resembles a shift-
+reduce parser using reinforcement learning.
+Choi et al. (2018) latently induced a constituency tree
+by greedily choosing a pair of neighboring text spans to merge at each layer using straight-through
+Gumbel-softmax at each layer for sampling. Hu et al. (2021) used this method to design a heuristic
+pruning procedure that improves the O(n3) complexity of the CKY algorithm to O(n). This efﬁciency
+also allowed them to pretrain this model with a language modeling objective.
+Graph-based parsing
+usually needs to be mindful of structural constraints. Peng et al. (2018) used
+SPIGOT to train latent syntactic and semantics parsers.
+Kim et al. (2017) considered the expected
+local decisions by marginalizing over all possible structures, latently inducing a projective syntactic
+dependency tree structure (and also a linear sequential structure), which they termed “structured at-
+tention.” For example, if Zpq represents the existence of a syntactic edge between words p and q
+with q being the parent, then one can obtain a context vector of q, cq, by performing attention to the
+syntactic parent of q with cq ∝P
+p π(Zpq = 1 | x; θ)xp where xp denotes the representation of the
+word p. Liu et al. (2018) leveraged structured attention networks to induce latent constituency trees
+for richer inter-sentence attention (Parikh et al., 2016). Structured attention networks, however, can be
+expensive during the marginalization step. For example, marginalizing over dependency trees using
+the inside-outside algorithm can result in a more than 10 times slowdown (Liu and Lapata, 2018) due
+to its lack of parallelizability. Additionally, it is inherently unable to consider non-projective depen-
+dency trees. To address these two issues, Liu and Lapata (2018) proposed a generalization of structured
+attention networks by marginalizing using the Matrix-Tree Theorem (Tutte, 1984) that allows the in-
+duction of non-projective dependency trees (Koo et al., 2007; Smith and Smith, 2007; McDonald and
+Satta, 2007) and with better parallelizability, achieving similar speed as their simple attention baseline.
+Bisk and Tran (2018) extended this method to machine translation and showed that it outperforms using
+simple attention as well as STE. Niculae et al. (2018b) used SparseMAP to induce sparse distributions
+over latent dependency parses for sentence classiﬁcation, natural language inference, and reverse dic-
+tionary lookup. Zhou et al. (2020) used a rectiﬁed distribution to induce latent dependency trees for
+syntactic-then-semantic AMR (Banarescu et al., 2013). Corro and Titov (2019b) used Perturb-and-Parse
+to obtain a latent dependency parser.
+7.2
+Rationale Extraction
+One line of work concerns the interpretability of neural models and aims to extract the words and phrases
+in a span of text that are responsible for some task prediction, usually termed “rationale extraction.” Lei
+et al. (2016) ﬁrst introduced this task and considered the intermediate structure as a collection of Bernoulli
+variables, each corresponding to a word in the original text, with some independence assumption among
+them. A condensed summary is formed by collecting the words corresponding to the activated Bernoulli
+variables. Then, a predictor learns a mapping from the summary to the ﬁnal prediction, which is expected
+to stay close to the gold label. The summary usually needs to be latently induced due to a lack of summary
+annotation.
+Lei et al. (2016) proposed to jointly train a rationale extractor and a downstream task predictor using
+score function estimators. They experimented with both an unstructured intermediate rationale where
+each word is independently selected as a Bernoulli random variable, as well a structured rationale
+12
+where the selection of each word recurrently depends on previous selections. Their method achieved
+similar performance to using the full text while in most cases including only up to 30% of the text.
+Bastings et al. (2019) used reparameterization with a rectiﬁed distribution and demonstrated improved
+performance.
+7.3
+Auto-Encoder
+Another important body of work uses an autoencoding objective where the target y is the same as the
+input x. A reconstruction loss is typically either maximized directly (Ammar et al., 2014) or, when it
+is intractable as is common with neural network parameterized models, using variational autoencoders
+(VAE; Kingma and Welling, 2014). An encoder, or inference network, f that models p(z | x) and a
+reconstruction network g that models p(x | z) are jointly learned, after which we can take only the
+inference network to predict a structure from text.
+With the output the same as the input, this allows completely unsupervised learning. Sometimes some
+amount of intermediate supervision is also added to ensure that the intermediate structure resembles some
+target formalism.
+Linguistic Structures
+When z is a linguistic structure, this method enables unsupervised or semi-
+supervised parsing.
+Drozdov et al. (2019, 2020) and Xu et al. (2021) used a continuous relaxation
+based approach for unsupervised and distantly-supervised parsing. Shen et al. (2018) softly and latently
+attends to a word’s syntactic siblings using proximity values induced by a “syntactic distance” for language
+modeling and unsupervised constituency parsing. Yin et al. (2018) used reinforcement learning to train
+a semi-supervised semantic parser. Corro and Titov (2019a) used Perturb-and-Parse for semi-supervised
+parsing.
+Others
+The methods reviewed in this survey have also been used in VAEs when z is not a linguis-
+tic structure. For example, Miao and Blunsom (2016) considered z as a compressed version of the
+input sentence and trained a semi-supervised sentence compression model. Using Gumbel-softmax,
+Zhou and Neubig (2017) sampled independent morphological label as z for morphological re-inﬂection,
+and Rezaee and Ferraro (2021) treated semantic frames as z and trained a model for semi-supervised
+event modeling.
+8
+What is Latently Learned?
+We now inspect the structure that is latently learned. We focus on latent syntax-inspired trees as they are
+easy to compare to human’s syntactic judgment and there are treebanks, or silver parser-generated trees,
+for reference.
+Perhaps surprisingly, despite the strong downstream performance of these latent structure models, the
+trees that many such models learn for the most part do not correspond to traditional linguistic formalisms
+and at best capture only shallow syntactic units. Williams et al. (2018) examined the reinforcement
+learning based model of Yogatama et al. (2017) (RL-SPINN) and the straight-through Gumbel based
+model of Choi et al. (2018) (ST-Gumbel). They took these models that are trained on NLI datasets and
+evaluated them on the Penn Treebank (PTB; Marcus et al., 1993). RL-SPINN achieved similar parsing
+performance as random trees, while ST-Gumbel was even worse. In particular, RL-SPINN’s induced trees
+are highly similar to a purely left-branching structure with an F1of > 99%. In contrast to this deepest
+possible strategy, the trees of ST-Gumbel are very shallow with an average depth of 4.2, close to 3.9
+for balanced trees, and much shallower than silver parses with a 5.7 average depth. Maillard and Clark
+(2018) conﬁrmed that the models of themselves and of Maillard et al. (2019) do not induce trees that
+resemble those produced by the Stanford Parser. Bisk and Tran (2018) similarly showed that their method
+achieved an attachment score similar to or even worse than ﬂat baselines.
+13
+Nangia and Bowman (2018) introduced the ListOps dataset for synthetic math expression evaluation
+which is easy to solve with a parse structure but difﬁcult otherwise. Both RL-SPINN and ST-Gumbel
+even underperform a simple LSTM model that has no structured modeling, suggesting that these models,
+with the datasets and training algorithms they used, cannot learn the structure required for this task.
+Nevertheless, Havrylov et al. (2019), which improved over RL-SPINN as introduced in §6.1, achieved
+near-perfect performance on this dataset by reducing the gradient estimation variance and reducing the
+coadaptation issue of the parser and the downstream predictor.
+Overall, it seems that for the latently induced structure to bear a close resemblance to existing syntactic
+formalisms is not a necessary condition for strong downstream task performance. In fact, many studies
+showed that, in latent structure learning, using parses from a pretrained parser deteriorates the perfor-
+mance (Choi et al., 2018; Maillard et al., 2019), pretraining on these parses does not help (Kim et al.,
+2017), and neither does including an auxiliary parsing loss (Yogatama et al., 2017). Some studies qualita-
+tively inspected the latent structure and discovered deviation from existing formalisms that may beneﬁt
+composition (Bisk and Tran, 2018; Niculae et al., 2018b). For example, in coordination constructions,
+Universal Dependencies dictate the leftmost conjunct as the head (Zeman et al., 2021), while Niculae
+et al. (2018b) argued that a symmetric treatment may provide a better composition order. On the other
+hand, Shi et al. (2018) noted that trivial trees (i.e., balanced or linear trees) achieve performance similar
+to or better than latently induced trees or external parse trees on a variety of classiﬁcation and generation
+tasks, casting doubt on the real source of performance improvement. More future work is needed to
+understand the role syntax plays in this picture and how it might vary across different tasks.
+The story is different for methods for unsupervised parsing which can induce familiar linguistic for-
+malisms with decent accuracy (though see Li and Risteski (2021) for a theoretical analysis of their
+limitations). These methods usually use a language modeling or autoencoding objective rather than
+receiving supervision from a natural language understanding task (Shen et al., 2018; Kim et al., 2019; Hu
+et al., 2021, inter alia). Why these objectives are more conducive to the induction of a latent structure
+that better resembles existing linguistic formalisms would be an interesting future research question.
+9
+Conclusion
+In this work, we surveyed three families of methods that tackle the non-differentiability of discrete
+decisions caused by the arg max function and introduced how they respectively handle the unique
+challenges of structure prediction. These methods and some of their key properties are summarized in
+Table 1. We also reviewed past work that studied the induced latent structures and highlighted that they
+mostly do not closely resemble existing linguistic formalisms. We hope this survey can serve to catalyze
+future research in this area.
+Acknowledgment
+We thank Greg Durrett, André Martins, Vlad Niculae, Hao Peng, Noah Smith, Nishant Subramani,
+ordered alphabetically by last name, for helpful discussions and feedback on various versions of this
+work.
+References
+Waleed Ammar, Chris Dyer, and Noah A Smith. 2014. Conditional random ﬁeld autoencoders for
+unsupervised structured prediction. In Advances in Neural Information Processing Systems, volume 27.
+Curran Associates, Inc.
+14
+Dzmitry Bahdanau, Kyung Hyun Cho, and Yoshua Bengio. 2015. Neural machine translation by jointly
+learning to align and translate. In Proceedings of the 3rd International Conference on Learning
+Representations.
+J. K. Baker. 1979. Trainable grammars for speech recognition. The Journal of the Acoustical Society of
+America, 65(S1):S132–S132.
+Laura Banarescu, Claire Bonial, Shu Cai, Madalina Georgescu, Kira Grifﬁtt, Ulf Hermjakob, Kevin
+Knight, Philipp Koehn, Martha Palmer, and Nathan Schneider. 2013. Abstract Meaning Representation
+for sembanking. In Proceedings of the 7th Linguistic Annotation Workshop and Interoperability with
+Discourse, pages 178–186, Soﬁa, Bulgaria. Association for Computational Linguistics.
+Jasmijn Bastings, Wilker Aziz, and Ivan Titov. 2019. Interpretable neural predictions with differentiable
+binary variables. In Proceedings of the 57th Annual Meeting of the Association for Computational
+Linguistics, pages 2963–2977, Florence, Italy. Association for Computational Linguistics.
+Yoshua Bengio, Nicholas Léonard, and Aaron Courville. 2013. Estimating or propagating gradients
+through stochastic neurons for conditional computation.
+Yonatan Bisk and Ke Tran. 2018. Inducing grammars with and for neural machine translation. In
+Proceedings of the 2nd Workshop on Neural Machine Translation and Generation, pages 25–35,
+Melbourne, Australia. Association for Computational Linguistics.
+Ben Bogin, Sanjay Subramanian, Matt Gardner, and Jonathan Berant. 2021. Latent Compositional
+Representations Improve Systematic Generalization in Grounded Question Answering. Transactions
+of the Association for Computational Linguistics, 9:195–210.
+Samuel R. Bowman, Jon Gauthier, Abhinav Rastogi, Raghav Gupta, Christopher D. Manning, and
+Christopher Potts. 2016. A fast uniﬁed model for parsing and sentence understanding. In Proceedings
+of the 54th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),
+pages 1466–1477, Berlin, Germany. Association for Computational Linguistics.
+Zhaowei Cai, Xiaodong He, Jian Sun, and Nuno Vasconcelos. 2017. Deep learning with low precision by
+half-wave gaussian quantization. In CVPR.
+Qian Chen, Xiaodan Zhu, Zhen-Hua Ling, Si Wei, Hui Jiang, and Diana Inkpen. 2017. Enhanced
+LSTM for natural language inference. In Proceedings of the 55th Annual Meeting of the Association
+for Computational Linguistics (Volume 1: Long Papers), pages 1657–1668, Vancouver, Canada.
+Association for Computational Linguistics.
+Jihun Choi, Kang Min Yoo, and Sang goo Lee. 2018. Learning to compose task-speciﬁc tree structures.
+In Proceddings of the AAAI Conference on Artiﬁcial Intelligence.
+Noam Chomsky. 1965. Aspects of the Theory of Syntax, 50 edition. The MIT Press.
+Junyoung Chung, Sungjin Ahn, and Yoshua Bengio. 2017. Hierarchical multiscale recurrent neural
+networks. In International Conference on Learning Representations.
+John Cocke. 1969. Programming Languages and Their Compilers: Preliminary Notes. New York
+University, USA.
+Caio Corro and Ivan Titov. 2019a. Differentiable perturb-and-parse: Semi-supervised parsing with a
+structured variational autoencoder. In International Conference on Learning Representations.
+Caio Corro and Ivan Titov. 2019b. Learning latent trees with stochastic perturbations and differentiable dy-
+namic programming. In Proceedings of the 57th Annual Meeting of the Association for Computational
+Linguistics, pages 5508–5521, Florence, Italy. Association for Computational Linguistics.
+15
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of deep
+bidirectional transformers for language understanding. In Proceedings of the 2019 Conference of the
+North American Chapter of the Association for Computational Linguistics: Human Language Tech-
+nologies, Volume 1 (Long and Short Papers), pages 4171–4186, Minneapolis, Minnesota. Association
+for Computational Linguistics.
+Andrew Drozdov, Subendhu Rongali, Yi-Pei Chen, Tim O’Gorman, Mohit Iyyer, and Andrew McCallum.
+2020. Unsupervised parsing with S-DIORA: Single tree encoding for deep inside-outside recursive
+autoencoders. In Proceedings of the 2020 Conference on Empirical Methods in Natural Language
+Processing (EMNLP), pages 4832–4845, Online. Association for Computational Linguistics.
+Andrew Drozdov, Patrick Verga, Mohit Yadav, Mohit Iyyer, and Andrew McCallum. 2019. Unsupervised
+latent tree induction with deep inside-outside recursive auto-encoders. In Proceedings of the 2019
+Conference of the North American Chapter of the Association for Computational Linguistics: Human
+Language Technologies, Volume 1 (Long and Short Papers), pages 1129–1141, Minneapolis, Minnesota.
+Association for Computational Linguistics.
+Chris Dyer, Adhiguna Kuncoro, Miguel Ballesteros, and Noah A. Smith. 2016. Recurrent neural network
+grammars. In Proceedings of the 2016 Conference of the North American Chapter of the Association
+for Computational Linguistics: Human Language Technologies, pages 199–209, San Diego, California.
+Association for Computational Linguistics.
+Akiko Eriguchi, Kazuma Hashimoto, and Yoshimasa Tsuruoka. 2016. Tree-to-sequence attentional neural
+machine translation. In Proceedings of the 54th Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 823–833, Berlin, Germany. Association for Computational
+Linguistics.
+Emil Julius Gumbel. 1954. Statistical theory of extreme values and some practical applications; a series
+of lectures. Applied mathematics series ; 33. U.S. Govt. Print. Ofﬁce, Washington.
+Kazuma Hashimoto, Caiming Xiong, Yoshimasa Tsuruoka, and Richard Socher. 2017. A joint many-task
+model: Growing a neural network for multiple NLP tasks. In Proceedings of the 2017 Conference
+on Empirical Methods in Natural Language Processing, pages 1923–1933, Copenhagen, Denmark.
+Association for Computational Linguistics.
+Serhii Havrylov, Germán Kruszewski, and Armand Joulin. 2019. Cooperative learning of disjoint
+syntax and semantics. In Proceedings of the 2019 Conference of the North American Chapter of the
+Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short
+Papers), pages 1118–1128, Minneapolis, Minnesota. Association for Computational Linguistics.
+Irene Heim and Angelika Kratzer. 1998. Semantics in Generative Grammar. Blackwell Textbooks in
+Linguistics. Wiley.
+Geoffrey Hinton. 2012. Neural networks for machine learning, coursera.
+Geoffrey Hinton, Oriol Vinyals, and Jeffrey Dean. 2015. Distilling the knowledge in a neural network. In
+NIPS Deep Learning and Representation Learning Workshop.
+Sepp Hochreiter and Jürgen Schmidhuber. 1997. Long short-term memory. Neural Computation,
+9(8):1735–1780.
+Xiang Hu, Haitao Mi, Zujie Wen, Yafang Wang, Yi Su, Jing Zheng, and Gerard de Melo. 2021. R2D2:
+Recursive transformer based on differentiable tree for interpretable hierarchical language modeling.
+In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the
+11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages
+4897–4908, Online. Association for Computational Linguistics.
+16
+Itay Hubara, Matthieu Courbariaux, Daniel Soudry, Ran El-Yaniv, and Yoshua Bengio. 2016. Binarized
+neural networks. In Advances in Neural Information Processing Systems, volume 29. Curran Associates,
+Inc.
+Itay Hubara, Matthieu Courbariaux, Daniel Soudry, Ran El-Yaniv, and Yoshua Bengio. 2017. Quantized
+neural networks: Training neural networks with low precision weights and activations. J. Mach. Learn.
+Res., 18(1):6869–6898.
+Angelina Ivanova, Stephan Oepen, Lilja Øvrelid, and Dan Flickinger. 2012. Who did what to whom? a
+contrastive study of syntacto-semantic dependencies. In Proceedings of the Sixth Linguistic Annotation
+Workshop, pages 2–11, Jeju, Republic of Korea. Association for Computational Linguistics.
+Eric Jang, Shixiang Gu, and Ben Poole. 2017. Categorical reparametrization with gumbel-softmax. In
+Proceedings International Conference on Learning Representations 2017. OpenReviews.net.
+T. Kasami. 1965. An efﬁcient recognition and syntax analysis algorithm for context-free languages.
+Technical Report AFCRL-65-758, Air Force Cambridge Research Laboratory, Bedford, MA.
+Yoon Kim, Carl Denton, Luong Hoang, and Alexander M. Rush. 2017. Structured attention networks.
+Yoon Kim, Alexander Rush, Lei Yu, Adhiguna Kuncoro, Chris Dyer, and Gábor Melis. 2019. Unsu-
+pervised recurrent neural network grammars. In Proceedings of the 2019 Conference of the North
+American Chapter of the Association for Computational Linguistics: Human Language Technolo-
+gies, Volume 1 (Long and Short Papers), pages 1105–1117, Minneapolis, Minnesota. Association for
+Computational Linguistics.
+Diederik P. Kingma and Max Welling. 2014. Auto-Encoding Variational Bayes. In 2nd International Con-
+ference on Learning Representations, ICLR 2014, Banff, AB, Canada, April 14-16, 2014, Conference
+Track Proceedings.
+Thomas N. Kipf and Max Welling. 2017. Semi-supervised classiﬁcation with graph convolutional
+networks. In International Conference on Learning Representations (ICLR).
+Jyrki Kivinen and Manfred K. Warmuth. 1997. Exponentiated gradient versus gradient descent for linear
+predictors. Information and Computation, 132(1):1 – 63.
+Terry Koo, Amir Globerson, Xavier Carreras, and Michael Collins. 2007. Structured prediction models
+via the matrix-tree theorem. In Proceedings of the 2007 Joint Conference on Empirical Methods in
+Natural Language Processing and Computational Natural Language Learning (EMNLP-CoNLL),
+pages 141–150, Prague, Czech Republic. Association for Computational Linguistics.
+P. Kumaraswamy. 1980. A generalized probability density function for double-bounded random processes.
+Journal of Hydrology, 46(1):79–88.
+John D. Lafferty, Andrew McCallum, and Fernando C. N. Pereira. 2001. Conditional random ﬁelds:
+Probabilistic models for segmenting and labeling sequence data. In Proceedings of the Eighteenth
+International Conference on Machine Learning, ICML ’01, page 282–289, San Francisco, CA, USA.
+Morgan Kaufmann Publishers Inc.
+Tao Lei, Regina Barzilay, and Tommi Jaakkola. 2016. Rationalizing neural predictions. In Proceedings of
+the 2016 Conference on Empirical Methods in Natural Language Processing, pages 107–117, Austin,
+Texas. Association for Computational Linguistics.
+Yuchen Li and Andrej Risteski. 2021. The limitations of limited context for constituency parsing. In
+Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the
+11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), pages
+2675–2687, Online. Association for Computational Linguistics.
+17
+Yang Liu, Matt Gardner, and Mirella Lapata. 2018. Structured alignment networks for matching sentences.
+In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, pages
+1554–1564, Brussels, Belgium. Association for Computational Linguistics.
+Yang Liu and Mirella Lapata. 2018. Learning structured text representations. Transactions of the
+Association for Computational Linguistics, 6:63–75.
+Guy Lorberbom, Andreea Gane, Tommi Jaakkola, and Tamir Hazan. 2019. Direct optimization through
+arg max for discrete variational auto-encoder. In Advances in Neural Information Processing Systems,
+volume 32. Curran Associates, Inc.
+Christos Louizos, Max Welling, and Diederik P. Kingma. 2018. Learning sparse neural networks through
+L0 regularization. In International Conference on Learning Representations.
+Chris J. Maddison, Andriy Mnih, and Yee Whye Teh. 2017. The Concrete Distribution: A Continuous
+Relaxation of Discrete Random Variables. In International Conference on Learning Representations.
+Chris J Maddison, Daniel Tarlow, and Tom Minka. 2014. A∗sampling. In Advances in Neural Information
+Processing Systems, volume 27. Curran Associates, Inc.
+Jean Maillard and Stephen Clark. 2018. Latent tree learning with differentiable parsers: Shift-reduce
+parsing and chart parsing. In Proceedings of the Workshop on the Relevance of Linguistic Structure
+in Neural Architectures for NLP, pages 13–18, Melbourne, Australia. Association for Computational
+Linguistics.
+Jean Maillard, Stephen Clark, and Dani Yogatama. 2019. Jointly learning sentence embeddings and
+syntax with unsupervised Tree-LSTMs. Natural Language Engineering, 25(4):433–449.
+Diego Marcheggiani and Ivan Titov. 2017. Encoding sentences with graph convolutional networks for
+semantic role labeling. In Proceedings of the 2017 Conference on Empirical Methods in Natural
+Language Processing, pages 1506–1515, Copenhagen, Denmark. Association for Computational
+Linguistics.
+Mitchell P. Marcus, Beatrice Santorini, and Mary Ann Marcinkiewicz. 1993. Building a large annotated
+corpus of English: The Penn Treebank. Computational Linguistics, 19(2):313–330.
+André F. T. Martins and Ramón F. Astudillo. 2016. From softmax to sparsemax: A sparse model
+of attention and multi-label classiﬁcation. In Proceedings of the 33rd International Conference on
+International Conference on Machine Learning - Volume 48, ICML’16, page 1614–1623. JMLR.org.
+André F. T. Martins, Tsvetomila Mihaylova, Nikita Nangia, and Vlad Niculae. 2019. Latent structure
+models for natural language processing. In Proceedings of the 57th Annual Meeting of the Associ-
+ation for Computational Linguistics: Tutorial Abstracts, pages 1–5, Florence, Italy. Association for
+Computational Linguistics.
+David McAllester, Tamir Hazan, and Joseph Keshet. 2010. Direct loss minimization for structured
+prediction. In Advances in Neural Information Processing Systems, volume 23. Curran Associates, Inc.
+Ryan McDonald and Giorgio Satta. 2007. On the complexity of non-projective data-driven dependency
+parsing. In Proceedings of the Tenth International Conference on Parsing Technologies, pages 121–132,
+Prague, Czech Republic. Association for Computational Linguistics.
+Arthur Mensch and Mathieu Blondel. 2018. Differentiable dynamic programming for structured prediction
+and attention. In Proceedings of the 35th International Conference on Machine Learning, volume 80
+of Proceedings of Machine Learning Research, pages 3462–3471. PMLR.
+18
+Yishu Miao and Phil Blunsom. 2016. Language as a latent variable: Discrete generative models for
+sentence compression. In Proceedings of the 2016 Conference on Empirical Methods in Natural
+Language Processing, pages 319–328, Austin, Texas. Association for Computational Linguistics.
+Tsvetomila Mihaylova, Vlad Niculae, and André F. T. Martins. 2020. Understanding the mechanics of
+SPIGOT: Surrogate gradients for latent structure learning. In Proceedings of the 2020 Conference on
+Empirical Methods in Natural Language Processing (EMNLP), pages 2186–2202, Online. Association
+for Computational Linguistics.
+Nikita Nangia and Samuel Bowman. 2018. ListOps: A diagnostic dataset for latent tree learning. In Pro-
+ceedings of the 2018 Conference of the North American Chapter of the Association for Computational
+Linguistics: Student Research Workshop, pages 92–99, New Orleans, Louisiana, USA. Association for
+Computational Linguistics.
+Vlad Niculae and Mathieu Blondel. 2017. A regularized framework for sparse and structured neural
+attention. In Proceedings of the 31st International Conference on Neural Information Processing
+Systems, NIPS’17, page 3340–3350, Red Hook, NY, USA. Curran Associates Inc.
+Vlad Niculae and Andre Martins. 2020. LP-SparseMAP: Differentiable relaxed optimization for sparse
+structured prediction. In Proceedings of the 37th International Conference on Machine Learning,
+volume 119 of Proceedings of Machine Learning Research, pages 7348–7359. PMLR.
+Vlad Niculae, Andre Martins, Mathieu Blondel, and Claire Cardie. 2018a. SparseMAP: Differentiable
+sparse structured inference. In Proceedings of the 35th International Conference on Machine Learning,
+volume 80 of Proceedings of Machine Learning Research, pages 3799–3808. PMLR.
+Vlad Niculae, André F. T. Martins, and Claire Cardie. 2018b. Towards dynamic computation graphs
+via sparse latent structure. In Proceedings of the 2018 Conference on Empirical Methods in Natural
+Language Processing, pages 905–911, Brussels, Belgium. Association for Computational Linguistics.
+John Paisley, David M. Blei, and Michael I. Jordan. 2012. Variational bayesian inference with stochastic
+search. In Proceedings of the 29th International Coference on International Conference on Machine
+Learning, ICML’12, page 1363–1370, Madison, WI, USA. Omnipress.
+Ankur Parikh, Oscar Täckström, Dipanjan Das, and Jakob Uszkoreit. 2016. A decomposable attention
+model for natural language inference. In Proceedings of the 2016 Conference on Empirical Methods
+in Natural Language Processing, pages 2249–2255, Austin, Texas. Association for Computational
+Linguistics.
+Hao Peng, Sam Thomson, and Noah A. Smith. 2018. Backpropagating through structured argmax using a
+SPIGOT. In Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics
+(Volume 1: Long Papers), pages 1863–1873, Melbourne, Australia. Association for Computational
+Linguistics.
+Ben Peters, Vlad Niculae, and André F. T. Martins. 2019. Sparse sequence-to-sequence models. In
+Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages
+1504–1519, Florence, Italy. Association for Computational Linguistics.
+Matthew E. Peters, Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher Clark, Kenton Lee, and Luke
+Zettlemoyer. 2018. Deep contextualized word representations. In Proceedings of the 2018 Conference
+of the North American Chapter of the Association for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long Papers), pages 2227–2237, New Orleans, Louisiana. Association for
+Computational Linguistics.
+L.R. Rabiner. 1989. A tutorial on hidden markov models and selected applications in speech recognition.
+Proceedings of the IEEE, 77(2):257–286.
+19
+Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi
+Zhou, Wei Li, and Peter J. Liu. 2020. Exploring the limits of transfer learning with a uniﬁed text-to-text
+transformer. Journal of Machine Learning Research, 21(140):1–67.
+Mehdi Rezaee and Francis Ferraro. 2021. Event representation with sequential, semi-supervised discrete
+variables. In Proceedings of the 2021 Conference of the North American Chapter of the Association for
+Computational Linguistics: Human Language Technologies, pages 4701–4716, Online. Association
+for Computational Linguistics.
+Alexander Rush, Yoon Kim, and Sam Wiseman. 2018. Deep latent variable models of natural language. In
+Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing: Tutorial
+Abstracts, Melbourne, Australia. Association for Computational Linguistics.
+Rico Sennrich and Barry Haddow. 2016. Linguistic input features improve neural machine translation.
+In Proceedings of the First Conference on Machine Translation: Volume 1, Research Papers, pages
+83–91, Berlin, Germany. Association for Computational Linguistics.
+Yikang Shen, Zhouhan Lin, Chin wei Huang, and Aaron Courville. 2018. Neural language modeling by
+jointly learning syntax and lexicon. In International Conference on Learning Representations.
+Haoyue Shi, Hao Zhou, Jiaze Chen, and Lei Li. 2018. On tree-based neural sentence modeling. In
+Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, pages
+4631–4641, Brussels, Belgium. Association for Computational Linguistics.
+David A. Smith and Noah A. Smith. 2007. Probabilistic models of nonprojective dependency trees. In
+Proceedings of the 2007 Joint Conference on Empirical Methods in Natural Language Processing
+and Computational Natural Language Learning (EMNLP-CoNLL), pages 132–140, Prague, Czech
+Republic. Association for Computational Linguistics.
+Noah A. Smith. 2011. Linguistic Structure Prediction. Synthesis Lectures on Human Language Tech-
+nologies. Morgan and Claypool.
+Yang Song, Alexander Schwing, Zemel Richard, and Raquel Urtasun. 2016. Training deep neural
+networks via direct loss minimization. In Proceedings of The 33rd International Conference on
+Machine Learning, volume 48 of Proceedings of Machine Learning Research, pages 2169–2177, New
+York, New York, USA. PMLR.
+Kai Sheng Tai, Richard Socher, and Christopher D. Manning. 2015. Improved semantic representations
+from tree-structured long short-term memory networks. In Proceedings of the 53rd Annual Meeting of
+the Association for Computational Linguistics and the 7th International Joint Conference on Natural
+Language Processing (Volume 1: Long Papers), pages 1556–1566, Beijing, China. Association for
+Computational Linguistics.
+W.T. Tutte. 1984. Graph Theory. Encyclopedia of mathematics and its applications. Cambridge University
+Press.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Ł ukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is all you need. In Advances in Neural Information
+Processing Systems, volume 30. Curran Associates, Inc.
+Adina Williams, Andrew Drozdov, and Samuel R. Bowman. 2018. Do latent tree learning models identify
+meaningful structure in sentences? Transactions of the Association for Computational Linguistics,
+6:253–267.
+Ronald J. Williams. 1992. Simple statistical gradient-following algorithms for connectionist reinforcement
+learning. Mach. Learn., 8(3–4):229–256.
+20
+Sam Wiseman, Stuart Shieber, and Alexander Rush. 2018. Learning neural templates for text generation.
+In Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, pages
+3174–3187, Brussels, Belgium. Association for Computational Linguistics.
+Zhaofeng Wu, Hao Peng, and Noah A. Smith. 2021. Infusing Finetuning with Semantic Dependencies.
+Transactions of the Association for Computational Linguistics, 9:226–242.
+Zhaofeng Wu, Yan Song, Sicong Huang, Yuanhe Tian, and Fei Xia. 2019. WTMED at MEDIQA 2019:
+A hybrid approach to biomedical natural language inference. In Proceedings of the 18th BioNLP
+Workshop and Shared Task, pages 415–426, Florence, Italy. Association for Computational Linguistics.
+Zhiyang Xu, Andrew Drozdov, Jay Yoon Lee, Tim O’Gorman, Subendhu Rongali, Dylan Finkbeiner,
+Shilpa Suresh, Mohit Iyyer, and Andrew McCallum. 2021. Improved latent tree induction with distant
+supervision via span constraints. In Proceedings of the 2021 Conference on Empirical Methods
+in Natural Language Processing, pages 4818–4831, Online and Punta Cana, Dominican Republic.
+Association for Computational Linguistics.
+Pengcheng Yin, Chunting Zhou, Junxian He, and Graham Neubig. 2018. StructVAE: Tree-structured
+latent variable models for semi-supervised semantic parsing. In Proceedings of the 56th Annual
+Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 754–765,
+Melbourne, Australia. Association for Computational Linguistics.
+Penghang Yin, Jiancheng Lyu, Shuai Zhang, Stanley J. Osher, Yingyong Qi, and Jack Xin. 2019.
+Understanding straight-through estimator in training activation quantized neural nets. In International
+Conference on Learning Representations.
+Dani Yogatama, Phil Blunsom, Chris Dyer, Edward Grefenstette, and Wang Ling. 2017. Learning
+to compose words into sentences with reinforcement learning. In 5th International Conference
+on Learning Representations, ICLR 2017, Toulon, France, April 24-26, 2017, Conference Track
+Proceedings. OpenReview.net.
+Daniel H. Younger. 1967. Recognition and parsing of context-free languages in time n3. Information and
+Control, 10(2):189–208.
+Daniel Zeman, Joakim Nivre, Mitchell Abrams, Elia Ackermann, Noëmi Aepli, Hamid Aghaei, Željko
+Agi´c, Amir Ahmadi, Lars Ahrenberg, Chika Kennedy Ajede, Gabriel˙e Aleksandraviˇci¯ut˙e, Ika Al-
+ﬁna, Lene Antonsen, Katya Aplonova, Angelina Aquino, Carolina Aragon, Maria Jesus Aranzabe,
+Bilge Nas Arıcan, Hórunn Arnardóttir, Gashaw Arutie, Jessica Naraiswari Arwidarasti, Masayuki
+Asahara, Deniz Baran Aslan, Luma Ateyah, Furkan Atmaca, Mohammed Attia, Aitziber Atutxa,
+Liesbeth Augustinus, Elena Badmaeva, Keerthana Balasubramani, Miguel Ballesteros, Esha Banerjee,
+Sebastian Bank, Verginica Barbu Mititelu, Starkaður Barkarson, Victoria Basmov, Colin Batchelor,
+John Bauer, Seyyit Talha Bedir, Kepa Bengoetxea, Gözde Berk, Yevgeni Berzak, Irshad Ahmad Bhat,
+Riyaz Ahmad Bhat, Erica Biagetti, Eckhard Bick, Agn˙e Bielinskien˙e, Kristín Bjarnadóttir, Rogier
+Blokland, Victoria Bobicev, Loïc Boizou, Emanuel Borges Völker, Carl Börstell, Cristina Bosco,
+Gosse Bouma, Sam Bowman, Adriane Boyd, Anouck Braggaar, Kristina Brokait˙e, Aljoscha Bur-
+chardt, Marie Candito, Bernard Caron, Gauthier Caron, Lauren Cassidy, Tatiana Cavalcanti, Gül¸sen
+Cebiro˘glu Eryi˘git, Flavio Massimiliano Cecchini, Giuseppe G. A. Celano, Slavomír ˇCéplö, Neslihan
+Cesur, Savas Cetin, Özlem Çetino˘glu, Fabricio Chalub, Shweta Chauhan, Ethan Chi, Taishi Chika,
+Yongseok Cho, Jinho Choi, Jayeol Chun, Alessandra T. Cignarella, Silvie Cinková, Aurélie Collomb,
+Ça˘grı Çöltekin, Miriam Connor, Marine Courtin, Mihaela Cristescu, Philemon. Daniel, Elizabeth
+Davidson, Marie-Catherine de Marneffe, Valeria de Paiva, Mehmet Oguz Derin, Elvis de Souza,
+Arantza Diaz de Ilarraza, Carly Dickerson, Arawinda Dinakaramani, Elisa Di Nuovo, Bamba Dione,
+Peter Dirix, Kaja Dobrovoljc, Timothy Dozat, Kira Droganova, Puneet Dwivedi, Hanne Eckhoff,
+Sandra Eiche, Marhaba Eli, Ali Elkahky, Binyam Ephrem, Olga Erina, Tomaž Erjavec, Aline Etienne,
+21
+Wograine Evelyn, Sidney Facundes, Richárd Farkas, Marília Fernanda, Hector Fernandez Alcalde,
+Jennifer Foster, Cláudia Freitas, Kazunori Fujita, Katarína Gajdošová, Daniel Galbraith, Marcos
+Garcia, Moa Gärdenfors, Sebastian Garza, Fabrício Ferraz Gerardi, Kim Gerdes, Filip Ginter, Gustavo
+Godoy, Iakes Goenaga, Koldo Gojenola, Memduh Gökırmak, Yoav Goldberg, Xavier Gómez Guino-
+vart, Berta González Saavedra, Bernadeta Grici¯ut˙e, Matias Grioni, Loïc Grobol, Normunds Gr¯uz¯ıtis,
+Bruno Guillaume, Céline Guillot-Barbance, Tunga Güngör, Nizar Habash, Hinrik Hafsteinsson, Jan
+Hajiˇc, Jan Hajiˇc jr., Mika Hämäläinen, Linh Hà M˜y, Na-Rae Han, Muhammad Yudistira Hanifmuti,
+Sam Hardwick, Kim Harris, Dag Haug, Johannes Heinecke, Oliver Hellwig, Felix Hennig, Barbora
+Hladká, Jaroslava Hlaváˇcová, Florinel Hociung, Petter Hohle, Eva Huber, Jena Hwang, Takumi Ikeda,
+Anton Karl Ingason, Radu Ion, Elena Irimia, O. lájídé Ishola, Kaoru Ito, Tomáš Jelínek, Apoorva Jha,
+Anders Johannsen, Hildur Jónsdóttir, Fredrik Jørgensen, Markus Juutinen, Sarveswaran K, Hüner
+Ka¸sıkara, Andre Kaasen, Nadezhda Kabaeva, Sylvain Kahane, Hiroshi Kanayama, Jenna Kanerva,
+Neslihan Kara, Boris Katz, Tolga Kayadelen, Jessica Kenney, Václava Kettnerová, Jesse Kirchner,
+Elena Klementieva, Arne Köhn, Abdullatif Köksal, Kamil Kopacewicz, Timo Korkiakangas, Natalia
+Kotsyba, Jolanta Kovalevskait˙e, Simon Krek, Parameswari Krishnamurthy, O˘guzhan Kuyrukçu, Aslı
+Kuzgun, Sookyoung Kwak, Veronika Laippala, Lucia Lam, Lorenzo Lambertino, Tatiana Lando,
+Septina Dian Larasati, Alexei Lavrentiev, John Lee, Phuong Lê H`ông, Alessandro Lenci, Saran
+Lertpradit, Herman Leung, Maria Levina, Cheuk Ying Li, Josie Li, Keying Li, Yuan Li, KyungTae
+Lim, Bruna Lima Padovani, Krister Lindén, Nikola Ljubeši´c, Olga Loginova, Andry Luthﬁ, Mikko
+Luukko, Olga Lyashevskaya, Teresa Lynn, Vivien Macketanz, Aibek Makazhanov, Michael Mandl,
+Christopher Manning, Ruli Manurung, Bü¸sra Mar¸san, C˘at˘alina M˘ar˘anduc, David Mareˇcek, Katrin
+Marheinecke, Héctor Martínez Alonso, André Martins, Jan Mašek, Hiroshi Matsuda, Yuji Matsumoto,
+Alessandro Mazzei, Ryan McDonald, Sarah McGuinness, Gustavo Mendonça, Niko Miekka, Karina
+Mischenkova, Margarita Misirpashayeva, Anna Missilä, C˘at˘alin Mititelu, Maria Mitrofan, Yusuke
+Miyao, AmirHossein Mojiri Foroushani, Judit Molnár, Amirsaeid Moloodi, Simonetta Montemagni,
+Amir More, Laura Moreno Romero, Giovanni Moretti, Keiko Sophie Mori, Shinsuke Mori, Tomohiko
+Morioka, Shigeki Moro, Bjartur Mortensen, Bohdan Moskalevskyi, Kadri Muischnek, Robert Munro,
+Yugo Murawaki, Kaili Müürisep, Pinkey Nainwani, Mariam Nakhlé, Juan Ignacio Navarro Horñiacek,
+Anna Nedoluzhko, Gunta Nešpore-B¯erzkalne, Manuela Nevaci, Luong Nguy˜ên Thi., Huy`ên Nguy˜ên
+Thi. Minh, Yoshihiro Nikaido, Vitaly Nikolaev, Rattima Nitisaroj, Alireza Nourian, Hanna Nurmi, Stina
+Ojala, Atul Kr. Ojha, Adédayo. Olúòkun, Mai Omura, Emeka Onwuegbuzia, Petya Osenova, Robert
+Östling, Lilja Øvrelid, ¸Saziye Betül Özate¸s, Merve Özçelik, Arzucan Özgür, Balkız Öztürk Ba¸saran,
+Hyunji Hayley Park, Niko Partanen, Elena Pascual, Marco Passarotti, Agnieszka Patejuk, Guilherme
+Paulino-Passos, Angelika Peljak-Łapi´nska, Siyao Peng, Cenel-Augusto Perez, Natalia Perkova, Guy
+Perrier, Slav Petrov, Daria Petrova, Jason Phelan, Jussi Piitulainen, Tommi A Pirinen, Emily Pitler,
+Barbara Plank, Thierry Poibeau, Larisa Ponomareva, Martin Popel, Lauma Pretkalnin, a, Sophie Prévost,
+Prokopis Prokopidis, Adam Przepiórkowski, Tiina Puolakainen, Sampo Pyysalo, Peng Qi, Andriela
+Rääbis, Alexandre Rademaker, Taraka Rama, Loganathan Ramasamy, Carlos Ramisch, Fam Rashel,
+Mohammad Sadegh Rasooli, Vinit Ravishankar, Livy Real, Petru Rebeja, Siva Reddy, Georg Rehm,
+Ivan Riabov, Michael Rießler, Erika Rimkut˙e, Larissa Rinaldi, Laura Rituma, Luisa Rocha, Eiríkur
+Rögnvaldsson, Mykhailo Romanenko, Rudolf Rosa, Valentin Ros,ca, Davide Rovati, Olga Rudina,
+Jack Rueter, Kristján Rúnarsson, Shoval Sadde, Pegah Safari, Benoît Sagot, Aleksi Sahala, Shadi
+Saleh, Alessio Salomoni, Tanja Samardži´c, Stephanie Samson, Manuela Sanguinetti, Ezgi Sanıyar,
+Dage Särg, Baiba Saul¯ıte, Yanin Sawanakunanon, Shefali Saxena, Kevin Scannell, Salvatore Scarlata,
+Nathan Schneider, Sebastian Schuster, Lane Schwartz, Djamé Seddah, Wolfgang Seeker, Mojgan
+Seraji, Mo Shen, Atsuko Shimada, Hiroyuki Shirasu, Yana Shishkina, Muh Shohibussirri, Dmitry
+Sichinava, Janine Siewert, Einar Freyr Sigurðsson, Aline Silveira, Natalia Silveira, Maria Simi, Radu
+Simionescu, Katalin Simkó, Mária Šimková, Kiril Simov, Maria Skachedubova, Aaron Smith, Isabela
+Soares-Bastos, Carolyn Spadine, Rachele Sprugnoli, Steinhór Steingrímsson, Antonio Stella, Milan
+Straka, Emmett Strickland, Jana Strnadová, Alane Suhr, Yogi Lesmana Sulestio, Umut Sulubacak,
+Shingo Suzuki, Zsolt Szántó, Dima Taji, Yuta Takahashi, Fabio Tamburini, Mary Ann C. Tan, Takaaki
+22
+Tanaka, Samson Tella, Isabelle Tellier, Marinella Testori, Guillaume Thomas, Liisi Torga, Marsida
+Toska, Trond Trosterud, Anna Trukhina, Reut Tsarfaty, Utku Türk, Francis Tyers, Sumire Uematsu,
+Roman Untilov, Zdeˇnka Urešová, Larraitz Uria, Hans Uszkoreit, Andrius Utka, Sowmya Vajjala,
+Rob van der Goot, Martine Vanhove, Daniel van Niekerk, Gertjan van Noord, Viktor Varga, Eric
+Villemonte de la Clergerie, Veronika Vincze, Natalia Vlasova, Aya Wakasa, Joel C. Wallenberg, Lars
+Wallin, Abigail Walsh, Jing Xian Wang, Jonathan North Washington, Maximilan Wendt, Paul Wid-
+mer, Seyi Williams, Mats Wirén, Christian Wittern, Tsegay Woldemariam, Tak-sum Wong, Alina
+Wróblewska, Mary Yako, Kayo Yamashita, Naoki Yamazaki, Chunxiao Yan, Koichi Yasuoka, Marat M.
+Yavrumyan, Arife Betül Yenice, Olcay Taner Yıldız, Zhuoran Yu, Zdenˇek Žabokrtský, Shorouq Zahra,
+Amir Zeldes, Hanzhi Zhu, Anna Zhuravleva, and Rayan Ziane. 2021. Universal dependencies 2.8.1.
+LINDAT/CLARIAH-CZ digital library at the Institute of Formal and Applied Linguistics (ÚFAL),
+Faculty of Mathematics and Physics, Charles University.
+Chunting Zhou and Graham Neubig. 2017. Multi-space variational encoder-decoders for semi-supervised
+labeled sequence transduction. In Proceedings of the 55th Annual Meeting of the Association for
+Computational Linguistics (Volume 1: Long Papers), pages 310–320, Vancouver, Canada. Association
+for Computational Linguistics.
+Qiji Zhou, Yue Zhang, Donghong Ji, and Hao Tang. 2020. AMR parsing with latent structural information.
+In Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages
+4306–4319, Online. Association for Computational Linguistics.
+23

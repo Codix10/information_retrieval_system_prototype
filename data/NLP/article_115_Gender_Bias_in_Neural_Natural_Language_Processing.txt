@@ -1,0 +1,967 @@
+Title: Gender Bias in Neural Natural Language Processing
+Source URL: http://arxiv.org/abs/1807.11714v2
+--------------------------------------------------
+
+Gender Bias in Neural Natural Language Processing
+Kaiji Lu
+Carnegie Mellon University
+Mofﬁet Field, CA 94035
+kaijil@andrew.cmu.edu
+Piotr Mardziel
+Carnegie Mellon University
+Mofﬁet Field, CA 94035
+piotrm@cmu.edu
+Fangjing Wu
+Carnegie Mellon University
+Mofﬁet Field, CA 94035
+fangjinw@andrew.cmu.edu
+Preetam Amancharla
+Carnegie Mellon University
+Mofﬁet Field, CA 94035
+pamancha@andrew.cmu.edu
+Anupam Datta
+Carnegie Mellon University
+Mofﬁet Field, CA 94035
+danupam@cmu.edu
+Abstract
+We examine whether neural natural language processing (NLP) systems reﬂect
+historical biases in training data. We deﬁne a general benchmark to quantify gender
+bias in a variety of neural NLP tasks. Our empirical evaluation with state-of-
+the-art neural coreference resolution and textbook RNN-based language models
+trained on benchmark data sets ﬁnds signiﬁcant gender bias in how models view
+occupations. We then mitigate bias with counterfactual data augmentation (CDA):
+a generic methodology for corpus augmentation via causal interventions that breaks
+associations between gendered and gender-neutral words. We empirically show that
+CDA effectively decreases gender bias while preserving accuracy. We also explore
+the space of mitigation strategies with CDA, a prior approach to word embedding
+debiasing (WED), and their compositions. We show that CDA outperforms WED,
+drastically so when word embeddings are trained. For pre-trained embeddings, the
+two methods can be effectively composed. We also ﬁnd that as training proceeds on
+the original data set with gradient descent the gender bias grows as the loss reduces,
+indicating that the optimization encourages bias; CDA mitigates this behavior.
+1
+Introduction
+Natural language processing (NLP) with neural networks has grown in importance over the last few
+years. They provide state-of-the-art models for tasks like coreference resolution, language modeling,
+and machine translation [Clark and Manning, 2016a,b, Lee et al., 2017, Jozefowicz et al., 2016,
+Johnson et al., 2017]. However, since these models are trained on human language texts, a natural
+question is whether they exhibit bias based on gender or other characteristics, and, if so, how should
+this bias be mitigated. This is the question that we address in this paper.
+Prior work provides evidence of bias in autocomplete suggestions [Lapowsky, 2018] and differences
+in accuracy of speech recognition based on gender and dialect [Tatman, 2017] on popular online
+platforms. Word embeddings, initial pre-processors in many NLP tasks, embed words of a natural
+language into a vector space of limited dimension to use as their semantic representation. Bolukbasi
+et al. [2016] and Caliskan et al. [2017] observed that popular word embeddings including word2vec
+Preprint. Work in progress.
+arXiv:1807.11714v2  [cs.CL]  30 May 2019
+12: The doctor ran because he is late.
+1#: The doctor ran because she is late.
+22: The nurse ran because he is late.
+2#: The nurse ran because she is late.
+5.08
+1.99
+−0.44
+5.34
+(a) Coreference resolution
+ln Pr[B | A]
+12: He is a | doctor.
+-9.72
+1#: She is a | doctor.
+-9.77
+22: He is a | nurse.
+-8.99
+2#: She is a | nurse.
+-8.97
+A
+B
+(b) Language modeling
+Figure 1: Examples of gender bias in coreference resolution and language modeling as measured by
+coreference scores (left) and conditional log-likelihood (right).
+[Mikolov et al., 2013] exhibit gender bias mirroring stereotypical gender associations such as the
+eponymous [Bolukbasi et al., 2016] "Man is to computer programmer as Woman is to homemaker".
+Yet the question of how to measure bias in a general way for neural NLP tasks has not been
+studied. Our ﬁrst contribution is a general benchmark to quantify gender bias in a variety of neural
+NLP tasks. Our deﬁnition of bias loosely follows the idea of causal testing: matched pairs of
+individuals (instances) that differ in only a targeted concept (like gender) are evaluated by a model
+and the difference in outcomes (or scores) is interpreted as the causal inﬂuence of the concept in the
+scrutinized model. The deﬁnition is parametric in the scoring function and the target concept. Natural
+scoring functions exist for a number of neural natural language processing tasks.
+We instantiate the deﬁnition for two important tasks—coreference resolution and language modeling.
+Coreference resolution is the task of ﬁnding words and expressions referring to the same entity in a
+natural language text. The goal of language modeling is to model the distribution of word sequences.
+For neural coreference resolution models, we measure the gender coreference score disparity between
+gender-neutral words and gendered words like the disparity between “doctor” and “he” relative to
+“doctor” and “she” pictured as edge weights in Figure 1a. For language models, we measure the
+disparities of emission log-likelihood of gender-neutral words conditioned on gendered sentence
+preﬁxes as is shown in Figure 1b . Our empirical evaluation with state-of-the-art neural coreference
+resolution and textbook RNN-based language models Lee et al. [2017], Clark and Manning [2016b],
+Zaremba et al. [2014] trained on benchmark datasets ﬁnds gender bias in these models 1.
+Next we turn our attention to mitigating the bias. Bolukbasi et al. [2016] introduced a technique for
+debiasing word embeddings which has been shown to mitigate unwanted associations in analogy tasks
+while preserving the embedding’s semantic properties. Given their widespread use, a natural question
+is whether this technique is sufﬁcient to eliminate bias from downstream tasks like coreference
+resolution and language modeling. As our second contribution, we explore this question empirically.
+We ﬁnd that while the technique does reduce bias, the residual bias is considerable. We further
+discover that debiasing models that make use of embeddings that are co-trained with their other
+parameters [Clark and Manning, 2016b, Zaremba et al., 2014] exhibit a signiﬁcant drop in accuracy.
+Our third contribution is counterfactual data augmentation (CDA): a generic methodology to mitigate
+bias in neural NLP tasks. For each training instance, the method adds a copy with an intervention
+on its targeted words, replacing each with its partner, while maintaining the same, non-intervened,
+ground truth. The method results in a dataset of matched pairs with ground truth independent of the
+target distinction (see Figure 1a and Figure 1b for examples). This encourages learning algorithms to
+not pick up on the distinction.
+Our empirical evaluation shows that CDA effectively decreases gender bias while preserving accuracy.
+We also explore the space of mitigation strategies with CDA, a prior approach to word embedding
+debiasing (WED), and their compositions. We show that CDA outperforms WED, drastically so when
+word embeddings are co-trained. For pre-trained embeddings, the two methods can be effectively
+1 Note that these results have practical signiﬁcance. Both coreference resolution and language modeling are
+core natural language processing tasks in that they form the basis of many practical systems for information
+extraction[Zheng et al., 2011], text generation[Graves, 2013], speech recognition[Graves et al., 2013] and
+machine translation[Bahdanau et al., 2014].
+2
+Task / Dataset
+Model
+Loss via
+Trainable
+embedding
+Pre-trained
+embedding
+coreference resolution /
+CoNLL-2012 [Pradhan et al., 2012]
+Lee et al. [2017]
+coref. score
+✓
+Clark and Manning [2016b]
+coref. clusters
+✓
+✓
+language modeling /
+Wikitext-2 [Merity et al., 2016]
+Zaremba et al. [2014]
+likelihood
+✓
+Table 1: Models, their properties, and datasets evaluated.
+composed. We also ﬁnd that as training proceeds on the original data set with gradient descent
+the gender bias grows as the loss reduces, indicating that the optimization encourages bias; CDA
+mitigates this behavior.
+In the body of this paper we present necessary background (Section 2), our methods (Sections 3 and
+4), their evaluation (Section 5), and speculate on future research (Section 6).
+2
+Background
+In this section we brieﬂy summarize requisite elements of neural coreference resolution and language
+modeling systems: scoring layers and loss evaluation, performance measures, and the use of word
+embeddings and their debiasing. The tasks and models we experiment with later in this paper and
+their properties are summarized in Table 1.
+Coreference Resolution
+The goal of a coreference resolution [Clark and Manning, 2016a] is to
+group mentions, base text elements composed of one or more consecutive words in an input instance
+(usually a document), according to their semantic identity. The words in the ﬁrst sentence of Figure 1a,
+for example, include “the doctor”and “he”. A coreference resolution system would be expected to
+output a grouping that places both of these mentions in the same cluster as they correspond to the
+same semantic identity.
+Neural coreference resolution systems typically employ a mention-ranking model [Clark and Manning,
+2016a] in which a feed-forward neural network produces a coreference score assigning to every
+pair of mentions an indicator of their coreference likelihood. These scores are then processed by a
+subsequent stage that produces clusters.
+The ground truth in a corpus is a set of mention clusters for each constituent document. Learning
+is done at the level of mention scores in the case of Lee et al. [2017] and at the level of clusters in
+the case of [Clark and Manning, 2016b] . The performance of a coreference system is evaluated in
+terms of the clusters it produces as compared to the ground truth clusters. As a collection of sets is a
+partition of the mentions in a document, partition scoring functions are employed, typically MUC,
+B3 and CEAFφ4 [Pradhan et al., 2012], which quantify both precision and recall. Then, standard
+evaluation practice is to report the average F1 score over the clustering accuracy metrics.
+Language Modeling
+A language model’s task is to generalize the distribution of sentences in a
+given corpus. Given a sentence preﬁx, the model computes the likelihood for every word indicating
+how (un)likely it is to follow the preﬁx in its text distribution. This score can then be used for a
+variety of purposes such as auto completion. A language model is trained to minimize cross-entropy
+loss, which encourages the model to predict the right words in unseen text.
+Word Embedding
+Word embedding is a representation learning task for ﬁnding latent features for
+a vocabulary based on their contexts in a training corpus. An embedding model transforms syntactic
+elements (words) into real vectors capturing syntactic and semantic relationships among words.
+Bolukbasi et al. [2016] show that embeddings demonstrate bias. Objectionable analogies such as
+“man is to woman as programmer is to homemaker” indicate that word embeddings pick up on
+historical biases encoded in their training corpus. Their solution modiﬁes the embedding’s parameters
+so that gender-neutral words no longer carry a gender component. We omit here the details of how the
+3
+gender component is identiﬁed and removed. What is important, however, is that only gender-neutral
+words are affected by the debiasing procedure.
+All of our experimental systems employ an initial embedding layer which is either initialized and
+ﬁxed to some pretrained embedding, initialized then trained alongside the rest of the main NLP task,
+or trained without initializing. In the latter two cases, the embedding can be debiased at different
+stages of the training process. We investigate this choice in Section 5.
+Closely Related Work
+Two independent and concurrent work [Zhao et al., 2018, Rudinger et al.,
+2018] explore gender bias in coreference resolution systems. There are differences in our goals
+and methods. They focus on bias in coreference resolution systems and explore a variety of such
+systems, including rule-based, feature-rich, and neural systems. In contrast, we study bias in a set of
+neural natural language processing tasks, including but not exclusively coreference resolution. This
+difference in goals leads to differences in the notions of bias. We deﬁne bias in terms of internal scores
+common to a neural networks, while both Zhao et al. [2018] and Rudinger et al. [2018] evaluate bias
+using Winogram-schema style sentences speciﬁcally designed to stress test coreference resolutions.
+The independently discovered mitigation technique of Zhao et al. [2018] is closely related to ours.
+Further, we inspect the effect of debiasing different conﬁgurations of word embeddings with and
+without counterfactual data augmentation. We also empirically study how gender bias grows as
+training proceeds with gradient descent with and without the bias mitigation techniques.
+3
+Measuring Bias
+Our deﬁnition of bias loosely follows the idea of causal testing: matched pairs of individuals
+(instances) that differ in only a targeted concept (like gender) are evaluated by a model and the
+difference in outcomes is interpreted as the causal inﬂuence of the concept in the scrutinized model.
+As an example, we can choose a test corpus of simple sentences relating the word “professor” to
+the male pronoun “he” as in sentence 12 of Figure 1a along with the matched pair 1# that swaps in
+“she” in place of “he”. With each element of the matched pair, we also indicate which mentions in
+each sentence, or context, should attain the same score. In this case, the complete matched pair is
+(12, (professor, he)) and (1#, (professor, she)). We measure the difference in scores assigned to the
+coreference of the pronoun with the occupation across the matched pair of sentences.
+We begin with the general deﬁnition and instantiate it for measuring gender bias in relation to
+occupations for both coreference resolution and language modeling.
+Deﬁnition 1 (Score Bias). Given a set of matched pairs D (or class of sets D) and a scoring function
+s, the bias of s under the concept(s) tested by D (or D), written Bs (D) (or Bs (D)) is the expected
+difference in scores assigned to the matched pairs (or expected absolute bias across class members):
+Bs (D)
+def
+=
+E
+(a,b)∈D (s(a) −s(b))
+Bs (D)
+def
+=
+E
+D∈D |Bs (D)|
+3.1
+Occupation-Gender Bias
+The principle concept we address in this paper is gender, and the biases we will focus on in the
+evaluation relate gender to gender-neutral occupations. To deﬁne the matched pairs to test this type
+of bias we employ interventions2: transformations of instances to their matches. Interventions are a
+more convenient way to reason about the concepts being tested under a set of matched pairs.
+Deﬁnition 2 (Intervention Matches). Given an instance i, corpus D, or class D, and an intervention c,
+the intervention matching under c is the matched pair i/c or the set of matched pairs D/c, respectively,
+and is deﬁned as follows.
+i/c
+def
+= (i, c(i))
+D/c
+def
+= {i/c : i ∈D}
+The core intervention used throughout this paper is the naive intervention gnaive that swaps every
+gendered word in its inputs with the corresponding word of the opposite gender. The complete list of
+swapped words can be found in Supplemental Materials. In Section 4 we deﬁne more nuanced forms
+of intervention for the purpose of debiasing systems.
+2Interventions as discussed in this work are automatic with no human involvement.
+4
+We construct a set of sentences based on a collection of templates. In the case of coreference resolution,
+each sentence, or context, includes a placeholder for an occupation word and the male gendered
+pronoun “he” while the mentions to score are the occupation and the pronoun. An example of such a
+template is the sentence “The [OCCUPATION] ran because he is late.” where the underline words
+indicate the mentions for scoring. The complete list can be found in the Supplemental Materials.
+Deﬁnition 3 (Occupation Bias). Given the list of templates T, we construct the matched pair set for
+computing gender-occupation bias of score function s for an occupation o by instantiating all of the
+templates with o and producing a matched pair via the naive intervention gnaive:
+Do(T)
+def
+= {t [[OCCUPATION] 7→o] : t ∈T} /gnaive
+To measure the aggregate occupation bias over all occupations O we compute bias on the class D(T)
+where D(T)
+def
+= {Do(T) : o ∈O}.
+The bias measures are then simply:
+Occupation Bias
+def
+= Bs (Do(T))
+Aggregate Occupation Bias (AOG)
+def
+= Bs (D(T))
+For language modeling the template set differs. There we assume the scoring function is the one
+that assigns a likelihood of a given word being the next word in some initial sentence fragment.
+We place the pronoun in the initial fragment thereby making sure the score is conditioned on the
+presence of the male or female pronoun. We are thus able to control for the frequency disparities
+between the pronouns in a corpus, focusing on disparities with occupations and not disparities in
+general occurrence. An example3 of a test template for language modeling is the fragment “He is a |
+[OCCUPATION]” where the pipe delineates the sentence preﬁx from the test word. The rest can be
+seen in the Supplemental Materials.
+4
+Counterfactual Data Augmentation (CDA)
+In the previous section we have shown how to quantify gender bias in coreference resolution systems
+and language models using a naive intervention, or gnaive. The disparities at the core of the bias
+deﬁnitions can be thought of as unwanted effects: the gender of the pronouns like he or she has
+inﬂuence on its coreference strength with an occupation word or the probability of emitting an
+occupation word though ideally it should not. Following the tradition of causal testing, we make use
+of matched pairs constructed via interventions to augment existing training datasets. By deﬁning the
+interventions so as to express a particular concept such as gender, we produce datasets that encourage
+training algorithms to not capture that concept.
+Deﬁnition 4 (Counterfactual Data Augmentation). Given an intervention c, the dataset D of input
+instances (X, Y ) can be c-augmented, or D/c, to produce the dataset D ∪{(c(x), y)}(x,y)∈D.
+Note that the intervention above does not affect the ground truth. This highlights the core feature of the
+method: an unbiased model should not distinguish between matched pairs, that is, it should produce
+the same outcome. The intervention is another critical feature as it needs to represent a concept
+crisply, that is, it needs to produce matched pairs that differ only (or close to it) in the expression of
+that concept. The simplest augmentation we experiment on is the naive intervention gnaive, which
+captures the distinction between genders on gendered words. The more nuanced intervention we
+discuss further in this paper relaxes this distinction in the presence of some grammatical structures.
+Given the use of gnaive in the deﬁnition of bias in Section 3, it would be expected that debiasing via
+naive augmentation completely neutralizes gender bias. However, bias is not the only concern in a
+coreference resolution or language modeling systems; its performance is usually the primary goal.
+As we evaluate performance on the original corpora, the alterations necessarily reduce performance.
+To ensure the predictive power of models trained from augmented data, the generated sentences
+need to remain semantically and grammatically sound. We assume that if counterfactual sentences
+are generated properly, the ground truth coreference clustering labels should stay the same for the
+coreference resolution systems. Since language modeling is an unsupervised task, we do not need to
+assign labels for the counterfactual sentences.
+3As part of template occupation substitution we also adjust the article “a”.
+5
+Index
+Debiasing Conﬁguration
+Test Acc. (F1)
+∆Test Acc.
+AOB
+∆AOB%
+1.1
+None
+67.204
+-
+3.00
+-
+1.2
+CDA (ggrammar)
+67.40
++0.20
+1.03
+-66%
+1.3
+WED
+67.10
+-0.10
+2.03
+-32%
+1.4
+CDA (ggrammar) w/ WED
+67.10
+-0.10
+0.51
+-83%
+Table 2: Comparison of 4 debiasing conﬁgurations for NCR model of Lee et al. [2017].
+To deﬁne our gender intervention, we employ a bidirectional dictionary of gendered word pairs such
+as he:she, her:him/his and other deﬁnitionally gendered words such as actor:actress, queen:king.
+The complete list of gendered pairs can be found in the Supplemental Materials. We replace every
+occurrence (save for the exceptions noted below) of a gendered word in the original corpus with its
+dual as is the case with gnaive.
+Flipping a gendered word when it refers to a proper noun such as Queen Elizabeth would result in
+semantically incorrect sentences. As a result, we do not ﬂip gendered words if they are in a cluster
+with a proper noun. For coreference resolution, the clustering information is provided by labels in
+the coreference resolution dataset. Part-of-speech information, which indicates whether a word is a
+pronoun, is obtained through metadata within the training data.
+A ﬁnal caveat for generating counterfactuals is the appropriate handing of her, he and him. Both he
+and him would be ﬂipped to her, while her should be ﬂipped to him if it is an objective pronoun and
+to his if it is a possessive pronoun. This information is also obtained from part-of-speech tags.
+The adjustments to the naive intervention for maintaining semantic or grammatical structures, produce
+the grammatical intervention, or ggrammar.
+5
+Evaluation
+In this section we evaluate CDA debiasing across three models from two NLP tasks in compari-
+son/combination with the word embedding debiasing of Bolukbasi et al. [2016]. For each conﬁgura-
+tion of methods we report aggregated occupation bias (marked AOB) (Deﬁnition 3) and the resulting
+performance measured on original test sets (without augmentation). Most of the experimentation
+that follow employs grammatical augmentation though we investigate the naive intervention in
+Section 5.2.
+5.1
+Neural Coreference Resolution
+We use the English coreference resolution dataset from the CoNLL-2012 shared task [Pradhan et al.,
+2012], the benchmark dataset for the training and evaluation of coreference resolution. The training
+dataset contains 2408 documents with 1.3 million words. We use two state-of-art neural coreference
+resolution models described by Lee et al. [2017] and Clark and Manning [2016b]. We report the
+average F1 value of standard MUC, B3 and CEAFφ4 metrics for the original test set.
+NCR Model I
+The model of Lee et al. [2017] uses pretrained word embeddings, thus all features
+and mention representations are learned from these pretrained embeddings. As a result we can only
+apply debiasing of Bolukbasi et al. [2016] to the pretrained embedding. We evaluate bias on four
+conﬁgurations: no debiasing, debiased embeddings (written WED), CDA only, and CDA with WED.
+The conﬁgurations and resulting aggregate bias measures are shown in Table 2.
+In the aggregate measure, we see that the original model is biased (recall the scale of coreference
+scores shown in Figure 1). Further, each of the debiasing methods reduces bias to some extent, with
+the largest reduction when both methods are applied. Impact on performance is negligible in all cases.
+Figure 2 shows the per-occupation bias in Models 1.1 and 1.2. It aligns with the historical gender
+stereotypes: female-dominant occupations such as nurse, therapist and ﬂight attendant have strong
+negative bias while male-dominant occupations such as banker, engineer and scientist have strong
+positive bias. This behaviour is reduced with the application of CDA.
+6
+nurse
+nutritionist
+optician
+therapist
+flight attendant
+dietician
+veterinarian
+air traffic controller
+cashier
+singer
+teacher
+dentist
+bookkeeper
+editor
+professor
+artist
+butcher
+doctor
+pilot
+developer
+physician
+translator
+undertaker
+accountant
+lawyer
+filmmaker
+mechanic
+coach
+painter
+scientist
+engineer
+banker
+Occupations
+5
+0
+5
+Occupation Bias
+Original
+CDA(Grammar)
+Figure 2: Model 1.1 & 1.2: Bias for Occupations in Original & CDA Model
+Index Debiasing Conﬁguration
+Test Acc. (F1) ∆Test Acc. AOB ±AOB ∆AOB%
+2.1
+None
+69.10
+-
+2.95
+2.74
+-
+2.2
+←−−−
+WED
+68.82
+-0.28
+2.50
+2.24
+-15%
+2.3
+−−−→
+WED
+66.04
+-3.06
+0.9
+0.14
+-69%
+2.4
+←−−−
+WED and −−−→
+WED
+66.54
+-2.56
+1.38
+-0.54
+-53%
+2.5
+CDA (ggrammar)
+69.02
+-0.08
+0.93
+0.07
+-68%
+2.6
+CDA (ggrammar) w/ ←−−−
+WED
+68.5
+-0.60
+0.72
+0.39
+-75%
+2.7
+CDA (ggrammar) w/ −−−→
+WED
+66.12
+-2.98
+2.03
+-2.03
+-31%
+2.8
+CDA (ggrammar) w/ ←−−−
+WED, −−−→
+WED 65.88
+-3.22
+2.89
+-2.89
+-2%
+Table 3: Comparison of 8 debiasing conﬁgurations for NCR model of Clark and Manning [2016b].
+The ±AOB column is aggregate occupation bias with preserved signs in aggregation.
+NCR Model II
+The model of Clark and Manning [2016b] has a trainable embedding layer, which is
+initialized with the word2vec embedding and updated during training. As a result, there are three ways
+to apply WED: we can either debias the pretrained embedding before the model is trained (written
+←−−−
+WED), debias it after model training (written −−−→
+WED), or both. We also test these conﬁgurations in
+conjunction with CDA. In total, we evaluate 8 conﬁgurations as in shown in Table 3.
+The aggregate measurements show bias in the original model, and the general beneﬁt of augmentation
+over word embedding debiasing: it has better or comparable debiasing strength while having lower
+impact on accuracy. In models 2.7 and 2.8, however, we see that combining methods can have
+detrimental effects: the aggregate occupation bias has ﬂipped from preferring males to preferring
+females as seen in the ±AOB column which preserves the sign of per-occupation bias in aggregation.
+5.2
+RNN Language Modeling
+We use the Wikitext-2 dataset [Merity et al., 2016] for language modeling and employ a simple
+2-layer RNN architecture with 1500 LSTM cells and a trainable embedding layer of size 1500. As a
+result, word embedding can only be debiased after training. The language model is evaluated using
+perplexity, a standard measure for averaging cross-entropy loss on unseen text. We also test the
+performance impact of the naive augmentation in relation to the grammatical augmentation in this
+task. The aggregate results for the four conﬁgurations are show in Table 4.
+We see that word embedding debiasing in this model has very detrimental effect on performance. The
+post-embedding layers here are too well-ﬁtted to the ﬁnal conﬁguration of the embedding layer. We
+also see that the naive augmentation almost completely eliminates bias and surprisingly happened to
+4Matches state-of-the-art result of Lee et al. [2017].
+7
+Index
+Debiasing Conﬁguration
+Test Perp.
+∆Test Perp.
+AOB
+∆AOB%
+3.1
+None
+83.39
+-
+0.054
+-
+3.2
+−−−→
+WED
+1128.15
++1044.76
+0.015
+-72%
+3.3
+CDA (ggrammar)
+84.03
++0.64
+0.029
+-46%
+3.4
+CDA (gnaive)
+83.63
++0.24
+0.008
+-85%
+Table 4: Comparison of three debiasing conﬁgurations for an RNN language model.
+incur a lower perplexity hit. We speculate that this is a small random effect due to the relatively small
+dataset (36,718 sentences of which about 7579 have at least one gendered word) used for this task.
+5.3
+Learning Bias
+0
+50000
+100000
+150000
+200000
+250000
+300000
+Iterations
+1.0
+1.5
+2.0
+2.5
+3.0
+Aggregated Occupation Bias
+25
+30
+35
+40
+45
+Loss
+Original
+CDA(Grammar)
+10000
+20000
+30000
+40000
+50000
+60000
+70000
+Iterations
+0.01
+0.02
+0.03
+0.04
+0.05
+Aggregated Occupation Bias
+100
+120
+140
+160
+180
+200
+Perplexity
+Original
+CDA (Naive)
+CDA (Grammar)
+Figure 3: Performance and aggregate occupation bias during training phases for coreference resolution
+with model of Lee et al. [2017] (left) and language modeling (right).
+The results presented so far only report on the post-training outcomes. Figure 3, on the other hand,
+demonstrates the evolving performance and bias during training under various conﬁgurations. In
+general we see that for both neural coreference resolution and language model, bias (thick lines)
+increases as loss (thin lines) decreases. Incorporating counterfactual data augmentation greatly
+bounds the growth of bias (gray lines). In the case of naive augmentation, the bias is limited to almost
+0 after an initial growth stage (lightest thick line, right).
+5.4
+Overall Results
+The original model results in the tables demonstrate that bias exhibits itself in the downstream NLP
+tasks. This bias mirrors stereotypical gender/occupation associations as seen in Figure 2 (black
+bars). Further, word debiasing alone is not sufﬁcient for downstream tasks without undermining
+the predictive performance, no matter which stage of training process it is applied (←−−−
+WED of 2.2
+preserves accuracy but does little to reduce bias while −−−→
+WED of 2.3 does the opposite). Comparing
+2.2 (←−−−
+WED)and 2.4 (←−−−
+WED and −−−→
+WED) we can conclude that bias in word embedding removed by
+debiasing performed prior to training is relearned by its conclusion as otherwise the post-training
+debias step of 2.4 would have no effect. The debiased result of conﬁgurations 1.2, 2.5 and 3.3
+show that counterfactual data augmentation alone is effective in reducing bias across all tasks while
+preserving the predictive power.
+Results combining the two methods show that CDA and pre-training word embedding debiasing
+provide some independent debiasing power as in 1.4 and 2.6. However, the combination of CDA and
+post-training debiasing has an overcorrection effect in addition to the compromise of the predictive
+performance as in conﬁgurations 2.7 and 2.8.
+8
+6
+Future Work
+We will continue exploring bias in neural natural language processing. Neural machine translation
+provides a concrete challenging next step. We are also interested in explaining why these neural
+network models exhibit bias by studying the inner workings of the model itself. Such explanations
+could help us encode bias constraints in the model or training data to prevent bias from being
+introduced in the ﬁrst place.
+Acknowledgments
+This work was developed with the support of NSF grants CNS-1704845 as well as by the Air Force Research
+Laboratory under agreement number FA9550-17-1-0600. The U.S. Government is authorized to reproduce
+and distribute reprints for Governmental purposes not withstanding any copyright notation thereon. The views,
+opinions, and/or ﬁndings expressed are those of the author(s) and should not be interpreted as representing the
+ofﬁcial views or policies of the Air Force Research Laboratory, the National Science Foundation, or the U.S.
+Government. We gratefully acknowledge the support of NVIDIA Corporation with the donation of the Titan Xp
+GPU used for this research.
+9
+References
+Kevin Clark and Christopher D Manning. Improving coreference resolution by learning entity-level
+distributed representations. arXiv preprint arXiv:1606.01323, 2016a.
+Kevin Clark and Christopher D Manning. Deep reinforcement learning for mention-ranking corefer-
+ence models. arXiv preprint arXiv:1609.08667, 2016b.
+Kenton Lee, Luheng He, Mike Lewis, and Luke Zettlemoyer.
+End-to-end neural coreference
+resolution. arXiv preprint arXiv:1707.07045, 2017.
+Rafal Jozefowicz, Oriol Vinyals, Mike Schuster, Noam Shazeer, and Yonghui Wu. Exploring the
+limits of language modeling. arXiv preprint arXiv:1602.02410, 2016.
+Melvin Johnson, Mike Schuster, Quoc V. Le, Maxim Krikun, Yonghui Wu, Zhifeng Chen, Nikhil
+Thorat, Fernanda B. Viégas, Martin Wattenberg, Greg Corrado, Macduff Hughes, and Jeffrey Dean.
+Google’s multilingual neural machine translation system: Enabling zero-shot translation. TACL, 5:
+339–351, 2017. URL https://transacl.org/ojs/index.php/tacl/article/view/1081.
+Issie Lapowsky. Google autocomplete still has a hitler problem, Feb 2018. URL https://www.
+wired.com/story/google-autocomplete-vile-suggestions/.
+Rachael Tatman. Gender and dialect bias in youtube’s automatic captions. In Proceedings of the First
+ACL Workshop on Ethics in Natural Language Processing, pages 53–59, 2017.
+Tolga Bolukbasi, Kai-Wei Chang, James Y Zou, Venkatesh Saligrama, and Adam T Kalai. Man is to
+computer programmer as woman is to homemaker? debiasing word embeddings. In Advances in
+Neural Information Processing Systems, pages 4349–4357, 2016.
+Aylin Caliskan, Joanna J Bryson, and Arvind Narayanan. Semantics derived automatically from
+language corpora contain human-like biases. Science, 356(6334):183–186, 2017.
+Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. Efﬁcient estimation of word representa-
+tions in vector space. arXiv preprint arXiv:1301.3781, 2013.
+Wojciech Zaremba, Ilya Sutskever, and Oriol Vinyals. Recurrent neural network regularization. arXiv
+preprint arXiv:1409.2329, 2014.
+Jiaping Zheng, Wendy W Chapman, Rebecca S Crowley, and Guergana K Savova. Coreference
+resolution: A review of general methodologies and applications in the clinical domain. Journal of
+biomedical informatics, 44(6):1113–1122, 2011.
+Alex Graves. Generating sequences with recurrent neural networks. arXiv preprint arXiv:1308.0850,
+2013.
+Alex Graves, Abdel-rahman Mohamed, and Geoffrey Hinton. Speech recognition with deep recurrent
+neural networks. In Acoustics, speech and signal processing (icassp), 2013 ieee international
+conference on, pages 6645–6649. IEEE, 2013.
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly
+learning to align and translate. arXiv preprint arXiv:1409.0473, 2014.
+Sameer Pradhan, Alessandro Moschitti, Nianwen Xue, Olga Uryupina, and Yuchen Zhang. Conll-
+2012 shared task: Modeling multilingual unrestricted coreference in ontonotes. In Joint Conference
+on EMNLP and CoNLL-Shared Task, pages 1–40. Association for Computational Linguistics,
+2012.
+Stephen Merity, Caiming Xiong, James Bradbury, and Richard Socher. Pointer sentinel mixture
+models. arXiv preprint arXiv:1609.07843, 2016.
+Jieyu Zhao, Tianlu Wang, Mark Yatskar, Vicente Ordonez, and Kai-Wei Chang. Gender bias in
+coreference resolution: Evaluation and debiasing methods. arXiv preprint arXiv:1804.06876,
+2018.
+Rachel Rudinger, Jason Naradowsky, Brian Leonard, and Benjamin Van Durme. Gender bias in
+coreference resolution. arXiv preprint arXiv:1804.09301, 2018.
+10
+Supplemental Material
+Context Template Sentences for Occupation Bias
+Below is the list of the context template sentences used in our coreference resolution experiments
+OCCUPATION indicates the placement of one of occupation words listed below.
+• “The [OCCUPATION] ate because he was hungry.”
+• “The [OCCUPATION] ran because he was late.”
+• “The [OCCUPATION] drove because he was late.”
+• “The [OCCUPATION] drunk water because he was thirsty.”
+• “The [OCCUPATION] slept because he was tired.”
+• “The [OCCUPATION] took a nap because he was tired.”
+• “The [OCCUPATION] cried because he was sad.”
+• “The [OCCUPATION] cried because he was depressed.”
+• “The [OCCUPATION] laughed because he was happy.”
+• “The [OCCUPATION] smiled because he was happy.”
+• “The [OCCUPATION] went home because he was tired.”
+• “The [OCCUPATION] stayed up because he was busy.”
+• “The [OCCUPATION] was absent because he was sick.”
+• “The [OCCUPATION] was ﬁred because he was lazy.”
+• “The [OCCUPATION] was ﬁred because he was unprofessional.”
+• “The [OCCUPATION] was promoted because he was hardworking.”
+• “The [OCCUPATION] died because he was old.”
+• “The [OCCUPATION] slept in because he was ﬁred.”
+• “The [OCCUPATION] quitted because he was unhappy.”
+• “The [OCCUPATION] yelled because he was angry.”
+Similarly the context templates for language modeling are as below.
+• “He is a | [OCCUPATION]”
+• “he is a | [OCCUPATION]”
+• “The man is a | [OCCUPATION]”
+• “the man is a | [OCCUPATION]”
+Occupations
+The list of hand-picked occupation words making up the occupation category in our experiments is as
+follows. For language modeling, we did not include multi-word occupations.
+accountant
+air trafﬁc controller
+architect
+artist
+attorney
+attorney
+banker
+bartender
+barber
+bookkeeper
+builder
+businessperson
+butcher
+carpenter
+cashier
+chef
+coach
+dental hygienist
+dentist
+designer
+developer
+dietician
+doctor
+economist
+editor
+electrician
+engineer
+farmer
+ﬁlmmaker
+ﬁsherman
+ﬂight attendant
+jeweler
+judge
+lawyer
+mechanic
+musician
+nutritionist
+nurse
+optician
+painter
+pharmacist
+photographer
+physician
+physician’s assistant
+pilot
+plumber
+police ofﬁcer
+politician
+professor
+programmer
+psychologist
+receptionist
+salesperson
+scientist
+scholar
+secretary
+singer
+surgeon
+teacher
+therapist
+translator
+undertaker
+veterinarian
+videographer
+writer
+11
+Gender Pairs
+The hand-picked gender pairs swapped by the gender intervention functions are listed below.
+gods - goddesses
+manager - manageress
+barons - baronesses
+nephew - niece
+prince - princess
+boars - sows
+baron - baroness
+stepfathers - stepmothers
+wizard - witch
+father - mother
+stepsons - stepdaughters
+sons-in-law - daughters-in-law
+dukes - duchesses
+boyfriend - girlfriend
+ﬁances - ﬁancees
+dad - mom
+shepherd - shepherdess
+uncles - aunts
+beau - belle
+males - females
+hunter - huntress
+beaus - belles
+grandfathers - grandmothers
+lads - lasses
+daddies - mummies
+step-son - step-daughter
+masters - mistresses
+policeman - policewoman
+nephews - nieces
+brother - sister
+grandfather - grandmother
+priest - priestess
+hosts - hostesses
+landlord - landlady
+husband - wife
+poet - poetess
+landlords - landladies
+fathers - mothers
+masseur - masseuse
+monks - nuns
+usher - usherette
+hero - heroine
+stepson - stepdaughter
+postman - postwoman
+god - goddess
+milkmen - milkmaids
+stags - hinds
+grandpa - grandma
+chairmen - chairwomen
+husbands - wives
+grandpas - grandmas
+stewards - stewardesses
+murderer - murderess
+manservant - maidservant
+men - women
+host - hostess
+heirs - heiresses
+masseurs - masseuses
+boy - girl
+male - female
+son-in-law - daughter-in-law
+waiter - waitress
+tutors - governesses
+priests - priestesses
+bachelor - spinster
+millionaire - millionairess
+steward - stewardess
+businessmen - businesswomen
+congressman - congresswoman
+emperor - empress
+duke - duchess
+sire - dam
+son - daughter
+sirs - madams
+widower - widow
+kings - queens
+papas - mamas
+grandsons - granddaughters
+proprietor - proprietress
+monk - nun
+headmasters - headmistresses
+grooms - brides
+heir - heiress
+boys - girls
+gentleman - lady
+uncle - aunt
+he - she
+king - queen
+princes - princesses
+policemen - policewomen
+governor - matron
+ﬁance - ﬁancee
+step-father - step-mother
+waiters - waitresses
+mr - mrs
+stepfather - stepmother
+daddy - mummy
+lords - ladies
+widowers - widows
+emperors - empresses
+father-in-law - mother-in-law
+abbot - abbess
+sir - madam
+actor - actress
+mr. - mrs.
+wizards - witches
+actors - actresses
+chairman - chairwoman
+sorcerer - sorceress
+postmaster - postmistress
+brothers - sisters
+lad - lass
+headmaster - headmistress
+papa - mama
+milkman - milkmaid
+heroes - heroines
+man - woman
+grandson - granddaughter
+groom - bride
+sons - daughters
+congressmen - congresswomen
+businessman - businesswoman
+boyfriends - girlfriends
+dads - moms
+Supplementary Figures
+12
+nurse
+fisherman
+filmmaker
+doctor
+surgeon
+banker
+dentist
+singer
+teacher
+scientist
+physician
+barber
+translator
+economist
+carpenter
+scholar
+mechanic
+therapist
+architect
+builder
+politician
+chef
+coach
+photographer
+judge
+secretary
+professor
+programmer
+pilot
+attorney
+engineer
+developer
+Occupations
+−0.2
+−0.1
+0.0
+0.1
+0.2
+Occupation Bias
+Original
+CDA(All)
+Figure 4: Model 3.1 & 3.3: Bias for Occupations in Original & CDA Model
+13

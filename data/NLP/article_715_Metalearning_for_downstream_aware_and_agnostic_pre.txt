@@ -1,0 +1,371 @@
+Title: Meta-learning for downstream aware and agnostic pretraining
+Source URL: http://arxiv.org/abs/2106.03270v1
+--------------------------------------------------
+
+arXiv:2106.03270v1  [cs.CL]  6 Jun 2021
+Meta-learning for downstream aware and agnostic pretraining
+Hongyin Luo1 Shuyan Dong2∗Yung-Sung Chuang3 Shang-Wen Li2∗
+1MIT CSAIL, 2Amazon AI, 3National Taiwan University
+{hyluo}@mit.edu, {shuyand,shangwel}@amazon.com,{chuangyungsung}@gmail.com
+Abstract
+Neural network pretraining is gaining atten-
+tion due to its outstanding performance in nat-
+ural language processing applications. How-
+ever, pretraining usually leverages predeﬁned
+task sequences to learn general linguistic clues.
+The lack of mechanisms in choosing proper
+tasks during pretraining makes the learning
+and knowledge encoding inefﬁcient. We thus
+propose using meta-learning to select tasks
+that provide the most informative learning sig-
+nals in each episode of pretraining.
+With
+the proposed method, we aim to achieve bet-
+ter efﬁciency in computation and memory us-
+age for the pretraining process and resulting
+networks while maintaining the performance.
+In this preliminary work, we discuss the al-
+gorithm of the method and its two variants,
+downstream-aware and downstream-agnostic
+pretraining. Our experiment plan is also sum-
+marized, while empirical results will be shared
+in our future works.
+1
+Introduction and related works
+Recently
+neural
+network
+pretraining,
+such
+as BERT (Devlin et al., 2019),
+OpenAI GPT
+(Radford et al., 2018), XLNet (Yang et al., 2019),
+and ELECTRA (Clark et al., 2019) has yielded
+signiﬁcant performance improvement for various
+downstream
+applications
+in natural
+language
+processing.
+Usually, semantic and syntactic
+information is implicitly learned from the co-
+occurrence of words and sentences in datasets
+and encoded in the networks for general purposes.
+The entire networks or part of their layers are
+then ﬁnetuned for the downstream usage.
+To
+better leverage training corpora and discover
+all valuable information, ERNIE 2.0 (Sun et al.,
+2020) proposes a sequential multitask pretrain-
+ing framework containing a variety of word-,
+∗Work in progress. * Work is not related to employment
+at Amazon.
+structure-, and semantic-aware pretraining tasks.
+Although increasing the diversity of pretraining
+tasks continually improves model performance
+accuracy, the lack of mechanisms in selecting
+and scheduling tasks makes the training process,
+model serving, and memory footprint bulky. The
+model expressivity has to grow accordingly to
+encode information from all the tasks generally.
+To address the challenge, we propose a frame-
+work using meta-learning to schedule tasks and
+make pretraining more efﬁcient in this prelimi-
+nary paper. Meta-learning is commonly used in
+learning model architectures, hyperparameters, or
+learning algorithms that are generalizable across
+tasks through episodic training (Finn et al., 2017;
+Vinyals et al., 2016; Snell et al., 2017; Luo et al.,
+2020; Li et al., 2021). Hence, we leverage meta-
+learning to formulate each pretraining batch as an
+episode, and select the pretraining task offering
+the most helpful training signals in the episode, in-
+stead of following predeﬁned or sequential order
+of tasks, to update the model parameters. With the
+formulation, we explore two variants, downstream-
+aware and downstream-agnostic pretraining, that
+utilize loss evaluating training signals with or
+without labels in downstream applications.
+The
+episodic task selection is expected to encode lex-
+ical, syntactic, and semantic information across
+various tasks more efﬁciently. In this preliminary
+work, we introduce the detailed algorithm, imple-
+mentation challenges and corresponding solutions,
+and experiment settings. We will share empirical
+results later.
+2
+Method and experiment plan
+To make multitask pretraining more efﬁcient, we
+propose a framework of utilizing meta-learning to
+schedule tasks used for network pretraining. We
+summarize the framework step-by-step in Algo-
+rithm 1. Like many previous meta-learning works,
+we use two sets of tasks, source S and target T,
+to build episodes for pretraining. S are different
+pretraining tasks such as masked language model-
+ing, sentence reordering, and dialog response se-
+lection; T can be similar tasks to S or a set of
+downstream applications. Each while loop in the
+algorithm deﬁnes an episode and is analogous to
+parameter update with N batches in ordinary pre-
+training. However, before iterating through each
+batch of examples from the pretraining task ˆs and
+updating model parameter θ (line 11 and 12), we
+modify an across-task training technique (line 3
+to 9) commonly used in meta-learning (Finn et al.,
+2017; Snell et al., 2017) to sample subtasks (i.e.,
+a batch of examples) from S and T for selecting
+the task ˆs to pretrain on. We ﬁrst obtain τ T by
+sampling M subtasks for each task in T in line 3.
+Then, we iterate through each task s in S, sample
+N subtasks, τ s
+i , for s, and evaluate the utility of
+s, u(s), with τ s
+i and τ T . The utility is computed
+by updating θ with gradient evaluated on τ s
+i and
+scoring the updated parameter θ′ with τ T . By se-
+lecting the source task yielding the largest utility
+to pretrain on1, we expect more efﬁcient network
+pretraining.
+We employ the equation, scorer(θ′, τ T )
+=
+−P
+j,t Lτ t
+j (f(θ′)), to measure the utility of tasks.
+As indicated in the equation, we prefer the source
+task resulting in updated parameters (θ′) that yield
+smaller summed losses over target subtasks. With
+this formulation, it is crucial to choose appropriate
+target tasks to compute the utility and thus guide
+the pretraining. Ideally, the target tasks should be
+as relevant to downstream applications as possible
+or even provide a similar labeling schema, and we
+refer to such setting as downstream-aware pretrain-
+ing.
+Sometimes a generalizable pretrained net-
+work is preferred. In this case, we have T = S for
+downstream-agnostic pretraining.
+Both settings
+will be explored in our experiments.
+For our experiment,
+we will adopt com-
+mon Transformer architectures such as BERT
+(Devlin et al., 2019) and RoBERTa (Liu et al.,
+2019) as the backbone models and examine the
+performance and pretraining efﬁciency when the
+proposed method is applied.
+We plan to ex-
+plore source pretraining tasks based on ERNIE 2.0
+1Similar to approaches in reinforcement learning, the
+epsilon-greedy algorithm can be used to choose between ex-
+ploration and exploitation randomly.
+(Sun et al., 2020) as the work provides good cov-
+erage of tasks for word-, structure-, and semantic-
+aware pretraining signals.
+Masked passage re-
+trieval (Glass et al., 2020), text generation, and un-
+supervised question answering (Luo et al., 2021)
+tasks will also be investigated to provide genera-
+tion and passage level pretraining losses.
+Algorithm 1 Meta-learning based network pre-
+training
+Inputs: Set of all source and target tasks S, T;
+data distribution over each source and target task
+ps(τ), pt(τ); Lτ, the loss function evaluated on a
+subtask τ sampled from ps(τ) or pt(τ); learning
+rates α, λ, number of batches M, N.
+Output: Optimized network parameters θ.
+1 Initialize θ;
+2 while not done do
+3
+Sample M ∗|T| target subtasks (i.e., batches)
+τ T =
+S
+t=T
+τ t
+j, where τ t
+j ∼pt(τ) and j =
+1...M;
+4
+for s ∈S do
+5
+Sample M subtasks τ s
+i
+∼ps(τ), i
+=
+1...M;
+6
+u(s) = 0;
+7
+for all τ s
+i do
+8
+Compute gradient for fast adaptation:
+θ′ = θ −α∇θLτ s
+i (f(θ));
+9
+Evaluate updated parameters on target
+subtasks: u(s) += scorer(θ′, τ T )
+10
+ˆs = argmax
+s
+u(s)
+11
+Sample N subtasks τ ˆs
+i ∼pˆs(τ), i = 1...N;
+12
+for all τ ˆs
+i do
+Compute gradient and update parameters:
+θ = θ −λ∇θLτ ˆs
+i (f(θ));
+We will focus on four applications for the
+downstream tasks and the target pretraining
+tasks in the downstream-aware setting: relation
+extraction, semantic role labeling, general lan-
+guage and sentence understanding, and machine
+reading comprehension. In this setting, additional
+prediction heads will be added to the backbone
+network separately for different tasks.
+These
+heads are pretrained (in the downstream-aware
+setting) and ﬁnetuned (in both downstream-aware
+and downstream-agnostic settings) for evalua-
+tion.
+We will employ CoNLL04 (Roth and Yih,
+2004),
+CoNLL-2005
+(Carreras and M`arquez,
+2005), GLUE (Wang et al., 2018), and SQuAD
+(Rajpurkar et al., 2016), respectively, to obtain
+learning signals for the target pretraining tasks
+of relation extraction,
+semantic role labeling,
+general language and sentence understanding,
+and machine reading comprehension.
+Corre-
+spondingly,
+ACE2005
+(Walker et al.,
+2006),
+CoNLL 2012 (Pradhan et al., 2012), SuperGLUE
+(Wang et al., 2019) (excluding those tasks al-
+ready seen in GLUE), and Natural Questions
+(Kwiatkowski et al., 2019) will be used as the
+downstream applications to evaluate pretrained
+networks in each of the four tasks.
+3
+Conclusion
+In this work, we propose a meta-learning-based
+downstream-aware and downstream-agnostic pre-
+training method, where pretraining tasks are se-
+lected episodically from a list of candidate tasks
+to improve pretraining efﬁciency while maintain-
+ing the performance. We summarize the algorithm
+and our experiment plan. Empirical results will be
+shared in our future works.
+References
+Xavier Carreras and Llu´ıs M`arquez. 2005. Introduc-
+tion to the conll-2005 shared task: Semantic role la-
+beling. In Proceedings of the ninth conference on
+computational natural language learning (CoNLL-
+2005), pages 152–164.
+Kevin Clark, Minh-Thang Luong, Quoc V Le, and
+Christopher D Manning. 2019. Electra: Pre-training
+text encoders as discriminators rather than genera-
+tors. In ICLR.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. Bert: Pre-training of deep
+bidirectional transformers for language understand-
+ing. In NAACL.
+Chelsea Finn, Pieter Abbeel, and Sergey Levine. 2017.
+Model-agnostic meta-learning for fast adaptation of
+deep networks. In ICML.
+Michael Glass, Alﬁo Gliozzo, Rishav Chakravarti, An-
+thony Ferritto, Lin Pan, GP Shrivatsa Bhargav, Di-
+nesh Garg, and Avirup Sil. 2020. Span selection pre-
+training for question answering. In ACL.
+Tom Kwiatkowski, Jennimaria Palomaki, Olivia Red-
+ﬁeld, Michael Collins, Ankur Parikh, Chris Alberti,
+Danielle Epstein, Illia Polosukhin, Jacob Devlin,
+Kenton Lee, et al. 2019. Natural questions: A bench-
+mark for question answering research. Transactions
+of the Association for Computational Linguistics,
+7:453–466.
+Shang-Wen Li, Jason Krone, Shuyan Dong, Yi Zhang,
+and Yaser Al-onaizan. 2021. Meta learning to clas-
+sify intent and slot labels with noisy few shot exam-
+ples. In 2021 IEEE Spoken Language Technology
+Workshop (SLT), pages 1004–1011.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Roberta: A robustly optimized bert pretraining ap-
+proach. arXiv preprint arXiv:1907.11692.
+Hongyin Luo, Shang-Wen Li, and James Glass. 2020.
+Prototypical q networks for automatic conversa-
+tional diagnosis and few-shot new disease adaption.
+In Interspeech.
+Hongyin Luo, Shang-Wen Li, Seunghak Yu, and James
+Glass. 2021.
+Cooperative learning of zero-shot
+machine reading comprehension.
+arXiv preprint
+arXiv:2103.07449.
+Sameer Pradhan, Alessandro Moschitti, Nianwen Xue,
+Olga Uryupina, and Yuchen Zhang. 2012.
+Conll-
+2012 shared task:
+Modeling multilingual unre-
+stricted coreference in ontonotes. In Joint Confer-
+ence on EMNLP and CoNLL-Shared Task, pages 1–
+40.
+Alec Radford, Karthik Narasimhan, Tim Salimans, and
+Ilya Sutskever. 2018.
+Improving language under-
+standing by generative pre-training.
+Pranav Rajpurkar, Jian Zhang, Konstantin Lopyrev, and
+Percy Liang. 2016. Squad: 100,000+ questions for
+machine comprehension of text. In EMNLP.
+Dan Roth and Wen-tau Yih. 2004. A linear program-
+ming formulation for global inference in natural
+language tasks.
+Technical report, Department of
+Computer Science, University of Illinois at Urbana-
+Champaign.
+Jake Snell, Kevin Swersky, and Richard Zemel. 2017.
+Prototypical networks for few-shot learning.
+In
+NeurIPS.
+Yu Sun, Shuohuan Wang, Yukun Li, Shikun Feng, Hao
+Tian, Hua Wu, and Haifeng Wang. 2020. Ernie 2.0:
+A continual pre-training framework for language un-
+derstanding. In AAAI.
+Oriol Vinyals, Charles Blundell, Timothy Lillicrap, Ko-
+ray Kavukcuoglu, and Daan Wierstra. 2016. Match-
+ing networks for one shot learning. In NeurIPS.
+Christopher Walker, Stephanie Strassel, Julie Medero,
+and Kazuaki Maeda. 2006.
+Ace 2005 multilin-
+gual training corpus. Linguistic Data Consortium,
+Philadelphia, 57:45.
+Alex Wang,
+Yada Pruksachatkun, Nikita Nangia,
+Amanpreet Singh, Julian Michael, Felix Hill, Omer
+Levy, and Samuel R Bowman. 2019. Superglue: A
+stickier benchmark for general-purpose language un-
+derstanding systems. In NeurIPS.
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+Hill, Omer Levy, and Samuel Bowman. 2018. Glue:
+A multi-task benchmark and analysis platform for
+natural language understanding.
+In Proceedings
+of the 2018 EMNLP Workshop BlackboxNLP: An-
+alyzing and Interpreting Neural Networks for NLP,
+pages 353–355.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Car-
+bonell, Russ R Salakhutdinov, and Quoc V Le. 2019.
+Xlnet: Generalized autoregressive pretraining for
+language understanding. In NeurIPS.

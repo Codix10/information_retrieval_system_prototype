@@ -1,0 +1,1070 @@
+Title: Don't Search for a Search Method -- Simple Heuristics Suffice for Adversarial Text Attacks
+Source URL: http://arxiv.org/abs/2109.07926v2
+--------------------------------------------------
+
+Don’t Search for a Search Method —
+Simple Heuristics Sufﬁce for Adversarial Text Attacks
+Nathaniel Berger†∗and Stefan Riezler†,‡
+†Computational Linguistics & ‡IWR
+Heidelberg University, Germany
+Artem Sokolov♦,† and Sebastian Ebert♦
+♦Google Research
+Berlin, Germany
+{berger,riezler}@cl.uni-heidelberg.de, {artemsok,eberts}@google.com
+Abstract
+Recently more attention has been given to ad-
+versarial attacks on neural networks for natural
+language processing (NLP). A central research
+topic has been the investigation of search al-
+gorithms and search constraints, accompanied
+by benchmark algorithms and tasks. We im-
+plement an algorithm inspired by zeroth order
+optimization-based attacks and compare with
+the benchmark results in the TextAttack frame-
+work. Surprisingly, we ﬁnd that optimization-
+based methods do not yield any improvement
+in a constrained setup and slightly beneﬁt from
+approximate gradient information only in un-
+constrained setups where search spaces are
+larger. In contrast, simple heuristics exploit-
+ing nearest neighbors without querying the tar-
+get function yield substantial success rates in
+constrained setups, and nearly full success rate
+in unconstrained setups, at an order of magni-
+tude fewer queries. We conclude from these re-
+sults that current TextAttack benchmark tasks
+are too easy and constraints are too strict, pre-
+venting meaningful research on black-box ad-
+versarial text attacks.
+1
+Introduction
+Neural networks are currently deployed in many
+production systems from image classiﬁcation to
+natural language processing (NLP). While they
+show impressive results, many of such systems
+are also susceptible to adversarial examples. These
+examples are close in space to data points that are
+classiﬁed correctly, but due to small changes are
+classiﬁed incorrectly. This corresponds to the local
+non-smoothness noted by Szegedy et al. (2014).
+Chen et al. (2017) present a zeroth order
+optimization-based (ZOO) attack that signiﬁcantly
+outperforms other black-box attacks for image pro-
+cessing. An initial goal of our work was to in-
+vestigate whether a ZOO approach that guides
+∗Part of the work done while the ﬁrst author was interning
+at Google.
+the search for adversarial examples by approxi-
+mate gradient information can be transferred to
+adversarial attacks in NLP. To this end, we imple-
+mented a ZOO-inspired algorithm in the TextAt-
+tack framework (Morris et al., 2020) and compared
+it with their benchmark results (Yoo et al., 2020).
+Surprisingly, we found that search guided by a
+ZOO approach only yields minimal improvements,
+whereas heuristic search exploiting nearest neigh-
+bors yields competitive success rates at minimal
+query count. We conclude from these results that
+the victim models in current benchmark tasks are
+too easily broken and imperceptibility constraints
+are too strict, thus defeating meaningful research on
+black-box search methods for adversarial attacks.
+2
+Related Work
+Black-box attacks on NLP systems generally at-
+tempt to search over discrete tokens and, instead of
+bounding the perturbation in Euclidean space, use
+linguistic constraints over the selected tokens.
+Alzantot et al. (2018) implement a discrete ge-
+netic algorithm where genes are tokenized sen-
+tences (Genetic Alg in Table 1). Two genes can
+crossover by sampling a parent for each position in
+the sentence and selecting the corresponding token.
+Mutations are performed by sampling from nearby
+tokens in embedding space. The embedding space
+they use is the counter-ﬁtted GloVe embeddings
+(Pennington et al., 2014; Mrkši´c et al., 2016). Zang
+et al. (2020) also work with a discretized search al-
+gorithm, in their case Particle Swarm Optimization
+(PSO in Table 1). Each particle is again a tokenized
+sentence and has a velocity associated with each
+token. Instead of moving in continuous space ac-
+cording to its velocity in each step, a position in
+the sentence “jumps” from one token to another.
+Instead of operating over embeddings, they use the
+lexicon HowNet (Dong and Dong, 2003) to ﬁnd
+synonyms of current words. Jin et al. (2020) create
+a powerful baseline for adversarial attacks which
+arXiv:2109.07926v2  [cs.CL]  4 Oct 2021
+ﬁrst determines an importance ranking over words
+and then changes each token in order (Word Im-
+portance Ranking, WIR in Table 1). Tokens can
+be changed to one of the 50 nearest neighbours
+in embedding space but are subject to constraints.
+The replacement token must have a cosine similar-
+ity of at least 0.7 in the attack’s embedding space,
+again in the counter-ﬁtted GloVe embedding space
+by Mrkši´c et al. (2016). Additionally, replacement
+tokens must have the same part of speech and a
+sentence level similarity score given by a Universal
+Sentence Encoder (Cer et al., 2018) above a given
+threshold. The word importance ranking is deter-
+mined by the difference in output when a given
+token is removed from the input.
+The above black-box attacks on NLP sys-
+tems along with greedy and beam search are re-
+implemented by Morris et al. (2020). Their library,
+TextAttack, seeks to be a test bed for comparing
+adversarial attacks on NLP systems. To this end, a
+companion paper comparing different attacks has
+been released by Yoo et al. (2020).
+3
+Zeroth Order Optimization-Based
+Attack (ZOO)
+Chen et al. (2017) work under the adversarial at-
+tack framework of Carlini and Wagner (2017) and
+use a zeroth order optimization method to work
+in a black-box setting to attack images. The ZOO
+idea is to create pseudogradients using zeroth order
+estimates of the true gradient. Their method per-
+forms point-wise perturbations on individual pixels
+by adding a scaled one-hot vector ei to the image x
+and computing the difference between the outputs.
+The derivative of this single perturbed pixel can
+then be calculated by f(x+µei)−f(x−µei)
+2µ
+ei, where
+µ controls how far apart the two queried points are.
+Chen et al. (2017) use coordinate descent (Poljak
+and Tsypkin, 1973) and perturb a single pixel at
+a time to construct a gradient. Instead of having
+to query the model 2m times, this method can be
+optimized by perturbing all pixels simultaneously
+with a vector u sampled from a multivariate Gaus-
+sian distribution (Nesterov and Spokoiny, 2015).
+This two-point function evaluation in expectation
+approximates the true gradient of the function but
+can also be applied in situations where the function
+is unknown but smooth, which is the case in black-
+box attacks on neural networks. The estimated
+gradient can then be used in standard gradient de-
+scent:
+xt+1 = xt −λ 1
+n
+n
+X
+i=1
+f(x + µui) −f(x)
+µ
+ui.
+Inspired by the zeroth order optimization-based
+attack of Chen et al. (2017) and the interpretable
+displacements of Sato et al. (2018), we developed
+a discretized version of zeroth order optimization
+for attacks on NLP systems, dubbed DiscreteZOO.
+4
+DiscreteZOO for Black-Box Attacks on
+NLP Systems
+Zeroth order optimization assumes nothing about
+the function to optimize other than the fact that it
+is smooth. We add the assumptions here that we
+possess a surrogate embedding space and that there
+is a smooth transformation from this embedding
+space to the internal embedding space of the target
+model. Continuous zeroth order gradient estima-
+tion requires that any arbitrary point be queryable
+in order to use Gaussian noise as perturbations. In
+the discrete case, however, the system only allows
+us to query with tokens. Instead of sampling from
+a Gaussian distribution then, we sample from the
+nearest neighbours around the target token in the
+surrogate embedding space.
+Given the current token t, we can perturb its em-
+bedding et with a vector µuk,t, with µ = ||ek−et||,
+uk,t = ek−et
+µ
+, and ek being the embedding of an-
+other token. We can use this to calculate the ﬁnite
+differences between two different function evalu-
+ations. Sampling a set of multiple neighbouring
+tokens N for displacements yields the update rule
+et+1 = et−λ 1
+|N|
+X
+k∈N
+f(et + µuk,t) −f(et)
+µ
+uk,t.
+Adding this estimated direction vector to the cur-
+rent embedding then moves towards an area of
+increasing goal function values, where we would
+hope to ﬁnd a token suitable for ﬂipping the label.
+Once the direction vector is added to the embed-
+ding, we snap it to the nearest existing token by
+cosine similarity.
+In addition to the ZOO-inspired search, we use
+the word importance ranking of Jin et al. (2020)
+and Yoo et al. (2020), which replaces each token
+in the text with an unk token to decide which to-
+kens to attack ﬁrst. Additionally, we noticed that
+often label-ﬂipping tokens are already available
+within the sampled tokens N. In this case, we
+should accept the sampled token and return early,
+saving queries to the model, instead of continuing
+to sample and construct a direction vector. Another
+optimization prevents the algorithm from snapping
+to the nearest token if that token decreases the goal
+function value.
+A detailed algorithm is given in the ap-
+pendix. Code implementing the algorithm can be
+found at https://github.com/StatNLP/
+discretezoo.
+5
+Experiments
+5.1
+Baselines
+In addition to the methods from Yoo et al. (2020),
+we also implement a random baseline. Firstly, in-
+stead of determining the importance by deleting
+each token or replacing it with unk, the indices
+are randomly shufﬂed and taken as the attack order.
+Secondly, replacement tokens are chosen randomly
+as well. In the constr. setup, the random choice
+is over the Top-N tokens ranked by proximity in
+the counter-ﬁtted GloVe embedding space (Mrkši´c
+et al., 2016), ﬁltered by the constraints. In the un-
+constr. setup, the same method is used to generate
+the list of tokens, but no ﬁltering is applied. Instead
+of iterating over them and selecting the token with
+the highest goal function value, the random base-
+line samples a single token from the list, inserts
+into the sentence, and returns if the token ﬂips the
+label along with the goal function value. If the goal
+function values is improved then the token is kept
+and if not it is discarded–the goal function value
+is returned with the label and does not change the
+query count. If the label is not ﬂipped, it moves on
+to the next target position.
+Two additional baselines are picking the farthest
+or closest token at each step. They function sim-
+ilarly to the random baseline, but instead of sam-
+pling from the list of replacement tokens, they im-
+mediately pick the farthest or closest token in em-
+bedding space, respectively. If all tokens that pass
+the constraints are equally acceptable, then picking
+the most dissimilar acceptable token should be a
+good heuristic.
+The baselines and the WIR methods (Yoo et al.,
+2020) all iterate over the indices of the target sen-
+tence once. In order to see the effects of random
+continued sampling until the label ﬂips, we also in-
+troduce a method called random, CS. This method
+iterates over the indices multiple times and samples
+tokens until a label ﬂip is achieved or until a maxi-
+mum number of tokens has been sampled. For this
+method to work, the RepeatModification
+constraint has to be removed. Therefore, it is a
+stronger attack, as it can make changes that are not
+available to the other methods. Still, this should
+illustrate the upper bound achievable with random
+sampling and keeping tokens that improve the goal
+function.
+5.2
+Constraints
+In Yoo et al. (2020), a number of constraints are
+used to maintain semantic similarity of the adver-
+sary with the original text. The main constraints of
+interest are cosine similarity, BERTScore (Zhang
+et al., 2015), and part of speech tagging. In the
+constr. setting, replacement tokens must have a
+cosine similarity of 0.9 with the original token, the
+two sentences must have a BERTScore of 0.9, and
+the part of speech can not be changed. We also
+introduce a unconstr. setting, where all constraints
+are removed.
+5.3
+Target Models and Goal Functions
+All of the attacks in this paper target multiclass
+BERT models (Devlin et al., 2019) ﬁne-tuned on
+SNLI (Bowman et al., 2015) or Movie Reviews
+(Pang and Lee, 2005). Both are provided by the
+TextAttack library (Morris et al., 2020) and are
+used in the comparison done by Yoo et al. (2020).
+Morris et al. (2020) use a goal function that seeks
+to minimize the probability of the true label:
+GTextAttack = 1 −f(x)l,
+where f(x) is the neural network with a probability
+vector as output and l is the index of the true label.
+Working from the zeroth order optimization-based
+attack of Chen et al. (2017), we also implement
+their goal function:
+Gzoo = −max(log f(x)l −max
+l′̸=l log f(x)l′, −κ).
+In our experiments we found no difference in run-
+ning all attacks on both goal functions, so here we
+report only results on the zoo loss.
+6
+Results
+Results for the baseline attacks and DiscreteZOO
+are summarized in Table 1.
+In the constr. setup on SNLI, DiscreteZOO out-
+performs all other methods in terms of success rate.
+On Movie Reviews, DiscreteZOO achieves slightly
+Method
+Attack Success% ↑(±σ) Avg # Queries ↓(±σ) % Words Changed ↓(±σ)
+constr.
+unconstr.
+constr.
+unconstr.
+constr.
+unconstr.
+Movie Reviews
+Greedy
+20.6
+100.0
+35.0
+1111.5
+9.6
+9.2
+Beam 4
+21.4
+100.0
+95.1
+1688.1
+10.0
+8.9
+Beam 8
+21.8
+100.0
+174.9
+2504.1
+10.1
+8.9
+WIR(UNK)
+17.8
+99.6
+30.1
+153.8
+11.8
+16.6
+WIR(DEL)
+17.0
+99.8
+30.2
+147.5
+11.7
+16.4
+WIR(PWWS)
+18.6
+99.6
+44.2
+894.4
+10.6
+10.0
+WIR(RAND) 16.8±0.5
+99.6 12.5±0.1
+172.8 12.9±0.5
+20.2
+Genetic Alg
+19.4
+99.6
+2658.6
+2578.6
+10.6
+10.3
+PSO
+22.0
+100.0
+2456.4
+4010.2
+11.1
+10.5
+DiscrZOO
+20.4±0.0
+97.9±0.4 33.2±0.0
+118.7±2.5 13.7±0.0
+17.8±0.2
+Random
+11.5±0.7
+68.3±1.8
+5.4±0.0
+12.2±0.2 11.9±0.7
+50.6±1.0
+Random, CS 17.3±0.2
+98.7±0.6 15.1±0.1
+15.9±0.4 13.9±0.4
+37.5±0.4
+Farthest
+12.3±0.7
+78.3±0.3
+5.3±0.0
+10.6±0.1 11.2±0.3
+27.1±0.4
+Closest
+11.1±0.4
+55.5±0.7
+5.4±0.0
+13.1±0.2 12.2±0.7
+30.0±1.0
+SNLI
+Greedy
+19.9
+100.0
+7.2
+422.0
+6.1
+5.9
+Beam 4
+20.1
+100.0
+12.3
+563.0
+6.1
+5.9
+Beam 8
+20.1
+100.0
+17.8
+739.0
+6.1
+5.8
+WIR(UNK)
+19.6
+100.0
+26.2
+84.9
+7.0
+6.5
+WIR(DEL)
+18.7
+100.0
+26.2
+85.3
+7.3
+6.6
+WIR(PWWS)
+19.1
+99.9
+30.5
+407.2
+6.0
+6.8
+WIR(RAND) 18.3±0.1
+100.0
+5.0±0.0
+85.9
+7.3±0.2
+8.7
+Genetic Alg
+19.7
+99.9
+1328.5
+998.5
+6.1
+6.4
+PSO
+20.0
+100.0
+1262.4
+815.2
+6.2
+6.4
+DiscrZOO
+21.2±0.1
+98.1±0.2 26.9±0.0
+58.3±0.1
+6.7±0.0
+6.8±0.1
+Random
+10.1±0.3
+70.0±0.4
+2.6±0.0
+5.6±0.0
+7.3±0.2
+17.7±0.4
+Random, CS 18.7±0.4
+99.9±0.1 6.8±0.04
+7.3±1.0
+8.0±0.1
+16.3±0.2
+Farthest
+11.6±0.2
+81.0±0.7
+2.6±0.0
+5.1±0.0
+7.2±0.2
+12.3±0.2
+Closest
+7.9±0.2
+58.0±0.7
+2.7±0.0
+6.4±0.1
+7.4±0.3
+15.8±0.1
+Table 1: Adversarial attack using ZOO loss on both Movie Reviews and SNLI. DiscreteZOO averaged over three
+runs; Random, Farthest, and Closest Nearest Neighbor baselines averaged over seven runs; standard deviation
+denoted by ±. With constraints, the DiscreteZOO attack samples up to 10 neighbors, while the unconstrained
+attack samples up to 25 neighbors.
+higher results than the WIR methods with compara-
+ble query counts, but it is not as successful as the
+beam search or PSO methods. For DiscreteZOO,
+the standard deviation is either very low or actually
+zero. This suggests that there is not a large enough
+space from which the algorithm can sample. The
+farthest baseline already achieves a success rate
+of 12.3% on Movie Reviews and 11.6% on SNLI,
+while random and closest achieve 11.5% and 11.1%
+on Movie Reviews and 10.1% and 7.9% on SNLI,
+respectively. Thus, simple heuristics already ac-
+complish a substantial amount of the achievable
+success rates at minimal query count, while the
+generally low success rates across all algorithms
+suggests that the constraints are too strict, prevent-
+ing exploitation of more sophisticated search tech-
+niques. The continued sampling version of the
+random baseline achieves a success rate of 17.3%
+on Movie Reviews and 18.7% on SNLI. This is di-
+rectly competitive with the search based methods.
+In the unconstrained setup, all search methods,
+including DiscreteZOO, approach success rates of
+100%. The methods are only able to evaluate the
+50 nearest neighbors, however, the farthest base-
+line reaches success rates of 78.31% and 81.04%
+on Movie Reviews and SNLI, respectively. Ran-
+dom and closest follow farthest in terms of success
+rate, with a query count that is an order of mag-
+nitude lower than other methods. The continued
+sampling version of the random baseline achieves
+nearly 100% success rate on both datasets with a
+similarly small query count. The relative success
+of the baseline heuristic methods shows that the
+nearest neighbor structure in the embedding space
+is already powerful enough to ﬂip the label. Much
+of the success of the other methods can already be
+attributed to these simple heuristics, showing that
+search is not always necessary.
+7
+Analysis
+The results of the previous experiments show slight
+improvement over previous methods but they ap-
+pear curious. For example, some of the results have
+no variation on repeated runs even with a stochastic
+algorithm. Additionally, random token selection
+appears to be competitive with greedyWIR meth-
+ods.
+The counterﬁtted GLoVE embedding space
+(Mrkši´c et al., 2016) is a very sparse embedding
+space, containing a total of 65713 tokens. Using
+the neighborhood threshold given by the constr.
+constraints, a cosine similarity of 0.9 or higher,
+then the average token in this embedding space has
+0.72 neighbors. Among tokens that have neighbors,
+the average rises to 2.63. Histograms showing num-
+ber of tokens over neighborhood size with different
+neighborhood deﬁnitions can be seen in ﬁgure 1
+in the appendix. These values are an upper bound
+on the actual average number of neighbors as the
+constraints also include BERTScore and a Part of
+Speech constraint which further restrict the space.
+The sparsity of the space coupled with the size
+of the neighborhoods induced by cosine similar-
+ity of 0.9 or higher could explain why the naive
+methods are able to perform so well compared to
+more sophisticated optimization methods. There
+are so few valid replacement tokens in the space
+that it is entirely feasible to try every option with
+the greedyWIR or beam methods.
+With a large enough sample size, discretezoo
+already observes all allowed replacement tokens
+during sampling and is able to stop if one of them
+ﬂips the label. In this case, discretezoo and greedy-
+WIR should produce similar results. This is effec-
+tively demonstrated by the random baseline, which
+chooses a replacement token randomly and is un-
+able to use information from the goal function to
+decide between multiple replacement tokens. Be-
+cause there are so few possible replacement tokens,
+randomly selecting from the few that are available
+is roughly as good of a strategy as beam search or
+greedily selecting the best replacement token from
+all options. The results given by the random base-
+line are close to those reported by Yoo et al. (2020)
+for their greedyWIR baselines. This suggests that
+the success of their attacks compared to the more
+advanced search methods is not because of their
+algorithm ﬁnding good texts but rather because the
+search space has been so restricted that any choice
+will work. Methods besides greedyWIR are allowed
+more ﬂexibility. Instead of just considering one tar-
+get position at a time, they are allowed to consider
+the best replacement for all positions. This turns
+the attack into a combinatorial problem of ﬁnding
+which combination of positions is best to attack
+instead of which replacement tokens are the best.
+Additionally, this shows that the models being
+attacked are very brittle. Given a single target token
+that has replacements, there are on average only
+three to choose from. Selecting one of these three
+very similar tokens is already enough to ﬂip the
+label in many cases.
+8
+Conclusion
+Zeroth order optimization methods have been
+shown to yield superior performance for black box
+attacks in continuous spaces such as images (Chen
+et al., 2017). In attacks on NLP systems, only a
+discrete set of tokens are admissable as input but
+they are still processed as vectors in continuous
+space. This allows for optimization in the continu-
+ous space instead of in the discrete token space. We
+implement a zeroth order optimization algorithm
+in the TextAttack library (Morris et al., 2020) and
+compare with the results of Yoo et al. (2020). While
+our method appears to be competitive, we ﬁnd that
+the linguistic constraints imposed on the search
+methods are so tight that nearly no optimization is
+necessary. Instead, selecting the farthest allowable
+token or a random token is already enough to ﬂip
+the label in many cases. We argue that more ro-
+bust tasks are required for meaningful research on
+black-box adversarial text attacks.
+References
+Moustafa Alzantot, Yash Sharma, Ahmed Elgohary,
+Bo-Jhang Ho, Mani Srivastava, and Kai-Wei Chang.
+2018. Generating natural language adversarial ex-
+amples. In EMNLP.
+Samuel R. Bowman, Gabor Angeli, Christopher Potts,
+and Christopher D. Manning. 2015. A large anno-
+tated corpus for learning natural language inference.
+In EMNLP.
+Nicholas Carlini and David Wagner. 2017.
+Towards
+evaluating the robustness of neural networks.
+In
+IEEE S&P.
+Daniel Cer, Yinfei Yang, Sheng-yi Kong, Nan Hua,
+Nicole Limtiaco, Rhomni St John, Noah Constant,
+Mario Guajardo-Cespedes, Steve Yuan, Chris Tar,
+et al. 2018. Universal sentence encoder for english.
+In EMNLP Demo.
+Pin-Yu Chen, Huan Zhang, Yash Sharma, Jinfeng Yi,
+and Cho-Jui Hsieh. 2017. ZOO: Zeroth order opti-
+mization based black-box attacks to deep neural net-
+works without training substitute models. In Work-
+shop on Artiﬁcial Intelligence and Security.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. Bert: Pre-training of deep
+bidirectional transformers for language understand-
+ing. In NAACL.
+Zhendong Dong and Qiang Dong. 2003. Hownet-a hy-
+brid language and knowledge resource. In Interna-
+tional Conference on Natural Language Processing
+and Knowledge Engineering, pages 820–824, Bei-
+jing, China.
+Di Jin, Zhijing Jin, Joey Tianyi Zhou, and Peter
+Szolovits. 2020. Is bert really robust? a strong base-
+line for natural language attack on text classiﬁcation
+and entailment. In AAAI.
+John Morris, Eli Liﬂand, Jin Yong Yoo, Jake Grigsby,
+Di Jin, and Yanjun Qi. 2020. TextAttack: A frame-
+work for adversarial attacks, data augmentation, and
+adversarial training in NLP. In EMNLP Demo.
+Nikola Mrkši´c, Diarmuid Ó Séaghdha, Blaise Thom-
+son, Milica Gaši´c, Lina M. Rojas-Barahona, Pei-
+Hao Su, David Vandyke, Tsung-Hsien Wen, and
+Steve Young. 2016. Counter-ﬁtting word vectors to
+linguistic constraints. In NAACL.
+Yurii Nesterov and Vladimir Spokoiny. 2015.
+Ran-
+dom gradient-free minimization of convex functions.
+Foundations of Computational Mathematics.
+Bo Pang and Lillian Lee. 2005. Seeing stars: Exploit-
+ing class relationships for sentiment categorization
+with respect to rating scales. In ACL.
+Jeffrey Pennington, Richard Socher, and Christopher D.
+Manning. 2014. Glove: Global vectors for word rep-
+resentation. In EMNLP.
+Boris Poljak and Yakov Tsypkin. 1973. Pseudogradi-
+ent adaptation and training algorithms. Automation
+and Remote Control, 34:45–67.
+Motoki Sato, Jun Suzuki, Hiroyuki Shindo, and Yuji
+Matsumoto. 2018. Interpretable adversarial pertur-
+bation in input embedding space for text. In IJCAI.
+Christian Szegedy, Wojciech Zaremba, Ilya Sutskever,
+Joan Bruna, Dumitru Erhan, Ian Goodfellow, and
+Rob Fergus. 2014. Intriguing properties of neural
+networks. In ICLR.
+Jin Yong Yoo, John Morris, Eli Liﬂand, and Yanjun Qi.
+2020. Searching for a search method: Benchmark-
+ing search algorithms for generating nlp adversarial
+examples. In BlackboxNLP.
+Yuan Zang, Fanchao Qi, Chenghao Yang, Zhiyuan Liu,
+Meng Zhang, Qun Liu, and Maosong Sun. 2020.
+Word-level textual adversarial attacking as combina-
+torial optimization. In ACL.
+Xiang Zhang, Junbo Zhao, and Yann LeCun. 2015.
+Character-level convolutional networks for text clas-
+siﬁcation. In NIPS.
+A
+Appendix
+A.1
+Algorithms
+Algorithm 1: Unconstrained Attack
+Result: Returns a pair (successful, ˆs), containing a
+boolean indicating success and a sequence of
+tokens
+Input: s is the original sentence to attack,
+T = [t0, t1, ..., tn] is an ordered sequence of
+indices to target, ﬁltered by pre-transformation
+constraints, n is the number of replacement
+tokens to use for calculating displacements,
+and u is the number of gradient updates the
+algorithm can perform.
+Data: E is a matrix of word embeddings,
+goal_function is a function that returns
+goal function value and model prediction.
+1 y = argmax model(s)
+2 ˆs = s
+3 for t in T do
+4
+steps = 0
+5
+while steps < u do
+6
+−→
+et = Est
+7
+neighborhood = knn(−→
+et, E, k · n)
+8
+candidates = choose(neighborhood, n)
+9
+(l, ˆy) = goal_function(ˆs, y)
+10
+−−−→
+sumd = −→0
+11
+for c ∈candidates do
+12
+ˆsc
+t = {s0, ..., st−1, c, st+1, ...}
+13
+(lc, yc) = goal_function(ˆsc
+t, y)
+14
+if yc ̸= y then
+15
+return (True, ˆsc
+t)
+16
+end
+17
+−−−→
+sumd = −−−→
+sumd +
+lc−l
+∥−
+→
+ec−−
+→
+et∥
+−
+→
+ec−−
+→
+et
+∥−
+→
+ec−−
+→
+et∥
+18
+end
+19
+r = knn(et + γ · −−−→
+sumd, E, 1)
+20
+˜s = {ˆs0, ...ˆst−1, r, ˆst+1, ...}
+21
+(˜l, ˜y) = goal_function(˜s, y)
+22
+if ˜l ≥l then
+23
+ˆs = ˜s
+24
+ˆy = ˜y
+25
+end
+26
+if ˆy ̸= y then
+27
+return (True, ˆs)
+28
+end
+29
+steps = steps + 1;
+30
+end
+31 end
+32 return (False, ˆs)
+Algorithm 2: Random Baseline
+Result: Returns a pair (successful, ˆs), containing a
+boolean indicating success and a sequence of
+tokens
+Input: s is the original sentence to attack,
+T = [t0, t1, ..., tn−1] is an ordered sequence
+of indices to target, ﬁltered by
+pre-transformation constraints. b is a
+maximum number of queries to perform.
+Data: E is a matrix of word embeddings,
+goal_function is a function that returns
+goal function value and model prediction.
+1 y = argmax model(s)
+2 ˆy = y
+3 ˆs = s
+4 for t in T do
+5
+current_token = ˆst
+6
+current_embedding = Ecurrent_token
+7
+replacements =
+knn(current_embedding, E, 50)
+8
+r = shuffle(replacements)0
+9
+˜s = {ˆs0, ...ˆst−1, r, ˆst+1, ...}
+10
+(˜l, ˜y) = goal_function(˜s, y)
+11
+if ˜l ≥l then
+12
+ˆs = ˜s
+13
+ˆy = ˜y
+14
+end
+15
+if ˆy ̸= y then
+16
+return (True, ˆs)
+17
+end
+18 end
+19 return (False, ˆs)
+Algorithm 3: Random Baseline, Contin-
+ued Sampling
+Result: (successful, ˆs)
+Input: s, T = [t0, t1, ..., tn−1], b
+Data: E, goal_function
+1 y = argmax model(s), ˆy = y, ˆs = s, count = 0,
+ci = 0
+2 while y = ˆy ∧count < b do
+3
+if ci ≥n then
+4
+ci = 0
+5
+end
+6
+current_target = tci
+7
+current_token = ˆscurrent_target
+8
+current_embedding = Ecurrent_token
+9
+replacements =
+knn(current_embedding, E, 50)
+10
+r = shuffle(replacements)0
+11
+˜s = {ˆs0, ...ˆstci−1, r, ˆstci+1, ...}
+12
+(˜l, ˜y) = goal_function(˜s, y)
+13
+count = count + 1
+14
+if ˜l ≥l then
+15
+ˆs = ˜s
+16
+ˆy = ˜y
+17
+end
+18
+if ˆy ̸= y then
+19
+return (True, ˆs)
+20
+end
+21
+ci = ci + 1;
+22 end
+23 return (False, ˆs)
+A.2
+Embedding Space Analysis
+0
+5
+10
+15
+20
+25
+0
+10000
+20000
+30000
+40000
+50000
+Cos Sim >= 0.9
+0
+5
+10
+15
+20
+25
+100
+101
+102
+103
+104
+0
+5
+10
+15
+20
+25
+Linear Scale
+0
+2500
+5000
+7500
+10000
+12500
+15000
+17500
+20000
+Cos Sim >= 0.7
+0
+5
+10
+15
+20
+25
+Log Scale
+103
+104
+Neighborhood Size
+Number of Tokens
+Figure 1: Graphs of number of tokens over number of
+neighbors, under two neighborhood deﬁnitions. Both
+linear and log scales are used in order to highlight out-
+lying values.
+A.3
+Relaxed Constraint Results
+Method
+Attack Success% ↑(±σ) Avg # Queries ↓(±σ) % Words Changed ↓(±σ)
+lax.
+lax.
+lax.
+Movie Reviews
+Greedy
+84.6
+208.93
+14.2
+Beam 4
+89.4
+525.3
+14.5
+Beam 8
+90.2
+933.3
+14.3
+WIR(UNK)
+78.2
+67.3
+19.8
+WIR(DEL)
+78.8
+67.5
+20.1
+WIR(PWWS)
+75.6
+142.1
+17.6
+WIR(RAND)
+76.7±0.8
+55.0±0.6
+22.9±0.5
+DiscrZOO
+60.5±0.5
+66±0.3
+17.0±0.2
+Random
+33.6±0.6
+8.5±0.0
+20.4±0.4
+Random, CS
+63.9±1.2
+17.7±0.3
+27.9±0.3
+Farthest
+36.1±0.8
+8.4±0.6
+20.6±0.6
+Closest
+27.0±0.6
+8.8±0.0
+20.1±0.2
+SNLI
+Greedy
+89.1
+49.24
+6.6
+Beam 4
+90.0
+78.37
+6.7
+Beam 8
+90.1
+117.0
+6.7
+WIR(UNK)
+88.1
+39.8
+8.1
+WIR(DEL)
+88.4
+39.9
+8.4
+WIR(PWWS)
+86.8
+65.6
+7.0
+WIR(RAND)
+87.3±0.4
+21.9±0.2
+9.6±0.1
+DiscrZOO
+81.7±0.3
+37.1±0.1
+7.0±0.1
+Random
+47.3±1.1
+4.3±0.0
+10.0±0.2
+Random, CS
+84.5±0.4
+9.5±0.1
+12.7±0.3
+Farthest
+57.2±0.5
+4.1±0.0
+10.0±0.2
+Closest
+32.0±0.4
+4.6±0.0
+10.2±0.1
+Table 2: Adversarial attack using ZOO loss on both Movie Reviews and SNLI. DiscreteZOO averaged over three
+runs; Random, Farthest, and Closest Nearest Neighbor baselines averaged over seven runs; standard deviation
+denoted by ±. With constraints, the DiscreteZOO attack samples up to 10 neighbors. The lax. constraints are the
+same as the constr. from Table 1 with the cosine similarity and BERTScore thresholds set to 0.7.

@@ -1,0 +1,904 @@
+Title: APIO: Automatic Prompt Induction and Optimization for Grammatical Error Correction and Text Simplification
+Source URL: http://arxiv.org/abs/2508.09378v1
+--------------------------------------------------
+
+APIO: Automatic Prompt Induction and Optimization for Grammatical
+Error Correction and Text Simplification
+Artem Chernodub*†‡ζ
+Aman Sainiγ
+Yejin Huhγ
+Vivek Kulkarniγ
+Vipul Rahejaγ
+ζZendesk
+γGrammarly
+Abstract
+Recent advancements in large language models
+(LLMs) have enabled a wide range of natu-
+ral language processing (NLP) tasks to be per-
+formed through simple prompt-based interac-
+tions. Consequently, several approaches have
+been proposed to engineer prompts that most ef-
+fectively enable LLMs to perform a given task
+(e.g., chain-of-thought prompting). In settings
+with a well-defined metric to optimize model
+performance, automatic prompt optimization
+(APO) methods have been developed to re-
+fine a seed prompt. Advancing this line of re-
+search, we propose APIO, a simple but effective
+prompt induction and optimization approach
+for the tasks of Grammatical Error Correction
+(GEC) and Text Simplification, without rely-
+ing on manually specified seed prompts. APIO
+achieves a new state-of-the-art performance for
+purely LLM-based prompting methods on these
+tasks. We make our data, code, prompts, and
+outputs publicly available.1
+1
+Introduction
+Prompt engineering has become a popular and cru-
+cial technique for steering large language mod-
+els (LLMs) toward desired outputs, but finding ef-
+fective prompts remains challenging. Prompting
+methods like chain-of-thought (CoT) prompting,
+best-of-n sampling, etc. are general strategies that
+have been shown to be effective. However, even
+when these advanced prompting strategies are used,
+recent studies show that LLMs are highly sensi-
+tive to seemingly minor variations in prompts (e.g.
+phrasing (Li et al., 2023), ordering of information
+(Liu et al., 2024), or formatting (Sclar et al., 2024),
+which can lead to significant performance variation.
+Consequently, in practice for many tasks, prompts
+*Accepted for publication at Recent Advances in Natural
+Language Processing conference (RANLP 2025).
+†The work was done while working at Grammarly.
+‡Correspondence: a.chernodub@gmail.com.
+1https://github.com/achernodub/apio
+are tuned by prompt engineers to maximize gains
+in task performance. Since manual prompt tuning
+can be tedious, there has been some research on au-
+tomatic prompt optimization (APO) methods that
+tune a base prompt based on performance on train-
+ing and validation sets – the most relevant work
+being that of (Pryzant et al., 2023).
+However, APO, in general, mainly focuses on
+text classification tasks such as Jailbreak Detec-
+tion, Math Reasoning, and BIG-bench Hard tasks
+(Zhou et al., 2022; Pryzant et al., 2023; Ye et al.,
+2024; Ma et al., 2024) and has been underexplored
+for text revision tasks such as Grammatical Error
+Correction (GEC) and Text Simplification. In this
+paper, we address this gap and propose a novel
+prompt induction and optimization method called
+APIO . In contrast to existing prompt optimization
+methods that require a seed prompt, APIO does not
+rely on a manually specified prompt. Instead, it
+induces a reasonable list of instructions and subse-
+quently optimizes them. In short, APIO performs
+both automatic prompt induction and optimization.
+We evaluate APIO against strong baselines on stan-
+dard GEC and Text Simplification benchmarks and
+show that APIO sets a state-of-the-art performance
+on these benchmarks.
+Our main contributions are:
+• We introduce a novel method Automatic
+Prompt Induction and Optimization (APIO)
+for text revision tasks (specifically, GEC and
+Text Simplification).
+• We set the new state-of-the-art for LLM-based
+prompting methods on these tasks. For the
+GEC task, we achieve a score of 59.40 on the
+BEA-2019 test dataset, ahead of the previous
+state-of-the-art (57.41) (Loem et al., 2023).
+For the Text Simplification task, we achieve
+a SARI score of 49.47 on the ASSET-Test
+dataset, ahead of the previous state-of-the-art
+(47.94) (Vadlamannati and ¸Sahin, 2023).
+arXiv:2508.09378v1  [cs.CL]  12 Aug 2025
+2
+APIO
+APIO has two main steps:
+1. Prompt Induction. We first induce a prompt
+given gold-standard examples of task-specific
+input and output pairs.
+2. Prompt Optimization. We then optimize the
+induced prompt to maximize training and val-
+idation performance.
+Prompt Induction
+Unlike other APO methods
+which start from an initial, manually crafted seed
+prompt, APIO requires only a few input–output
+examples that demonstrate the task — typically
+available as training data. Given these examples,
+we use a state-of-the-art LLM to infer a prompt to
+solve the task. A key feature of our prompt induc-
+tion approach is to induce structure to the inferred
+prompt. In particular, the LLM generates a prompt
+that consists of a markdown-style list of single-
+sentence instructions between the prompt’s header
+and footer, which are not optimized (Appendix A,
+Listing 1).
+Structuring the prompt as a list of independent
+instructions allows for instruction-level tuning, and
+enables more fine-grained control as opposed to
+tuning a flat text blob. Formally, the output of this
+step will be a prompt P, consisting of an ordered
+list of instructions L. Each instruction in the list
+is derived by the LLM from a single "training"
+input-output pair (see the meta-prompt for prompt
+induction in Appendix B, Listing 2).
+Prompt Optimization
+In this step, we optimize
+the induced prompt P that consists of a list of in-
+structions L iteratively as follows:
+1. We consider the instructions in the current
+pool of size M, which is initialized to L—the
+set of instructions inferred during the Prompt
+Induction step.
+2. We then seek to expand the above pool of in-
+structions through a beam search with a beam
+size B. In particular, we expand the pool
+through three prompting operations:
+• Improve: Here, we generate beam candi-
+dates by prompting an LLM to improve
+the given pool of instructions to reduce
+the error rate on the given input-output
+examples as much as possible. In our
+experiments, we use word-level Leven-
+shtein edit distance as a metric for opti-
+mization for all domains. See the specific
+meta-prompt in Appendix B, Listing 3.
+• Rephrase: Next, we expand the current
+pool by prompting the LLM to rephrase
+each instruction without changing the un-
+derlying meaning. See the specific meta-
+prompt in Appendix B, Listing 4.
+• Permute: Finally, we take Npermute in-
+structions and randomly change their or-
+der in the current list of instructions.
+3. After expanding the pool using the above three
+operations, we obtain three candidate sets –
+each set being a list of instructions. We rank
+them by their performance on the validation
+set and add the best B to the pool. To control
+for divergence from prior iterations, we addi-
+tionally introduce a word-level Levenshtein
+edit distance penalty on the prompts.
+3
+Experimental Setup
+3.1
+Tasks, Datasets and Metrics
+We conduct our experiments on two prominent text
+revision tasks: GEC and Text Simplification. We
+use the current standard evaluation sets and evalua-
+tion metrics for each task.
+Grammatical Error Correction
+is the task of
+correcting text for spelling and grammatical er-
+rors. We report results on the Test split of the
+W&I+LOCNESS Corpus from the BEA-2019 GEC
+Shared Task (Bryant et al., 2019). We refer to
+this dataset as BEA-2019-Test. We evaluate re-
+sults using F0.5 score measured using ERRANT
+tool2 launched at CodaLab platform3. Train and
+dev datasets are sampled from the BEA-2019-Dev
+dataset (4384 samples).
+Text Simplification
+is the task of rewriting text in
+a simpler form without altering its original meaning
+(Saggion, 2017). We report results on the ASSET-
+Test dataset (359 samples) (Alva-Manchego et al.,
+2020) as the main evaluation set. We evaluate re-
+sults using the SARI score (Xu et al., 2016) mea-
+sured using the EASSE package4 (Alva-Manchego
+et al., 2019). Train and dev datasets are sampled
+from the ASSET-Dev dataset (2000 samples).
+2https://github.com/chrisjbryant/errant
+3https://codalab.lisn.upsaclay.fr/
+competitions/4057
+4https://github.com/feralvam/easse
+3.2
+Baselines
+Copy
+We consider a simple baseline that copies
+the input text to the output.
+Best reference
+As a best-case baseline, we pro-
+vide the scores obtained by the best-performing
+reference if available.
+SFT
+We consider state-of-the-art Supervised
+Fine-Tuning (SFT) methods as an alternative to
+prompt-based learning.
+Zero Shot
+We consider a simple 0-shot prompt,
+which describes the task as an instruction.
+Few Shot
+We augment the prompt used in the 0-
+shot setting with a few randomly selected examples
+demonstrating the task.
+3.3
+APIO Setup
+In addition to evaluating our full proposed method,
+we also perform an ablation where we only perform
+the first step of APIO – namely automatic prompt
+induction. We denote that in our experiments with
+APIO -INDUCTION-ONLY.
+Induced prompts:
+The induced prompts are de-
+rived by extracting three instructions from three
+randomly selected input-output pairs in the training
+dataset. To identify the best induced prompt, we
+perform 10 trials on the validation dataset.
+Optimized prompts:
+We optimize the prompts
+induced in the previous step by continuously
+adding new instructions using the Improve meta-
+prompt, rephrasing them using the Rephrase meta-
+prompt, and adjusting their order using the Permute
+operation. In our experiments, number of epochs
+Nepochs = 15, Npermute = 2, beam size B = 32.
+The above parameters were an expedient choice
+and we did not extensively tune them. With regards
+to the choice of LLMs used in prompting based
+approaches, we experiment with two very pop-
+ular LLMs, namely GPT-4o-mini5 and GPT-4o6.
+We use different generation parameter settings for
+prompt induction and optimization versus test-time
+inference. For prompt induction and optimization,
+we set the temperature t = 1.0 and nucleus sam-
+pling top-p = 1.0 for better creativity. For infer-
+ence, we set temperature t = 0.0 and top-p = 0.1
+to decrease randomness in outputs, as instability
+in outputs leads to worse convergence during opti-
+mization.
+5gpt-4o-mini-2024-07-18
+6gpt-4o-2024-05-13
+4
+Results
+GEC
+APIO shows substantial gains over zero-
+shot, few-shot, and induction-only approaches on
+GEC (Table 1).
+With GPT-4o, APIO achieves
+an F0.5 score of 59.40 (using 10 instructions),
+which is comparable to the state-of-the-art perfor-
+mance among prompt-based LLMs (which was
+57.41 by GPT-3).
+However, we also note that
+APIO performance, still falls significantly short of
+non-prompting SFT ensemble techniques (which
+scored 72.80), highlighting limitations of solely
+prompting-based approaches on this task.
+Text Simplification
+APIO shows significant im-
+provements over baseline methods with both LLMs
+for the task (Table 1). Notably, APIO using GPT-
+4o achieves a SARI score of 49.47, surpassing the
+previous state-of-the-art score (47.94) for prompt-
+based methods on the ASSET-Test dataset.
+Overall, we observe that APIO is a highly ef-
+fective method for automating prompt engineering
+in text revision tasks. Its strength lies in signifi-
+cantly boosting performance over standard prompt-
+ing techniques and achieving state-of-the-art for
+text revision tasks among prompting-based meth-
+ods—without the need for manual prompt design.
+The prompt optimization step was shown to be par-
+ticularly crucial, yielding substantial performance
+gains, especially in GEC (compare APIO with
+APIO -INDUCTION-ONLY). While limitations ex-
+ist compared to non-prompting methods in GEC,
+APIO represents a valuable advancement in making
+prompt engineering easier and accessible.
+5
+Related Work
+5.1
+LLM Prompting for Text Revision
+Fang et al. (2023) was the first work to evaluate
+zero-shot performance using LLMs (ChatGPT in
+their case) for GEC at both sentence and docu-
+ment levels, finding that ChatGPT exhibited high
+fluency and produced corrections that enhanced
+the original text beyond the provided references.
+However, ChatGPT faced challenges in adhering
+to specific step-by-step formats when given sim-
+ple prompt instructions. More recently, numerous
+works (Coyne et al., 2023; Loem et al., 2023; Davis
+et al., 2024; Kaneko and Okazaki, 2024; Katinskaia
+and Yangarber, 2024) have evaluated both open-
+source and commercial LLMs on multiple GEC
+benchmarks, finding that LLMs do not consistently
+outperform supervised models, especially on min-
+Task
+Approach
+LLM
+Test Score
+GEC *
+Copy
+–
+0.00
+SFT (Omelianchuk et al., 2024)
+Multiple
+72.80
+Zero-shot (Loem et al., 2023)
+GPT-3
+53.07
+Few-shot (16 examples) (Loem et al., 2023)
+GPT-3
+57.41
+Few-shot (4 examples) (Tang et al., 2024)
+GPT-3.5-Turbo
+53.20
+Zero-shot (adapted from (Loem et al., 2023))
+GPT-4o-mini
+49.90
+Few-shot (3 randomly sampled examples)
+GPT-4o-mini
+53.01
+APIO-INDUCTION-ONLY (3 instructions)
+GPT-4o-mini
+38.72
+APIO (7 instructions)
+GPT-4o-mini
+57.07
+Zero-shot (adapted from (Loem et al., 2023))
+GPT-4o
+54.66
+Few-shot (3 examples, randomly sampled)
+GPT-4o
+44.50
+APIO-INDUCTION-ONLY (3 instructions)
+GPT-4o
+43.37
+APIO (10 instructions)
+GPT-4o
+59.40
+Text Simplification
+Copy
+–
+20.70
+SFT (Sheang and Saggion, 2021)
+T5-base
+45.04
+Best reference (ref-0)
+–
+52.62
+Few-shot (15 SARI-selected examples, random ordering)
+(Vadlamannati and ¸Sahin, 2023)
+GPT-3-175B
+47.94
+Zero-shot (adapted from (Raheja et al., 2023))
+GPT-4o-mini
+48.03
+Few-shot (3 randomly sampled examples)
+GPT-4o-mini
+47.16
+APIO -INDUCTION-ONLY (3 instructions)
+GPT-4o-mini
+48.79
+APIO (6 instructions)
+GPT-4o-mini
+49.27
+Zero-shot (adapted from (Raheja et al., 2023))
+GPT-4o
+47.73
+Few-shot (3 examples, randomly sampled)
+GPT-4o
+47.87
+APIO -INDUCTION-ONLY (3 instructions)
+GPT-4o
+48.93
+APIO (10 instructions)
+GPT-4o
+49.47
+Table 1: GEC (BEA-2019-Test | F0.5) and Text Simplification results (ASSET-Test | SARI). Results are grouped
+by baselines (Copy, Best-reference, and SFT), and by other prompt-based methods from different models. *Best
+reference baseline is unavailable for the GEC task because the BEA-2019-Test dataset has not been published.
+imal edit tasks, and often struggle to balance flu-
+ency improvements and preservation of the original
+meaning. Similarly, many recent works (Kew et al.,
+2023; Qiang et al., 2025; Farajidizaji et al., 2024)
+have explored and demonstrated the effectiveness
+of prompt-based methods for text simplification.
+5.2
+LLM-based Automatic Prompt
+Optimization (APO)
+Prior work show that LLMs are highly sensitive to
+seemingly minor prompt variations, such as task
+specification, information ordering, or stylistic for-
+matting, which can lead to significant performance
+differences, making prompt engineering a tedious
+trial-and-error process (Li et al., 2025).
+Several methods have been proposed to automat-
+ically identify better-performing prompts, using
+both continuous and discrete prompt optimization
+methods (Li and Liang, 2021; Prasad et al., 2023;
+Deng et al., 2022; Zhang et al., 2023).
+Recent work has focused on incorporating LLMs
+into the optimization process, leveraging their abil-
+ity to generate natural text. By providing example
+data to the LLM, Honovich et al. (2023) gener-
+ated task instructions directly without an initial
+prompt. LLMs have also been used to conduct
+Monte Carlo search (Zhou et al., 2023) generat-
+ing additional prompt candidates. Various iterative
+workflows have been designed to prompt LLMs to
+self-reflect, analyzing errors and improving upon
+a previous prompt (Pryzant et al., 2023; Ye et al.,
+2024). Evolutionary algorithms (Guo et al., 2024)
+suggest systematically refining prompt candidates.
+Our work extends this literature by adapting
+APO specifically for text revision, combining ad-
+vances in APO with the unique requirements of
+text editing tasks.
+6
+Conclusion
+We present APIO, a new technique for automatic
+prompt induction and optimization for the tasks of
+Grammatical Error Correction and Text Simplifica-
+tion. Our method achieves state-of-the-art perfor-
+mance when compared to other prompting-based
+baselines on these tasks. APIO represents a signif-
+icant step forward in automating and simplifying
+the process of prompt engineering.
+7
+Limitations
+Our research primarily focuses on a limited set
+of models, and we acknowledge that the design
+choices—such as the number of prompts, itera-
+tions, and other generation hyper-parameters, such
+as beam size, top-p, temperature, etc. have not been
+exhaustively explored. Additionally, our findings
+are sensitive to specific model artifacts. We also
+recognize that we did not investigate other tasks,
+benchmarks, or languages, which could provide a
+more comprehensive understanding of the models’
+effectiveness with respect to APIO.
+8
+Acknowledgments
+This research was supported by Grammarly. We are
+grateful to Mariana Romanyshyn for bringing atten-
+tion to this topic. We are wholeheartedly grateful to
+Nastia Osidach, Viktor Zamaruiev, Max Gubin, and
+Peng Wang for their support. We also thank Shashi
+Ravula for making it happen. We appreciate the
+contributions of the three anonymous reviewers.
+References
+Fernando Alva-Manchego, Louis Martin, Antoine Bor-
+des, Carolina Scarton, Benoît Sagot, and Lucia Spe-
+cia. 2020. ASSET: A dataset for tuning and evalua-
+tion of sentence simplification models with multiple
+rewriting transformations. In Proceedings of the 58th
+Annual Meeting of the Association for Computational
+Linguistics, pages 4668–4679, Online. Association
+for Computational Linguistics.
+Fernando Alva-Manchego, Louis Martin, Carolina Scar-
+ton, and Lucia Specia. 2019. EASSE: Easier auto-
+matic sentence simplification evaluation. In Proceed-
+ings of the 2019 Conference on Empirical Methods
+in Natural Language Processing and the 9th Inter-
+national Joint Conference on Natural Language Pro-
+cessing (EMNLP-IJCNLP): System Demonstrations,
+pages 49–54, Hong Kong, China. Association for
+Computational Linguistics.
+Christopher Bryant, Mariano Felice, Øistein E. Ander-
+sen, and Ted Briscoe. 2019. The BEA-2019 shared
+task on grammatical error correction. In Proceedings
+of the Fourteenth Workshop on Innovative Use of NLP
+for Building Educational Applications, pages 52–75,
+Florence, Italy. Association for Computational Lin-
+guistics.
+Steven Coyne, Keisuke Sakaguchi, Diana Galvan-Sosa,
+Michael Zock, and Kentaro Inui. 2023. Analyzing
+the performance of gpt-3.5 and gpt-4 in grammatical
+error correction. Preprint, arXiv:2303.14342.
+Christopher Davis, Andrew Caines, Øistein E. Ander-
+sen, Shiva Taslimipoor, Helen Yannakoudakis, Zheng
+Yuan, Christopher Bryant, Marek Rei, and Paula But-
+tery. 2024. Prompting open-source and commercial
+language models for grammatical error correction
+of English learner text. In Findings of the Associa-
+tion for Computational Linguistics: ACL 2024, pages
+11952–11967, Bangkok, Thailand. Association for
+Computational Linguistics.
+Mingkai Deng, Jianyu Wang, Cheng-Ping Hsieh, Yi-
+han Wang, Han Guo, Tianmin Shu, Meng Song, Eric
+Xing, and Zhiting Hu. 2022. RLPrompt: Optimizing
+discrete text prompts with reinforcement learning.
+In Proceedings of the 2022 Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+3369–3391, Abu Dhabi, United Arab Emirates. As-
+sociation for Computational Linguistics.
+Tao Fang, Shu Yang, Kaixin Lan, Derek F Wong, Jin-
+peng Hu, Lidia S Chao, and Yue Zhang. 2023. Is
+chatgpt a highly fluent grammatical error correction
+system? a comprehensive evaluation. arXiv preprint
+arXiv:2304.01746.
+Asma Farajidizaji, Vatsal Raina, and Mark Gales. 2024.
+Is it possible to modify text to a target readability
+level? an initial investigation using zero-shot large
+language models. Preprint, arXiv:2309.12551.
+Qingyan Guo, Rui Wang, Junliang Guo, Bei Li, Kaitao
+Song, Xu Tan, Guoqing Liu, Jiang Bian, and Yujiu
+Yang. 2024. Connecting large language models with
+evolutionary algorithms yields powerful prompt opti-
+mizers. In The Twelfth International Conference on
+Learning Representations.
+Or Honovich, Uri Shaham, Samuel R. Bowman, and
+Omer Levy. 2023. Instruction induction: From few
+examples to natural language task descriptions. In
+Proceedings of the 61st Annual Meeting of the As-
+sociation for Computational Linguistics (Volume 1:
+Long Papers), pages 1935–1952, Toronto, Canada.
+Association for Computational Linguistics.
+Masahiro Kaneko and Naoaki Okazaki. 2024. Con-
+trolled generation with prompt insertion for natural
+language explanations in grammatical error correc-
+tion. In Proceedings of the 2024 Joint International
+Conference on Computational Linguistics, Language
+Resources and Evaluation (LREC-COLING 2024),
+pages 3955–3961, Torino, Italia. ELRA and ICCL.
+Anisia Katinskaia and Roman Yangarber. 2024. GPT-
+3.5 for grammatical error correction. In Proceedings
+of the 2024 Joint International Conference on Compu-
+tational Linguistics, Language Resources and Eval-
+uation (LREC-COLING 2024), pages 7831–7843,
+Torino, Italia. ELRA and ICCL.
+Tannon Kew, Alison Chi, Laura Vásquez-Rodríguez,
+Sweta Agrawal, Dennis Aumiller, Fernando Alva-
+Manchego, and Matthew Shardlow. 2023. BLESS:
+Benchmarking large language models on sentence
+simplification. In Proceedings of the 2023 Confer-
+ence on Empirical Methods in Natural Language Pro-
+cessing, pages 13291–13309, Singapore. Association
+for Computational Linguistics.
+Cheng Li, Jindong Wang, Yixuan Zhang, Kaijie Zhu,
+Wenxin Hou, Jianxun Lian, Fang Luo, Qiang Yang,
+and Xing Xie. 2023. Large language models un-
+derstand and can be enhanced by emotional stimuli.
+arXiv preprint arXiv:2307.11760.
+Wenwu Li, Xiangfeng Wang, Wenhao Li, and Bo Jin.
+2025.
+A survey of automatic prompt engineer-
+ing:
+An optimization perspective.
+Preprint,
+arXiv:2502.11560.
+Xiang Lisa Li and Percy Liang. 2021. Prefix-tuning:
+Optimizing continuous prompts for generation. In
+Proceedings of the 59th Annual Meeting of the Asso-
+ciation for Computational Linguistics and the 11th
+International Joint Conference on Natural Language
+Processing (Volume 1: Long Papers), pages 4582–
+4597, Online. Association for Computational Lin-
+guistics.
+Nelson F. Liu, Kevin Lin, John Hewitt, Ashwin Paran-
+jape, Michele Bevilacqua, Fabio Petroni, and Percy
+Liang. 2024. Lost in the middle: How language mod-
+els use long contexts. Transactions of the Association
+for Computational Linguistics, 12:157–173.
+Mengsay Loem, Masahiro Kaneko, Sho Takase, and
+Naoaki Okazaki. 2023. Exploring effectiveness of
+GPT-3 in grammatical error correction: A study
+on performance and controllability in prompt-based
+methods. In Proceedings of the 18th Workshop on
+Innovative Use of NLP for Building Educational
+Applications (BEA 2023), pages 205–219, Toronto,
+Canada. Association for Computational Linguistics.
+Ruotian Ma, Xiaolei Wang, Xin Zhou, Jian Li, Nan
+Du, Tao Gui, Qi Zhang, and Xuanjing Huang. 2024.
+Are large language models good prompt optimizers?
+arXiv preprint arXiv:2402.02101.
+Kostiantyn Omelianchuk, Andrii Liubonko, Oleksandr
+Skurzhanskyi, Artem Chernodub, Oleksandr Korni-
+ienko, and Igor Samokhin. 2024. Pillars of gram-
+matical error correction: Comprehensive inspection
+of contemporary approaches in the era of large lan-
+guage models. In Proceedings of the 19th Workshop
+on Innovative Use of NLP for Building Educational
+Applications (BEA 2024), pages 17–33, Mexico City,
+Mexico. Association for Computational Linguistics.
+Archiki Prasad, Peter Hase, Xiang Zhou, and Mohit
+Bansal. 2023. GrIPS: Gradient-free, edit-based in-
+struction search for prompting large language models.
+In Proceedings of the 17th Conference of the Euro-
+pean Chapter of the Association for Computational
+Linguistics, pages 3845–3864, Dubrovnik, Croatia.
+Association for Computational Linguistics.
+Reid Pryzant, Dan Iter, Jerry Li, Yin Lee, Chenguang
+Zhu, and Michael Zeng. 2023. Automatic prompt op-
+timization with “gradient descent” and beam search.
+In Proceedings of the 2023 Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+7957–7968, Singapore. Association for Computa-
+tional Linguistics.
+Jipeng Qiang, Minjiang Huang, Yi Zhu, Yunhao Yuan,
+Chaowei Zhang, and Kui Yu. 2025.
+Redefining
+simplicity: Benchmarking large language models
+from lexical to document simplification. Preprint,
+arXiv:2502.08281.
+Vipul Raheja, Dhruv Kumar, Ryan Koo, and Dongyeop
+Kang. 2023. CoEdIT: Text editing by task-specific
+instruction tuning. In Findings of the Association
+for Computational Linguistics: EMNLP 2023, pages
+5274–5291, Singapore. Association for Computa-
+tional Linguistics.
+Horacio Saggion. 2017. Automatic text simplification,
+volume 32. Springer.
+Melanie Sclar, Yejin Choi, Yulia Tsvetkov, and Alane
+Suhr. 2024. Quantifying language models’ sensitiv-
+ity to spurious features in prompt design or: How i
+learned to start worrying about prompt formatting. In
+ICLR.
+Kim Cheng Sheang and Horacio Saggion. 2021. Con-
+trollable sentence simplification with a unified text-
+to-text transfer transformer. In Proceedings of the
+14th International Conference on Natural Language
+Generation, pages 341–352, Aberdeen, Scotland, UK.
+Association for Computational Linguistics.
+Chenming Tang, Fanyi Qu, and Yunfang Wu. 2024.
+Ungrammatical-syntax-based in-context example se-
+lection for grammatical error correction. In Proceed-
+ings of the 2024 Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics: Human Language Technologies (Volume
+1: Long Papers), pages 1758–1770, Mexico City,
+Mexico. Association for Computational Linguistics.
+Subhadra Vadlamannati and Gözde ¸Sahin. 2023. Metric-
+based in-context learning: A case study in text sim-
+plification. In Proceedings of the 16th International
+Natural Language Generation Conference, pages
+253–268, Prague, Czechia. Association for Computa-
+tional Linguistics.
+Wei Xu, Courtney Napoles, Ellie Pavlick, Quanze Chen,
+and Chris Callison-Burch. 2016.
+Optimizing sta-
+tistical machine translation for text simplification.
+Transactions of the Association for Computational
+Linguistics, 4:401–415.
+Qinyuan Ye, Mohamed Ahmed, Reid Pryzant, and
+Fereshte Khani. 2024. Prompt engineering a prompt
+engineer. In Findings of the Association for Com-
+putational Linguistics: ACL 2024, pages 355–385,
+Bangkok, Thailand. Association for Computational
+Linguistics.
+Tianjun Zhang, Xuezhi Wang, Denny Zhou, Dale Schu-
+urmans, and Joseph E. Gonzalez. 2023. TEMPERA:
+test-time prompt editing via reinforcement learning.
+In The Eleventh International Conference on Learn-
+ing Representations, ICLR 2023, Kigali, Rwanda,
+May 1-5, 2023. OpenReview.net.
+Yongchao Zhou, Andrei Ioan Muresanu, Ziwen Han,
+Keiran Paster, Silviu Pitis, Harris Chan, and Jimmy
+Ba. 2022. Large language models are human-level
+prompt engineers.
+In The Eleventh International
+Conference on Learning Representations.
+Yongchao Zhou, Andrei Ioan Muresanu, Ziwen Han,
+Keiran Paster, Silviu Pitis, Harris Chan, and Jimmy
+Ba. 2023. Large language models are human-level
+prompt engineers.
+In The Eleventh International
+Conference on Learning Representations, ICLR 2023,
+Kigali, Rwanda, May 1-5, 2023. OpenReview.net.
+A
+APIO Prompt Structure
+<prompt -header >
+* instruction -1
+* instruction -2
+...
+* instruction -N
+<prompt -footer >
+Listing 1: Structure of our proposed prompt, represented as a list of N instructions.
+B
+Meta-prompts for APIO
+Below is an example of an input -output pair for the Text
+Simplification task.
+Complex sentence: {input_text}
+Simple sentence: {output_text}
+You are the prompt engineer. Could you give an instruction for this example?
+Do not
+mention any part of the considered texts.
+Listing 2: Meta-prompt for prompt induction for the Text Simplification task.
+You are a super -talented prompt engineer. You are working on improvement of the Text
+Simplification System
+The System has these Instructions:
+* {instruction1}
+* {instruction2}
+* {instruction3}
+Below are the examples of System 's work:
+Input 1: {input_text_1}
+System\'s Output 1: {output_text_1}
+Gold Output 1: {gold_output_text_1}
+Error 1 between System\'s Output 1 and Gold Output 1 for given Input 1: {num1}
+different words.
+Input 2: {input_text_2}
+System\'s Output 2: {output_text_2}
+Gold Output 2: {gold_output_text_2}
+Error 2 between System\'s Output 2 and Gold Output 2 for given Input 2: {num2}
+different words.
+Mean error for examples 1-2:
+{ave_num} words.
+Suggest new instruction to augment existing instructions forcing the System 's
+Outputs to be exactly the same as Gold Outputs for the given System 's Inputs. You
+need to minimize Errors between System 's Outputs and Gold Outputs. Put new
+instruction between <new_instruction > and </new_instruction > tags. Do not use no
+more than two sentences. Do not mention Gold Output. Do not use "newline" symbols in
+your answer. Prioritize fixing cases which have larger error (which have more
+different words).
+Listing 3: Meta-prompt for prompts’ improvement. It generates new instruction to be added to the existing list. In
+our setting, the number of instructions in the list varies from 3 to 10.
+Generate a variation of the following instruction while keeping the semantic
+meaning , updated instruction must be no more than two sentences
+Instruction :{ instruction}
+Updated instruction:
+Listing 4: Meta-prompt for prompt rephrasing.
+C
+Examples of APIO prompts (Prompt
+Induction only)
+* Identify and correct the grammatical error in the given sentence to improve
+clarity and accuracy.
+* Generate a corrected version of the given sentence by identifying and fixing any
+grammatical errors while maintaining the original meaning.
+* Given a sentence with grammatical errors , identify and correct the mistakes to
+produce a grammatically accurate version of the sentence.
+Sentence: {input_text}
+Corrected sentence:
+Listing 5: Induced prompt for Grammatical Error Correction task from Table 1, 3 instructions, GPT-4o-mini.
+* Identify and correct any grammatical errors present in the given sentence.
+* Identify and correct any grammatical errors in the given sentence to ensure it is
+grammatically accurate.
+* Identify any grammatical errors in the provided sentence and correct them ,
+ensuring the sentence is grammatically accurate. If the sentence is already correct ,
+leave it unchanged.
+Sentence: {input_text}
+Corrected sentence:
+Listing 6: Induced prompt for Grammatical Error Correction task from Table 1, 3 instructions, GPT-4o.
+* Simplify the complex sentence by rephrasing it into a more straightforward version
+while maintaining the original meaning and key information.
+* Break down the complex sentence into simpler , more concise sentences while
+maintaining the original meaning. Ensure clarity and ease of understanding in the
+rephrased sentences.
+* Simplify the given complex sentence by breaking it into shorter , clearer sentences
+while maintaining the original meaning. Focus on using straightforward language and
+avoiding any unnecessary jargon or complexity.
+Complex sentence: {input_text}
+Simple sentence:
+Listing 7: Induced prompt for Text Simplification task from Table 1, 3 instructions, GPT-4o-mini.
+* Simplify the given complex sentence by breaking it into shorter , clearer sentences
+while retaining the original meaning. Remove any unnecessary abstract language and
+focus on conveying the core ideas directly.
+* Simplify the given complex sentence while retaining the original meaning and key
+information. Use simpler language and structure to make the sentence more accessible
+and easier to understand.
+* Rewrite the given complex sentence to make it easier to understand while
+preserving its original meaning.
+Complex sentence: {input_text}
+Simple sentence:
+Listing 8: Induced prompt for Text Simplification task from Table 1, 3 instructions, GPT-4o.
+D
+Examples of APIO prompts (Induced
+and Optimized)
+* Given a sentence with grammatical errors , identify and correct the mistakes to
+produce a grammatically accurate version of the sentence.
+* Ensure that the output replicates the phrasing , structure , and punctuation of the
+input exactly , with the primary goal of achieving a completely identical output.
+Prioritize correcting any grammatical errors while maintaining the original meaning
+to minimize discrepancies between the output and the expected format of the input.
+* Ensure that the corrected sentence matches the original phrasing , structure , and
+punctuation as closely as possible while correcting grammatical errors , with a
+priority on minimizing the number of differing words. Strive to maintain the
+original meaning in a way that eliminates any discrepancies between
+the output and the expected format of the input.
+* Generate a corrected version of the given sentence by identifying and fixing any
+grammatical errors while maintaining the original meaning.
+* Make sure the revised sentence closely mirrors the phrasing and structure of the
+original meaning while addressing any grammatical mistakes. Aim for an output that
+is as identical to the reference as possible to ensure accuracy and consistency.
+* Identify and correct the grammatical error in the given sentence to improve
+clarity and accuracy.
+* Make certain that the output mirrors the original phrasing , structure , and
+punctuation precisely , rectifying grammatical mistakes without introducing any
+discrepancies. Aim for no variations in wording between the output and the original
+format , prioritizing corrections in sentences with more significant errors.
+Sentence: {input_text}
+Corrected sentence:
+Listing 9: Optimized prompt for Grammatical Error Correction task from Table 1, 7 instructions, GPT-4o-mini.
+* In cases with higher word differences , carefully review the phrasing and wording
+choices for an exact match with the intended simple form. Ensure the choice of words
+strictly conforms to the simplest possible format while reflecting the input
+structure and content precisely.
+* To closely align with the expected output , systematically analyze the original
+sentence and aim for a verbatim transformation using the exact sequence and choice
+of words where simplification allows. Recheck each rewritten sentence to ensure all
+elements of the original are accurately reflected in the simplest possible form ,
+prioritizing consistency in language and style.
+* Preserve the original sentence structure as closely as possible while simplifying
+the language to reduce word differences significantly. Focus on maintaining the
+specific sequence and choice of words to minimize variation in output.
+* Simplify the given complex sentence by breaking down information into shorter ,
+clearer sentences and preserving the original meaning.
+* Pay close attention to the specific choice of words and phrasing used in the
+original sentences , particularly in cases where there is a large difference in word
+count. Aim to closely match the degree of formality and style while simplifying ,
+ensuring the output is concise and directly reflective of the input content.
+* Emphasize selecting wording that precisely aligns with the simplest form of the
+input , while significantly reducing word changes by closely mimicking the expected
+output style
+and brevity in all cases. Pay particular attention to details that
+show higher word differences , striving to match them exactly.
+* Please rewrite the complex sentence in a simpler form , keeping the main idea
+intact so it 's easier for everyone to understand.
+* Focus on matching the exact vocabulary and phrasing seen in the specific simple
+form associated with each word -for -word transformation to ensure minimal word
+differences. Give priority to adjustments in cases where errors have a substantial
+impact , striving to achieve precision in the chosen wording.
+* Concentrate on closely matching the phrasing and style of the original sentence ,
+with minimal changes in wording and structure. Aim to reduce word differences ,
+especially when errors are significant , to better match the target simplicity and
+tone.
+* Rewrite the complex sentence into simpler sentences while preserving the original
+meaning and information.
+Complex sentence: {input_text}
+Simple sentence:
+Listing 10: Optimized prompt for Grammatical Error Correction task from Table 1, 10 instructions, GPT-4o.
+* Make sure the output closely resembles the wording and structure of the provided
+sentence , using straightforward language to maintain its original meaning. Aim to
+keep the same key terms and phrases to limit any variations.
+* Ensure that the simplified sentences closely match the structure and wording of
+the simplest version while maintaining the core meaning. Strive to keep changes
+minimal , avoiding significant alterations to the original sentence 's intent.
+* Split the long sentence into shorter , more straightforward sentences that
+emphasize the key points without unnecessary details. Use plain language to enhance
+clarity.
+* Make sure the output closely aligns with the simplest version of the input
+sentence by retaining key terms and phrasing to minimize differences. Prioritize
+preserving the original meaning while following the structure and language of the
+simplest version.
+* Simplify the complex sentence by dividing it into shorter , more straightforward
+sentences that preserve the key concepts and important details for better
+comprehension.
+* Simplify the complex sentence into a more straightforward and understandable
+version while maintaining its core meaning.
+Complex sentence: {input_text}
+Simple sentence:
+Listing 11: Optimized prompt for Text Simplification task from Table 1, 6 instructions, GPT-4o-mini.
+* In cases with higher word differences , carefully review the phrasing and wording
+choices for an exact match with the intended simple form. Ensure the choice of words
+strictly conforms to the simplest possible format while reflecting the input
+structure and content precisely.
+* To closely align with the expected output , systematically analyze the original
+sentence and aim for a verbatim transformation using the exact sequence and choice
+of words where simplification allows. Recheck each rewritten sentence to ensure all
+elements of the original are accurately reflected in the simplest possible form ,
+prioritizing consistency in language and style.
+* Preserve the original sentence structure as closely as possible while simplifying
+the language to reduce word differences significantly. Focus on maintaining the
+specific sequence and choice of words to minimize variation in output.
+* Simplify the given complex sentence by breaking down information into shorter ,
+clearer sentences and preserving the original meaning.
+* Pay close attention to the specific choice of words and phrasing used in the
+original sentences , particularly in cases where there is a large difference in word
+count. Aim to closely match the degree of formality and style while simplifying ,
+ensuring the output is concise and directly reflective of the input content.
+* Emphasize selecting wording that precisely aligns with the simplest form of the
+input , while significantly reducing word changes by closely mimicking the expected
+output style and brevity in all cases. Pay particular attention to details that show
+higher word differences , striving to match them exactly.
+* Please rewrite the complex sentence in a simpler form , keeping the main idea
+intact so it 's easier for everyone to understand.
+* Focus on matching the exact vocabulary and phrasing seen in the specific simple
+form associated with each word -for -word transformation to ensure minimal word
+differences. Give priority to adjustments in cases where errors have a substantial
+impact , striving to achieve precision in the chosen wording.
+* Concentrate on closely matching the phrasing and style of the original sentence ,
+with minimal changes in wording and structure. Aim to reduce word differences ,
+especially when errors are significant , to better match the target simplicity and
+tone.
+* Rewrite the complex sentence into simpler sentences while preserving the original
+meaning and information.
+Complex sentence: {input_text}
+Simple sentence:
+Listing 12: Optimized prompt for Text Simplification task from Table 1, 10 instructions, GPT-4o.

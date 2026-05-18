@@ -1,0 +1,2058 @@
+Title: Causal Inference in Natural Language Processing: Estimation, Prediction, Interpretation and Beyond
+Source URL: http://arxiv.org/abs/2109.00725v2
+--------------------------------------------------
+
+Causal Inference in Natural Language Processing:
+Estimation, Prediction, Interpretation and Beyond
+Amir Feder∗1,10, Katherine A. Keith2, Emaad Manzoor3, Reid Pryzant4, Dhanya Sridhar5,
+Zach Wood-Doughty6, Jacob Eisenstein7, Justin Grimmer8, Roi Reichart1, Margaret E. Roberts9,
+Brandon M. Stewart10, Victor Veitch7,11, and Diyi Yang12
+1Technion - Israel Institute of Technology
+2Williams College
+3University of Wisconsin - Madison
+4Microsoft
+5Columbia University
+6Northwestern University
+7Google Research
+8Stanford University
+9University of California San Diego
+10Princeton University
+11University of Chicago
+12Georgia Tech
+Abstract
+A fundamental goal of scientiﬁc research is
+to learn about causal relationships. How-
+ever, despite its critical role in the life
+and social sciences, causality has not had
+the same importance in Natural Language
+Processing (NLP), which has traditionally
+placed more emphasis on predictive tasks.
+This distinction is beginning to fade, with
+an emerging area of interdisciplinary re-
+search at the convergence of causal infer-
+ence and language processing.
+Still, re-
+search on causality in NLP remains scat-
+tered across domains without uniﬁed def-
+initions, benchmark datasets and clear ar-
+ticulations of the challenges and opportuni-
+ties in the application of causal inference to
+the textual domain, with its unique proper-
+ties. In this survey, we consolidate research
+across academic areas and situate it in the
+broader NLP landscape. We introduce the
+statistical challenge of estimating causal ef-
+fects with text, encompassing settings where
+text is used as an outcome, treatment, or to
+address confounding. In addition, we ex-
+plore potential uses of causal inference to
+improve the robustness, fairness, and inter-
+pretability of NLP models. We thus provide
+a uniﬁed overview of causal inference for
+the NLP community. 1
+∗All authors equally contributed to this paper.
+Au-
+thor names are organized alphabetically in two clusters:
+First students and post-docs and then faculty members.
+The email address of the corresponding (ﬁrst) author is:
+feder@campus.technion.ac.il.
+1An
+online
+repository
+containing
+existing
+research
+1
+Introduction
+The increasing effectiveness of NLP has created
+exciting new opportunities for interdisciplinary
+collaborations, bringing NLP techniques to a
+wide range of external research disciplines (e.g.,
+Roberts et al., 2014; Zhang et al., 2020; Ophir
+et al., 2020) and incorporating new data and tasks
+into mainstream NLP (e.g., Thomas et al., 2006;
+Pryzant et al., 2018). In such interdisciplinary col-
+laborations, many of the most important research
+questions relate to the inference of causal relation-
+ships. For example, before recommending a new
+drug therapy, clinicians want to know the causal
+effect of the drug on disease progression. Causal
+inference involves a question about a counterfac-
+tual world created by taking an intervention: What
+would a patient’s disease progression have been if
+we had given them the drug? As we explain be-
+low, with observational data, the causal effect is
+not equivalent to the correlation between whether
+the drug is taken and the observed disease progres-
+sion. There is now a vast literature on techniques
+for making valid inferences using traditional (non-
+text) datasets (e.g., Morgan and Winship, 2015),
+but the application of these techniques to natural
+language data raises new fundamental challenges.
+Conversely, in many classical NLP applications,
+the main goal is to make accurate predictions:
+Any statistical correlation is admissible, regard-
+on causal inference and language processing is avail-
+able
+here:
+https://github.com/causaltext/
+causal-text-papers
+arXiv:2109.00725v2  [cs.CL]  30 Jul 2022
+less of the underlying causal relationship. How-
+ever, as NLP systems are increasingly deployed in
+challenging and high-stakes scenarios, we cannot
+rely on the usual assumption that training and test
+data are identically distributed, and we may not
+be satisﬁed with uninterpretable black-box predic-
+tors. For both of these problems, causality offers
+a promising path forward: Domain knowledge of
+the causal structure of the data generating process
+can suggest inductive biases that lead to more ro-
+bust predictors, and a causal view of the predictor
+itself can offer new insights on its inner workings.
+The core claim of this survey paper is that deep-
+ening the connection between causality and NLP
+has the potential to advance the goals of both so-
+cial science and NLP researchers. We divide the
+intersection of causality and NLP into two ar-
+eas: Estimating causal effects from text, and using
+causal formalisms to make NLP methods more re-
+liable. We next illustrate this distinction.
+Example 1. An online forum has allowed its users
+to indicate their preferred gender in their proﬁles
+with a female or male icon. They notice that users
+who label themselves with the female icon tend
+to receive fewer “likes” on their posts. To better
+evaluate their policy of allowing gender informa-
+tion in proﬁles, they ask: Does using the female
+icon cause a decrease in popularity for a post?
+Ex. 1 addresses the causal effect of signaling
+female gender (treatment) on the likes a post re-
+ceives (outcome) (see discussion on signaling at
+(Keith et al., 2020)).
+The counterfactual ques-
+tion is: If we could manipulate the gender icon
+of a post, how many likes would the post have re-
+ceived?
+The observed correlation between the gender
+icons and the number of “likes” generally does not
+coincide with the causal effect: it might instead be
+a spurious correlation, induced by other variables,
+known as confounders, which are correlated with
+both the treatment and the outcome (see Gururan-
+gan et al., 2018, for an early discussion of spurious
+correlation in NLP). One possible confounder is
+the topic of each post: Posts written by users who
+have selected the female icon may be about cer-
+tain topics (e.g., child birth or menstruation) more
+often, and those topics may not receive as many
+likes from the audience of the broader online plat-
+form. As we will see in § 2, due to confounding,
+estimating a causal effect requires assumptions.
+Example 1 highlights the setting where the text
+encodes the relevant confounders of a causal ef-
+fect. The text as a confounder setting is one of
+many causal inferences we can make with text
+data. The text data can also encode outcomes or
+treatments of interest. For example, we may won-
+der about how gender signal affects the sentiment
+of the reply that a post receives (text as outcome),
+or about how a writing style affects the “likes” a
+post receives (text as treatment).
+NLP helps causal inference.
+Causal infer-
+ence with text data involves several challenges
+that are distinct from typical causal inference set-
+tings: Text is high-dimensional, needs sophisti-
+cated modeling to measure semantically meaning-
+ful factors like topic, and demands careful thought
+to formalize the intervention that a causal question
+corresponds to. The developments in NLP around
+modeling language, from topic models (Blei et al.,
+2003) to contextual embeddings (e.g.
+(Devlin
+et al., 2019)), offer promising ways to extract the
+information we need from text to estimate causal
+effects. However, we need new assumptions to en-
+sure that the use of NLP methods leads to valid
+causal inferences. We discuss existing research on
+estimating causal effects from text and emphasize
+these challenges and opportunities in § 3.
+Example 2. A medical research center wants to
+build a classiﬁer to detect clinical diagnoses from
+the textual narratives of patient medical records.
+The records are aggregated across multiple hospi-
+tal sites, which vary both in the frequency of the
+target clinical condition and the writing style of
+the narratives. When the classiﬁer is applied to
+records from sites that were not in the training
+set, its accuracy decreases. Post-hoc analysis in-
+dicates that it puts signiﬁcant weight on seemingly
+irrelevant features, such as formatting markers.
+Like Ex. 1, Ex. 2 also involves a counterfactual
+question: Does the classiﬁer’s prediction change
+if we intervene to change the hospital site, while
+holding the true clinical status ﬁxed? We want
+the classiﬁer to rely on phrases that express clin-
+ical facts, and not writing style. However, in the
+training data, the clinical condition and the writ-
+ing style are spuriously correlated, due to the site
+acting as a confounding variable. For example, a
+site might be more likely to encounter the target
+clinical condition due to its location or speciality,
+and that site might also employ distinctive textual
+features, such as boilerplate text at the beginning
+of each narrative. In the training set, these features
+will be predictive of the label, but they are unlikely
+to be useful in deployment scenarios at new sites.
+In this example, the hospital site acts like a con-
+founder: It creates a spurious correlation between
+some features of the text and the prediction target.
+Example 2 shows how the lack of robustness
+can make NLP methods less trustworthy. A re-
+lated problem is that NLP systems are often black
+boxes, making it hard to understand how human-
+interpretable features of the text lead to the ob-
+served predictions.
+In this setting, we want to
+know if some part of the text (e.g., some sequence
+of tokens) causes the output of an NLP method
+(e.g., classiﬁcation prediction).
+Causal models can help NLP. To address the
+robustness and interpretability challenges posed
+by NLP methods, we need new criteria to learn
+models that go beyond exploiting correlations.
+For example, we want predictors that are invari-
+ant to certain changes that we make to text, such
+as changing the format while holding ﬁxed the
+ground truth label. There is considerable promise
+in using causality to develop new criteria in ser-
+vice of building robust and interpretable NLP
+methods. In contrast to the well-studied area of
+causal inference with text, this area of causality
+and NLP research is less well-understood, though
+well-motivated by recent empirical successes. In
+§4, we cover the existing research and review the
+challenges and opportunities around using causal-
+ity to improve NLP.
+This position paper follows a small body of sur-
+veys that review the role of text data within causal
+inference (Egami et al., 2018; Keith et al., 2020).
+We take a broader view, separating the intersec-
+tion of causality and NLP into two distinct lines
+of research on estimating causal effects in which
+text is at least one causal variable (§3) and using
+causal formalisms to improve robustness and in-
+terpretability in NLP methods (§4). After reading
+this paper, we envision that the reader will have a
+broad understanding of: Different types of causal
+queries and the challenges they present; the statis-
+tical and causal challenges that are unique to work-
+ing with text data and NLP methods; and open
+problems in estimating effects from text and ap-
+plying causality to improve NLP methods.
+2
+Background
+Both focal problems of this survey (causal effect
+estimation and causal formalisms for robust and
+explainable prediction) involve causal inference.
+The key ingredient to causal inference is deﬁning
+counterfactuals based on an intervention of inter-
+est. We will illustrate this idea with the motivating
+examples from §1.
+Example 1 involves online forum posts and the
+number of likes Y that they receive. We use a bi-
+nary variable T to indicate whether a post uses a
+“female icon” (T = 1) or a “male icon” (T = 0).
+We view the post icon T as the “treatment” in
+this example, but do not assume that the treatment
+is randomly assigned (it may be selected by the
+posts’ authors). The counterfactual outcome Y (1)
+represents the number of likes a post would have
+received had it used a female icon. The counter-
+factual outcome Y (0) is deﬁned analogously.
+The fundamental problem of causal inference
+(Holland, 1986) is that we can never observe Y (0)
+and Y (1) simultaneously for any unit of analysis,
+the smallest unit about which one wants to make
+counterfactual inquiries (e.g. a post in Ex. 1). This
+problem is what makes causal inference harder
+than statistical inference and impossible without
+identiﬁcation assumptions (see § 2.2).
+Example 2 involves a trained classiﬁer f(X)
+that takes a textual clinical narrative X as input
+and outputs a diagnosis prediction. The text X is
+written based on the physician’s diagnosis Y , and
+is also inﬂuenced by the writing style used at the
+hospital Z. We want to intervene upon the hospital
+Z while holding the label Y ﬁxed. The counter-
+factual narrative X(z) is the text we would have
+observed had we set the hospital to the value z
+while holding the diagnosis ﬁxed. The counterfac-
+tual prediction f(X(z)) is the output the trained
+classiﬁer would have produced had we given the
+counterfactual review X(z) as input.
+2.1
+Causal Estimands
+An analyst begins by specifying target causal
+quantities of interest, called causal estimands,
+which typically involve counterfactuals. In Exam-
+ple 1, one possible causal estimand is the average
+treatment effect (ATE) (Rubin, 1974),
+ATE = E[Y (1) −Y (0)].
+(1)
+where the expectation is over the generative distri-
+bution of posts. The ATE can be interpreted as the
+change in the number of likes a post would have
+received, on average, had the post used a female
+icon instead of a male icon.
+Another possible causal effect of interest is the
+conditional average treatment effect (CATE) (Im-
+bens and Rubin, 2015),
+CATE = E[Y (1) −Y (0) | G].
+(2)
+where G is a predeﬁned subgroup of the popula-
+tion. For example, G could be all posts on political
+topics. In this case, the CATE can be interpreted
+as the change in the number of likes a post on a po-
+litical topic would have received, on average, had
+the post used a male icon instead of a female icon.
+CATEs are used to quantify the heterogeneity of
+causal effects in different population subgroups.
+2.2
+Identiﬁcation Assumptions for Causal
+Inference
+We will focus on Example 1 and the ATE in Equa-
+tion (1) to explain the assumptions needed for
+causal inference. Although we focus on the ATE,
+related assumptions are needed in some form for
+all causal estimands. Variables are the same as
+those deﬁned previously in this section.
+Ignorability requires that the treatment assign-
+ment be statistically independent of the counter-
+factual outcomes,
+T ⊥⊥Y (a)
+∀a ∈{0, 1}.
+(3)
+Note that this assumption is not equivalent to in-
+dependence between the treatment assignment and
+the observed outcome Y . For example, if ignora-
+bility holds, Y ⊥⊥T would additionally imply that
+the treatment has no effect.
+Randomized treatment assignment guarantees
+ignorability by design. For example, we can guar-
+antee ignorability in Example 1 by ﬂipping a coin
+to select the icon for each post, and disallowing
+post authors from changing it.
+Without randomized treatment assignment, ig-
+norability could be violated by confounders, vari-
+ables that inﬂuence both the treatment status and
+potential outcomes. In Example 1, suppose that:
+(i) the default post icon is male, (ii) only experi-
+enced users change the icon for their posts based
+on their gender, (iii) experienced users write posts
+that receive relatively more likes.
+In this sce-
+nario, the experience of post authors is a con-
+founder: posts having female icons are more likely
+to be written by experienced users and thus, re-
+ceive more likes. In the presence of confounders,
+causal inference is only possible if we assume con-
+ditional ignorability,
+T ⊥⊥Y (a) | X
+∀a ∈{0, 1}
+(4)
+where X is a set of observed variables, condi-
+tioning on which ensures independence between
+the treatment assignment and the potential out-
+comes. In other words, we can assume that all
+confounders are observed.
+Positivity requires that the probability of re-
+ceiving treatment is bounded away from 0 and 1
+for all values of the confounders X:
+0 < Pr(T = 1 | X = x) < 1, ∀x
+(5)
+Intuitively, positivity requires that each unit under
+study has the possibility of being treated and has
+the possibility of being untreated.
+Randomized
+treatment assignment can also guarantee positiv-
+ity by design.
+Consistency
+requires that the outcome ob-
+served for each unit under study at treatment level
+a ∈{0, 1} is identical to the outcome we would
+have observed had that unit been assigned to treat-
+ment level a,
+T = a ⇔Y (a) = Y
+∀a ∈{0, 1}
+(6)
+Consistency ensures that the potential outcomes
+for each unit under study take on a single value
+at each treatment level. Consistency will be vi-
+olated if different unobservable “versions” of the
+treatment lead to different potential outcomes. For
+example, if red and blue female icons had differ-
+ent effects on the number of likes received, but
+icon color was not recorded. Consistency will also
+be violated if the treatment assignment of one unit
+affects the potential outcomes of another; a phe-
+nomenon called interference (Rosenbaum, 2007).
+Randomized treatment assignment does not guar-
+antee consistency by design.
+e.g.
+if different
+icon colors affect the number of likes but are not
+considered by the model, then a randomized ex-
+periment will not solve the problem. As Hernán
+(2016) discusses, consistency assumptions are a
+“matter of expert agreement” and, while subjec-
+tive, these assumptions are at least made more
+transparent by causal formalisms.
+These three assumptions enable identifying the
+ATE deﬁned in Equation (1), as formalized in the
+following identiﬁcation proof:
+E[Y (a)]
+(i)
+= EX[E[Y (a) | X]]
+(ii)
+= EX[E[Y (a) | X, T = a]]
+(iii)
+= EX[E[Y | X, T = a]], ∀a ∈{0, 1}
+where equality (i) is due to iterated expectation,
+equality (ii) follows from conditional ignorabil-
+ity, and equality (iii) follows from consistency and
+positivity, which ensures that the conditional ex-
+pectation E[Y | X, T = a] is well deﬁned. The
+ﬁnal expression can be computed from observable
+quantities alone.
+We refer to other background material to dis-
+cuss how to identify and estimate causal effects
+with these assumptions in hand (Rubin, 2005;
+Pearl, 2009; Imbens and Rubin, 2015; Egami
+et al., 2018; Keith et al., 2020).
+2.3
+Causal Graphical Models
+Finding a set of variables X that ensure con-
+ditional ignorability is challenging, and requires
+making several carefully assessed assumptions
+about the causal relationships in the domain un-
+der study. Causal directed-acyclic graphs (DAGs)
+(Pearl, 2009) enable formally encoding these as-
+sumptions and deriving the set of variables X after
+conditioning on which ignorability is satisﬁed.
+In a causal DAG, an edge X →Y implies that
+X may or may not cause Y . The absence of an
+edge between X and Y implies that X does not
+cause Y . Bi-directed dotted arrows between vari-
+ables indicate that they are correlated potentially
+through some unobserved variable.
+Figure 1 illustrates the causal DAGs we assume
+for Example 1 and Example 2.
+Given a causal
+DAG, causal dependencies between any pair of
+variables can be derived using the d-separation al-
+gorithm (Pearl, 1994).
+These dependencies can
+then be used to assess whether conditional ignor-
+ability holds for a given treatment, outcome, and
+set of conditioning variables X. For example, in
+the left DAG in Figure 1, the post icon T is not
+independent of the number of likes Y unless we
+condition on X. In the right DAG, the prediction
+f(X) is not independent of the hospital Z even
+after conditioning on the narrative X.
+3
+Estimating Causal Effects with Text
+In §2, we described assumptions for causal in-
+ference when the treatment, outcome and con-
+founders were directly measured. In this section,
+we contribute a novel discussion about how causal
+assumptions are complicated when variables nec-
+essary for a causal analysis are extracted automati-
+cally from text. Addressing these open challenges
+will require collaborations between the NLP and
+T
+X
+Y
+Z
+Y
+X
+f(X)
+Example 1
+Example 2
+Figure 1: Causal graphs for the motivating exam-
+ples. (Left) In Example 1, the post icon (T) is cor-
+related with attributes of the post (X), and both
+variables affect the number of likes a post receives
+(Y ). (Right) In Example 2, the label (Y , i.e., di-
+agnosis) and hospital site (Z) are correlated, and
+both affect the clinical narrative (X). Predictions
+f(X) from the trained classiﬁer depend on X.
+causal estimation communities to understand what
+are the requisite assumptions to draw valid causal
+conclusions. We highlight prior approaches and
+future challenges in settings where the text is a
+confounder, the outcome, or the treatment – but
+this discussion applies broadly to many text-based
+causal problems.
+To make these challenges clear, we will expand
+upon Example 1 by supposing a hypothetical on-
+line forum wants to understand and reduce harass-
+ment on its platform. Many such questions are
+causal: Do gendered icons inﬂuence the harass-
+ment users receive? Do longer suspensions make
+users less likely to harass others? How can a post
+be rewritten to avoid offending others? In each
+case, using NLP to measure aspects of language is
+integral to any causal analysis.
+3.1
+Causal Effects with Textual Confounders
+Returning to Example 1, suppose the platform
+worries that users with female icons are more
+likely to receive harassment from other users.
+Such a ﬁnding might signiﬁcantly inﬂuence plans
+for a new moderation strategy (Jhaver et al., 2018;
+Rubin et al., 2020). We may be unable or unwill-
+ing to randomize our treatment (the gender signal)
+of the author’s icon), so the causal effect of gen-
+der signal on harassment received might be con-
+founded by other variables. The topic of the post
+may be an important confounder: some subject
+areas may be discussed by a larger proportion of
+users with female icons, and more controversial
+subjects may attract more harassment. The text of
+the post provides evidence of the topic and thus
+acts as a confounder (Roberts et al., 2020).
+Previous approaches.
+The main idea in this set-
+ting is to use NLP methods to extract confounding
+aspects from text and then adjust for those aspects
+in an estimation approach such as propensity score
+matching. However, how and when these methods
+violate causal assumptions are still open questions.
+Keith et al. (2020) provides a recent overview of
+several such methods and many potential threats
+to inference.
+One set of methods apply unsupervised di-
+mensionality reduction methods that reduce high-
+dimensional text data to a low-dimensional set of
+variables. Such methods include latent variable
+models such as topic models, embedding methods,
+and auto-encoders. Roberts et al. (2020) and Srid-
+har and Getoor (2019) have applied topic models
+to extract confounding patterns from text data, and
+performed an adjustment for these inferred vari-
+ables. Mozer et al. (2020) matches texts using dis-
+tance metrics on the bag-of-words representation.
+A second set of methods adjust for confounders
+from text with supervised NLP methods. Recently,
+Veitch et al. (2020) adapted pre-trained language
+models and supervised topic models with multiple
+classiﬁcation heads for binary treatment and coun-
+terfactual outcomes.
+By learning a “sufﬁcient”
+embedding that obtained low classiﬁcation loss on
+the treatment and counterfactual outcomes, they
+show that confounding properties could be found
+within text data. Roberts et al. (2020) combines
+these strategies with the topic model approach in a
+text matching framework.
+Challenges for causal assumptions with text.
+In settings without randomized treatments, NLP
+methods that adjust for text confounding require
+a particularly strong statement of conditional ig-
+norability (Equation 4): all aspects of confounding
+must be measured by the model. Because we can-
+not test this assumption, we should seek domain
+expertise to justify it or understand the theoretical
+and empirical consequences if it is violated.
+When the text is a confounder,
+its high-
+dimensionality makes positivity unlikely to hold
+(D’Amour et al., 2020).
+Even for approaches
+that extract a low-dimensional representation of
+the confounder from text, positivity is a concern.
+For example, in Example 1, posts might con-
+tain phrases that near-perfectly encode the chosen
+gender-icon of the author. If the learned repre-
+sentation captures this information alongside other
+confounding aspects, it would be nearly impos-
+sible to imagine changing the gender icon while
+holding the gendered text ﬁxed.
+3.2
+Causal Effects on Textual Outcomes
+Suppose platform moderators can choose to sus-
+pend users who violate community guidelines for
+either one day or one week, and we want to know
+which option has the greatest effect at decreasing
+the toxicity of the suspended user. If we could col-
+lect them for each user’s post, ground-truth human
+annotations of toxicity would be our ideal outcome
+variable. We would then use those outcomes to
+calculate the ATE, following the discussion in § 2.
+Our analysis of suspensions is complicated if, in-
+stead of ground-truth labels for our toxicity out-
+come, we rely on NLP methods to extract the out-
+come from the text. A core challenge is to distill
+the high-dimensional text into a low-dimensional
+measure of toxicity.
+Challenges for causal assumptions with text.
+We saw in § 2 that randomizing the treatment
+assignment can ensure ignorability and positiv-
+ity; but even with randomization, we require more
+careful assessment to satisfy consistency.
+Sup-
+pose we randomly assign suspension lengths to
+users and then once those users return and con-
+tinue to post, we use a clustering method to dis-
+cover toxic and non-toxic groupings among the
+formerly-suspended users. To estimate the causal
+effect of suspension length, we rely on the trained
+clustering model to infer our outcome variable.
+Assuming that the suspension policy does in truth
+have a causal effect on posting behavior, then be-
+cause our clustering model depends on all posts in
+its training data, it also depends on the treatment
+assignments that inﬂuenced each post. Thus, when
+we use the model to infer outcomes, each user’s
+outcome depends on all other users’ treatments.
+This violates the assumption of consistency – that
+potential outcomes do not depend on the treatment
+status of other units. This undermines the theo-
+retical basis for our causal estimate, and in prac-
+tice, implies that different randomized treatment
+assignments could lead to different treatment ef-
+fect estimates.
+These issues can be addressed by developing the
+measure on only a sample of the data and then esti-
+mating the effect on a separate, held-out data sam-
+ple (Egami et al., 2018).
+3.3
+Causal Effects with Textual Treatments
+As a third example, suppose we want to under-
+stand what makes a post offensive. This might al-
+low the platform to provide automated suggestions
+that encourage users to rephrase their post. Here,
+we are interested in the causal effect of the text
+itself on whether a reader reports it as offensive.
+Theoretically, the counterfactual Y (t) is deﬁned
+for any t, but could be limited to an exploration
+of speciﬁc aspects of the text. For example, do
+second-person pronouns make a post more likely
+to be reported?
+Previous approaches.
+One approach to study-
+ing the effects of text involves treatment discovery:
+producing interpretable features of the text—such
+as latent topics or lexical features like n-grams
+(Pryzant et al., 2018)—that can be causally linked
+to outcomes.
+For example, Fong and Grimmer
+(2016) discovered features of candidate biogra-
+phies that drove voter evaluations, Pryzant et al.
+(2017) discovered writing styles in marketing ma-
+terials that are inﬂuential in increasing sales ﬁg-
+ures, and Zhang et al. (2020) discovered conver-
+sational tendencies that lead to positive mental
+health counseling sessions.
+Another approach is to estimate the causal ef-
+fects of speciﬁc latent properties that are inter-
+vened on during an experiment or extracted from
+text for observational studies (Pryzant et al., 2021;
+Wood-Doughty et al., 2018). For example, Ger-
+ber et al. (2008) studied the effect of appealing to
+civic duty on voter turnout. In this setting, factors
+are latent properties of the text for which we need
+a measurement model.
+Challenges for causal assumptions with text.
+Ensuring positivity and consistency remains a
+challenge in this setting, but assessing conditional
+ignorability is particularly tricky.
+Suppose the
+treatment is the use of second-person pronouns,
+but the relationship between this treatment and the
+outcome is confounded by other properties of the
+text (e.g., politeness). For conditional ignorabil-
+ity to hold, we would need to extract from the text
+and condition on all such confounders, which re-
+quires assuming that we can disentangle the treat-
+ment from many other aspects of the text (Pryzant
+et al., 2021).
+Such concerns could be avoided
+by randomly assigning texts to readers (Fong and
+Grimmer, 2016, 2021), but that may be impracti-
+cal. Even if we could randomize the assignment
+of texts, we still have to assume that there is no
+confounding due to latent properties of the reader,
+such as their political ideology or their tastes.
+3.4
+Future Work
+We next highlight key challenges and opportuni-
+ties for NLP researchers to facilitate causal infer-
+ence from text.
+Heterogeneous effects. Texts are read and in-
+terpreted differently by different people; NLP re-
+searchers have studied this problem in the context
+of heterogeneous perceptions of annotators (Paun
+et al., 2018; Pavlick and Kwiatkowski, 2019). In
+the ﬁeld of causal inference, the idea that dif-
+ferent subgroups experience different causal ef-
+fects is formalized by a heterogeneous treatment
+effect, and is studied using conditional average
+treatment effects (Equation (2)) for different sub-
+groups. It may also be of interest to discover sub-
+groups where the treatment has a strong effect on
+an outcome of interest. For example, we may want
+to identify text features that characterize when a
+treatment such as a content moderation policy is
+effective.
+Wager and Athey (2018) proposed a
+ﬂexible approach to estimating heterogeneous ef-
+fects based on random forests. However, such ap-
+proaches, which are developed with tabular data in
+mind, may be computationally infeasible for high-
+dimensional text data. There is an opportunity to
+extend NLP methods to discover text features that
+capture subgroups where the causal effect varies.
+Representation learning.
+Causal inference
+from text requires extracting low-dimensional fea-
+tures from text.
+Depending on the setting, the
+low-dimensional features are tasked with extract-
+ing confounding information, outcomes or treat-
+ments. The need to measure latent aspects from
+text connects to the ﬁeld of text representation
+learning (Le and Mikolov, 2014; Liu et al., 2015;
+Liu and Lapata, 2018). The usual objective of text
+representation learning approaches is to model
+language.
+Adapting representation learning for
+causal inference offers open challenges; for exam-
+ple, we might augment the objective function to
+ensure that (i) positivity is satisﬁed, (ii) confound-
+ing information is not discarded, or (iii) noisily-
+measured outcomes or treatments enable accurate
+causal effect estimates.
+Benchmarks.
+Benchmark datasets have
+propelled machine learning forward by creating
+shared metrics by which predictive models can
+be evaluated. There are currently no real-world
+text-based causal estimation benchmarks due to
+the fundamental problem of causal inference that
+we can never obtain counterfactuals on an indi-
+vidual and observe the true causal effects. How-
+ever, as Keith et al. (2020) discuss, there has
+been some progress in evaluating text-based es-
+timation methods on semi-synthetic datasets in
+which real covariates are used to generate treat-
+ment and outcomes, e.g. Veitch et al. (2020);
+Roberts et al. (2020); Pryzant et al. (2021); Feder
+et al. (2021); Weld et al. (2022). Wood-Doughty
+et al. (2021) employed large-scale language mod-
+els for controlled synthetic generation of text on
+which causal methods can be evaluated. An open
+problem is the degree to which methods that per-
+form well on synthetic data generalize to real-
+world data.
+Controllable Text generation. When running
+a randomized experiment or generating synthetic
+data, researchers make decisions using the em-
+pirical distribution of the data. If we are study-
+ing whether a drug prevents headaches, it would
+make sense to randomly assign a ‘reasonable’ dose
+– one that is large enough to plausibly be effec-
+tive but not so large as to be toxic.
+But when
+the causal question involves natural language, do-
+main knowledge might not provide a small set of
+‘reasonable’ texts. Instead, we might turn to con-
+trollable text generation to sample texts that ful-
+ﬁll some requirements (Kiddon et al., 2016). Such
+methods have a long history in NLP; for example,
+a conversational agent should be able to answer
+a user’s question while being perceived as polite
+(Niu and Bansal, 2018). In our text as treatment
+example where we want to understand which tex-
+tual aspects make a text offensive, such methods
+could enable an experiment allowing us to ran-
+domly assign texts that differ on only a speciﬁc
+latent aspect. For example, we could change the
+style of a text while holding its content ﬁxed (Lo-
+geswaran et al., 2018). Recent work has explored
+text generation from a causal perspective (Hu and
+Li, 2021), but future work could develop these
+methods for causal estimation.
+4
+Robust and Explainable Predictions
+from Causality
+Thus far we have focused on using NLP tools for
+estimating causal effects in the presence of text
+data. In this section, we consider using causal rea-
+soning to help solve traditional NLP tasks such as
+understanding, manipulating, and generating nat-
+ural language.
+At a ﬁrst glance, NLP may appear to have lit-
+tle need for causal ideas. The ﬁeld has achieved
+remarkable progress from the use of increasingly
+high-capacity neural architectures to extract cor-
+relations from large-scale datasets (Peters et al.,
+2018; Devlin et al., 2019; Liu et al., 2019). These
+architectures make no distinction between causes,
+effects, and confounders, and they make no at-
+tempt to identify causal relationships: A feature
+may be a powerful predictor even if it has no di-
+rect causal relationship with the desired output.
+Yet correlational predictive models can be un-
+trustworthy (Jacovi et al., 2021): They may latch
+onto spurious correlations (“shortcuts”), leading to
+errors in out-of-distribution (OOD) settings (e.g.,
+McCoy et al., 2019); they may exhibit unac-
+ceptable performance differences across groups of
+users (e.g., Zhao et al., 2017); and their behavior
+may be too inscrutable to incorporate into high-
+stakes decisions (Guidotti et al., 2018). Each of
+these shortcomings can potentially be addressed
+by the causal perspective:
+Knowledge of the
+causal relationship between observations and la-
+bels can be used to formalize spurious correlations
+and mitigate their impact (§ 4.1); causality also
+provides a language for specifying and reason-
+ing about fairness conditions (§ 4.2); and the task
+of explaining predictions may be naturally formu-
+lated in terms of counterfactuals (§ 4.3). The ap-
+plication of causality to these problems is still an
+active area of research, which we attempt to facil-
+itate by highlighting previously implicit connec-
+tions among a diverse body of prior work.
+4.1
+Learning Robust Predictors
+The NLP ﬁeld has grown increasingly concerned
+with spurious correlations
+(Gururangan et al.,
+2018; McCoy et al., 2019, inter alia).
+From
+a causal perspective, spurious correlations arise
+when two conditions are met. First, there must be
+some factor(s) Z that are informative (in the train-
+ing data) about both the features X and label Y .
+Second, Y and Z must be dependent in the train-
+ing data in a way that is not guaranteed to hold in
+general. A predictor f : X →Y will learn to use
+parts of X that carry information about Z (because
+Z is informative about Y ), which can lead to errors
+if the relationship between Y and Z changes when
+the predictor is deployed.2
+This issue is illustrated by Example 2, where
+the task is to predict a medical condition from the
+text of patient records. The training set is drawn
+from multiple hospitals which vary both in the fre-
+quency of the target clinical condition (Y ) and the
+writing style of the narratives (represented in X).
+A predictor trained on such data will use textual
+features that carry information about the hospital
+(Z), even when they are useless at predicting the
+diagnosis within any individual hospital. Spurious
+correlations also appear as artifacts in benchmarks
+for tasks such as natural language inference, where
+negation words are correlated with semantic con-
+tradictions in crowdsourced training data but not
+in text that is produced under more natural condi-
+tions (Gururangan et al., 2018; Poliak et al., 2018).
+Such observations have led to several proposals
+for novel evaluation methodologies (Naik et al.,
+2018; Ribeiro et al., 2020; Gardner et al., 2020)
+to ensure that predictors are not “right for the
+wrong reasons”. These evaluations generally take
+two forms: Invariance tests, which assess whether
+predictions are affected by perturbations that are
+causally unrelated to the label, and sensitivity tests,
+which apply perturbations that should in some
+sense be the minimal change necessary to ﬂip the
+true label. Both types of test can be motivated by
+a causal perspective. The purpose of an invariance
+test is to determine whether the predictor behaves
+differently on counterfactual inputs X(Z = ˜z),
+where Z indicates a property that an analyst be-
+lieves should be causally irrelevant to Y . A model
+whose predictions are invariant across such coun-
+terfactuals can in some cases be expected to per-
+form better on test distributions with a different re-
+lationship between Y and Z (Veitch et al., 2021).
+Similarly, sensitivity tests can be viewed as evalu-
+ations of counterfactuals X(Y = ˜y), in which the
+label Y is changed but all other causal inﬂuences
+on X are held constant (Kaushik et al., 2020). Fea-
+tures that are spuriously correlated with Y will be
+2From the perspective of earlier work on domain adapta-
+tion (Søgaard, 2013), spurious correlations can be viewed as a
+special case of a more general phenomenon in which feature-
+label relationships change across domains. For example, the
+lexical feature boring might have a stronger negative weight
+in reviews about books than about kitchen appliances, but this
+is not a spurious correlation because there is a direct causal
+relationship between this feature and the label. Spurious cor-
+relations are a particularly important form of distributional
+shift in practice because they can lead to inconsistent predic-
+tions on pairs of examples that humans view as identical.
+identical in the factual X and the counterfactual
+X(Y = ˜y). A predictor that relies solely on such
+spurious correlations will be unable to correctly la-
+bel both factual and counterfactual instances.
+A number of approaches have been proposed
+for learning predictors that pass tests of sensitivity
+and invariance. Many of these approaches are ei-
+ther explicitly or implicitly motivated by a causal
+perspective. They can be viewed as ways to in-
+corporate knowledge of the causal structure of the
+data into the learning objective.
+4.1.1
+Data augmentation
+To learn predictors that pass tests of invariance
+and sensitivity, a popular and straightforward ap-
+proach is data augmentation: Elicit or construct
+counterfactual instances, and incorporate them
+into the training data.
+When the counterfac-
+tuals involve perturbations to confounding fac-
+tors Z, it can help to add a term to the learn-
+ing objective to explicitly penalize disagreements
+in the predictions for counterfactual pairs, e.g.,
+|f(X(Z = z)) −f(X(Z = ˜z))|, when f is the
+prediction function (Garg et al., 2019).
+When
+perturbations are applied to the label Y , training
+on label counterfactuals X(Y = ˜y) can improve
+OOD generalization and reduce noise sensitivity
+(Kaushik et al., 2019, 2020; Jha et al., 2020).3
+Counterfactual examples can be generated in
+several ways:
+(1) manual post-editing (e.g.,
+Kaushik et al., 2019; Gardner et al., 2020), (2)
+heuristic replacement of keywords (e.g., Shekhar
+et al., 2017; Garg et al., 2019; Feder et al., 2021),
+and (3) automated text rewriting (e.g., Zmigrod
+et al., 2019; Riley et al., 2020; Wu et al., 2021;
+Calderon et al., 2022).
+Manual editing is typ-
+ically ﬂuent and accurate but relatively expen-
+sive. Keyword-based approaches are appropriate
+in some cases — for example, when counterfactu-
+als can be obtained by making local substitutions
+of closed-class words like pronouns — but they
+cannot guarantee ﬂuency or coverage of all labels
+and covariates of interest (Antoniak and Mimno,
+2021), and are difﬁcult to generalize across lan-
+guages. Fully generative approaches could poten-
+3More broadly, there is a long history of methods that
+elicit or construct new examples and labels with the goal of
+improving generalization, e.g. self-training (McClosky et al.,
+2006; Reichart and Rappoport, 2007), co-training (Steedman
+et al., 2003), and adversarial perturbations (Ebrahimi et al.,
+2018).
+The connection of such methods to causal issues
+such as spurious correlations has not been explored until re-
+cently (Chen et al., 2020; Jin et al., 2021).
+tially combine the ﬂuency and coverage of manual
+editing with the ease of lexical heuristics.
+Counterfactual examples are a powerful re-
+source because they directly address the missing
+data issues that are inherent to causal inference,
+as described in § 2. However, in many cases it
+is difﬁcult for even a ﬂuent human to produce
+meaningful counterfactuals: Imagine the task of
+converting a book review into a restaurant review
+while somehow leaving “everything else” constant
+(as in Calderon et al. (2022)).
+A related con-
+cern is lack of precision in specifying the desired
+impact of the counterfactual.
+To revise a text
+from, say, U.S. to U.K. English, it is unambiguous
+that “colors” should be replaced with “colours”,
+but should terms like “congress” be replaced with
+analogous concepts like “parliament”? This de-
+pends on whether we view the semantics of the
+text as a causal descendent of the locale. If such
+decisions are left to the annotators’ intuitions, it
+is difﬁcult to ascertain what robustness guarantees
+we can get from counterfactual data augmentation.
+Finally, there is the possibility that counterfactuals
+will introduce new spurious correlations. For ex-
+ample, when asked to rewrite NLI examples with-
+out using negation, annotators (or automated text
+rewriters) may simply ﬁnd another shortcut, intro-
+ducing a new spurious correlation. Keyword sub-
+stitution approaches may also introduce new spu-
+rious correlations if the keyword lexicons are in-
+complete (Joshi and He, 2021). Automated meth-
+ods for conditional text rewriting are generally not
+based on a formal counterfactual analysis of the
+data generating process (cf. Pearl, 2009), which
+would require modeling the relationships between
+various causes and consequences of the text. The
+resulting counterfactual instances may therefore
+fail to fully account for spurious correlations and
+may introduce new spurious correlations.
+4.1.2
+Distributional Criteria
+An alternative to data augmentation is to design
+new learning algorithms that operate directly on
+the observed data. In the case of invariance tests,
+one strategy is to derive distributional properties
+of invariant predictors, and then ensure that these
+properties are satisﬁed by the trained model.
+Given observations of the potential confounder
+at training time, the counterfactually-invariant pre-
+dictor will satisfy an independence criterion that
+can be derived from the causal structure of the
+data generating process (Veitch et al., 2021). Re-
+turning to Example 2, the desideratum is that the
+predicted diagnosis f(X) should not be affected
+by the aspects of the writing style that are asso-
+ciated with the hospital Z. This can be formal-
+ized as counterfactual invariance to Z: The pre-
+dictor f should satisfy f(X(z)) = f(X(z′)) for
+all z, z′. In this case, both Z and Y are causes
+of the text features X.4 Using this observation,
+it can be shown that any counterfactually invari-
+ant predictor will satisfy f(X) ⊥⊥Z | Y , i.e., the
+prediction f(X) is independent of the covariate Z
+conditioned on the true label Y . In other cases,
+such as content moderation, the label is an effect
+of the text, rather than a cause — for a detailed dis-
+cussion of this distinction, see Jin et al. (2021). In
+such cases, it can be shown that a counterfactually-
+invariant predictor will satisfy f(X) ⊥⊥Z (with-
+out conditioning on Y ). In this fashion, knowl-
+edge of the true causal structure of the problem can
+be used to derive observed-data signatures of the
+counterfactual invariance. Such signatures can be
+incorporated as regularization terms in the train-
+ing objective (e.g., using kernel-based measures
+of statistical dependence). These criteria do not
+guarantee counterfactual invariance—the implica-
+tion works in the other direction—but in practice
+they increase counterfactual invariance and im-
+prove performance in out-of-distribution settings
+without requiring counterfactual examples.
+An alternative set of distributional criteria can
+be derived by viewing the training data as aris-
+ing from a ﬁnite set of environments, in which
+each environment is endowed a unique distribu-
+tion over causes, but the causal relationship be-
+tween X and Y is invariant across environments.
+This view motivates a set of environmental in-
+variance criteria: The predictor should include a
+representation function that is invariant across en-
+vironments (Muandet et al., 2013; Peters et al.,
+2016); we should induce a representation such
+that the same predictor is optimal in every en-
+vironment (Arjovsky et al., 2019); the predictor
+should be equally well calibrated across environ-
+ments (Wald et al., 2021).
+Multi-environment
+training is conceptually similar to domain adap-
+tation (Ben-David et al., 2010), but here the goal
+is not to learn a predictor for any speciﬁc target
+domain, but rather to learn a predictor that works
+4This is sometimes called the anticausal setting, because
+the predictor f : X →ˆY must reverse the causal direction
+of the data generating process (Schölkopf et al., 2012).
+well across a set of causally-compatible domains,
+known as domain generalization (Ghifary et al.,
+2015; Gulrajani and Lopez-Paz, 2020). However,
+it may be necessary to observe data from a very
+large number of environments to disentangle the
+true causal structure (Rosenfeld et al., 2021).
+Both general approaches require richer training
+data than in typical supervised learning: Either ex-
+plicit labels Z for the factors to disentangle from
+the predictions or access to data gathered from
+multiple labeled environments.
+Obtaining such
+data may be rather challenging, even compared
+to creating counterfactual instances. Furthermore,
+the distributional approaches have thus far been
+applied only to classiﬁcation problems, while data
+augmentation can easily be applied to structured
+outputs such as machine translation.
+4.2
+Fairness and bias
+NLP systems inherit and sometimes amplify unde-
+sirable biases encoded in text training data (Baro-
+cas et al., 2019; Blodgett et al., 2020). Causality
+can provide a language for specifying desired fair-
+ness conditions across demographic attributes like
+race and gender. Indeed, fairness and bias in pre-
+dictive models have close connections to causal-
+ity: Hardt et al. (2016) argue that a causal anal-
+ysis is required to determine the fairness proper-
+ties of an observed distribution of data and pre-
+dictions; Kilbertus et al. (2017) show that fair-
+ness metrics can be motivated by causal inter-
+pretations of the data generating process; Kusner
+et al. (2017) study “counterfactually fair” predic-
+tors where, for each individual, predictions are the
+same for that individual and for a counterfactual
+version of them created by changing a protected
+attribute. However, there are important questions
+about the legitimacy of treating attributes like race
+as variables subject to intervention (e.g., Kohler-
+Hausmann, 2018; Hanna et al., 2020), and Kilber-
+tus et al. (2017) propose to focus instead on invari-
+ance to observable proxies such as names.
+Fairness with text.
+The fundamental connec-
+tions between causality and unfair bias have been
+explored mainly in the context of relatively low-
+dimensional tabular data rather than text. How-
+ever, there are several applications of the counter-
+factual data augmentation strategies from § 4.1.1
+in this setting: For example, Garg et al. (2019)
+construct counterfactuals by swapping lists of
+“identity terms”, with the goal of reducing bias
+in text classiﬁcation, and Zhao et al. (2018) swap
+gender markers such as pronouns and names for
+coreference resolution. Counterfactual data aug-
+mentation has also been applied to reduce bias
+in pre-trained models (e.g., Huang et al., 2019;
+Maudslay et al., 2019) but the extent to which
+biases in pre-trained models propagate to down-
+stream applications remains unclear (Goldfarb-
+Tarrant et al., 2021). Fairness applications of the
+distributional criteria discussed in § 4.1.2 are rel-
+atively rare, but Adragna et al. (2020) show that
+invariant risk minimization (Arjovsky et al., 2019)
+can reduce the use of spurious correlations with
+race for toxicity detection.
+4.3
+Causal Model Interpretations
+Explanations of model predictions can be crucial
+to help diagnose errors and establish trust with de-
+cision makers (Guidotti et al., 2018; Jacovi and
+Goldberg, 2020). One prominent approach to gen-
+erate explanations is to exploit network artifacts,
+such as attention weights (Bahdanau et al., 2014),
+which are computed on the path to generating
+a prediction (e.g., Xu et al., 2015; Wang et al.,
+2016). Alternatively, there have been attempts to
+estimate simpler and more interpretable models by
+using perturbations of test examples or their hid-
+den representations (Ribeiro et al., 2016; Lund-
+berg and Lee, 2017; Kim et al., 2018).
+How-
+ever, both attention and perturbation-based meth-
+ods have important limitations. Attention-based
+explanations can be misleading (Jain and Wallace,
+2019), and are generally possible only for indi-
+vidual tokens; they cannot explain predictions in
+terms of more abstract linguistic concepts. Exist-
+ing perturbation-based methods often generate im-
+plausible counterfactuals and also do not allow for
+estimating the effect of sentence-level concepts.
+Viewed as a causal inference problem, explana-
+tion can be performed by comparing predictions
+for each example and its generated counterfactual.
+While it is usually not possible to observe coun-
+terfactual predictions, here the causal system is the
+predictor itself. In those cases it may be possible to
+compute counterfactuals, e.g. by manipulating the
+activations inside the network (Vig et al., 2020;
+Geiger et al., 2021). Treatment effects can then
+be computed by comparing the predictions under
+the factual and counterfactual conditions. Such a
+controlled setting is similar to the randomized ex-
+periment described in § 2, where it is possible to
+compute the difference between an actual text and
+what the text would have been had a speciﬁc con-
+cept not existed in it. Indeed, in cases where coun-
+terfactual texts can be generated, we can often esti-
+mate causal effects on text-based models (Ribeiro
+et al., 2020; Gardner et al., 2020; Rosenberg et al.,
+2021; Ross et al., 2021; Meng et al., 2022; Zhang
+et al., 2022). However, generating such counter-
+factuals is challenging (see § 4.1.1).
+To overcome the counterfactual generation
+problem, another class of approaches proposes to
+manipulate the representation of the text and not
+the text itself (Feder et al., 2021; Elazar et al.,
+2021; Ravfogel et al., 2021). Feder et al. (2021)
+compute the counterfactual representation by pre-
+training an additional instance of the language
+representation model employed by the classiﬁer,
+with an adversarial component designed to "for-
+get" the concept of choice, while controlling for
+confounding concepts. Ravfogel et al. (2020) offer
+a method for removing information from represen-
+tations by iteratively training linear classiﬁers and
+projecting the representations on their null-spaces,
+but do not account for confounding concepts.
+A complementary approach is to generate coun-
+terfactuals with minimal changes that obtain a
+different model prediction (Wachter et al., 2017;
+Mothilal et al., 2020). Such examples allow us to
+observe the changes required to change a model’s
+prediction. Causal modeling can facilitate this by
+making it possible to reason about the causal re-
+lationships between observed features, thus iden-
+tifying minimal actions which might have down-
+stream effects on several features, ultimately re-
+sulting in a new prediction (Karimi et al., 2021).
+Finally, a causal perspective on attention-based
+explanations is to view internal nodes as media-
+tors of the causal effect from the input to the out-
+put (Vig et al., 2020; Finlayson et al., 2021). By
+querying models using manually-crafted counter-
+factuals, we can observe how information ﬂows,
+and identify where in the model it is encoded.
+4.4
+Future work
+In general we cannot expect to have full causal
+models of text, so a critical question for future
+work is how to safely use partial causal models,
+which omit some causal variables and do not com-
+pletely specify the causal relationships within the
+text itself. A particular concern is unobserved con-
+founding between the variables that are explicitly
+speciﬁed in the causal model. Unobserved con-
+founding is challenging for causal inference in
+general, but it is likely to be ubiquitous in lan-
+guage applications, in which the text arises from
+the author’s intention to express a structured ar-
+rangement of semantic concepts, and the label cor-
+responds to a query, either directly on the intended
+semantics or on those understood by the reader.
+Partial causal models of text can be “top down”,
+in the sense of representing causal relationships
+between the text and high-level document meta-
+data such as authorship, or “bottom up”, in the
+sense of representing local linguistic invariance
+properties, such as the intuition that a multiword
+expression like ‘San Francisco’ has a single cause.
+The methods described here are almost exclu-
+sively based on top-down models, but approaches
+such as perturbing entity spans (e.g., Longpre
+et al., 2021) can be justiﬁed by implicit bottom-
+up causal models. Making these connections more
+explicit may yield new insights. Future work may
+also explore hybrid models that connect high-level
+document metadata with medium-scale spans of
+text such as sentences or paragraphs.
+A related issue is when the true variable of in-
+terest is unobserved but we do receive some noisy
+or coarsened proxy variable. For example, we may
+wish to enforce invariance to dialect but have ac-
+cess only to geographical information, with which
+dialect is only approximately correlated. This is an
+emerging area within the statistical literature (Tch-
+etgen et al., 2020), and despite the clear applicabil-
+ity to NLP, we are aware of no relevant prior work.
+Finally, applications of causality to NLP have
+focused primarily on classiﬁcation, so it is natural
+to ask how these approaches might be extended to
+structured output prediction. This is particularly
+challenging for distributional criteria like f(X) ⊥⊥
+Z | Y , because f(X) and Y may now represent
+sequences of vectors or tokens. In such cases it
+may be preferable to focus on invariance criteria
+that apply to the loss distribution or calibration.
+5
+Conclusion
+Our main goal in this survey was to collect the var-
+ious touchpoints of causality and NLP into one
+space, which we then subdivided into the prob-
+lems of estimating the magnitude of causal effects.
+and more traditional NLP tasks. These branches of
+scientiﬁc inquiry share common goals, intuitions,
+and are beginning to show methodological syner-
+gies. In § 3 we showed how recent advances in
+NLP modeling can help researchers make causal
+conclusions with text data and the challenges of
+this process. In § 4, we showed how ideas from
+causal inference can be used to make NLP mod-
+els more robust, trustworthy and transparent. We
+also gather approaches that are implicitly causal
+and explicitly show their relationship to causal in-
+ference. Both of these spaces, especially the use
+of causal ideas for robust and explainable predic-
+tions, remain nascent with a large number of open
+challenges which we have detailed throughout this
+paper.
+A particular advantage of causal methodology
+is that it forces practitioners to explicate their as-
+sumptions.
+To improve scientiﬁc standards, we
+believe that the NLP community should be clearer
+about these assumptions and analyze their data us-
+ing causal reasoning. This could lead to a bet-
+ter understanding of language and the models we
+build to process it.
+References
+Robert Adragna, Elliot Creager, David Madras,
+and Richard Zemel. 2020.
+Fairness and ro-
+bustness in invariant learning: A case study
+in toxicity classiﬁcation.
+arXiv preprint
+arXiv:2011.06485.
+Maria Antoniak and David Mimno. 2021.
+Bad
+seeds: Evaluating lexical methods for bias mea-
+surement. In Proceedings of the 59th Annual
+Meeting of the Association for Computational
+Linguistics and the 11th International Joint
+Conference on Natural Language Processing
+(Volume 1: Long Papers), pages 1889–1904,
+Online. Association for Computational Linguis-
+tics.
+Martin Arjovsky, Léon Bottou, Ishaan Gulrajani,
+and David Lopez-Paz. 2019. Invariant risk min-
+imization. arXiv preprint arXiv:1907.02893.
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua
+Bengio. 2014. Neural machine translation by
+jointly learning to align and translate.
+arXiv
+preprint arXiv:1409.0473.
+Solon
+Barocas,
+Moritz
+Hardt,
+and
+Arvind
+Narayanan. 2019.
+Fairness and Machine
+Learning.
+fairmlbook.org.
+http://www.
+fairmlbook.org.
+Shai Ben-David, John Blitzer, Koby Crammer,
+Alex Kulesza, Fernando Pereira, and Jen-
+nifer Wortman Vaughan. 2010.
+A theory of
+learning from different domains.
+Machine
+learning, 79(1):151–175.
+David M Blei, Andrew Y Ng, and Michael I Jor-
+dan. 2003.
+Latent dirichlet allocation.
+Jour-
+nal of machine Learning research, 3(Jan):993–
+1022.
+Su Lin Blodgett, Solon Barocas, Hal Daumé III,
+and Hanna Wallach. 2020. Language (technol-
+ogy) is power: A critical survey of “bias” in nlp.
+In Proceedings of the 58th Annual Meeting of
+the Association for Computational Linguistics,
+pages 5454–5476.
+Nitay Calderon, Eyal Ben-David, Amir Feder, and
+Roi Reichart. 2022. Docogen: Domain coun-
+terfactual generation for low resource domain
+adaptation. In Proceedings of the 60th Annual
+Meeting of the Association of Computational
+Linguistics (ACL).
+Yining Chen, Colin Wei, Ananya Kumar, and
+Tengyu Ma. 2020.
+Self-training avoids us-
+ing spurious features under domain shift. Ad-
+vances in Neural Information Processing Sys-
+tems, 33:21061–21071.
+Alexander D’Amour, Peng Ding, Avi Feller, Li-
+hua Lei, and Jasjeet Sekhon. 2020. Overlap in
+observational studies with high-dimensional co-
+variates. Journal of Econometrics.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: pre-training
+of deep bidirectional transformers for language
+understanding.
+In Proceedings of the 2019
+Conference of the North American Chapter of
+the Association for Computational Linguistics:
+Human Language Technologies, NAACL-HLT
+2019, Minneapolis, MN, USA, June 2-7, 2019,
+Volume 1 (Long and Short Papers), pages 4171–
+4186. Association for Computational Linguis-
+tics.
+Javid Ebrahimi, Anyi Rao, Daniel Lowd, and De-
+jing Dou. 2018. Hotﬂip: White-box adversarial
+examples for text classiﬁcation. In Proceedings
+of the 56th Annual Meeting of the Association
+for Computational Linguistics (Volume 2: Short
+Papers), pages 31–36.
+Naoki Egami, Christian J Fong, Justin Grimmer,
+Margaret E Roberts, and Brandon M Stewart.
+2018.
+How to make causal inferences using
+texts. arXiv preprint arXiv:1802.02163.
+Yanai Elazar, Shauli Ravfogel, Alon Jacovi, and
+Yoav Goldberg. 2021. Amnesic probing: Be-
+havioral explanation with amnesic counterfac-
+tuals. Transactions of the Association for Com-
+putational Linguistics, 9:160–175.
+Amir Feder, Nadav Oved, Uri Shalit, and Roi Re-
+ichart. 2021.
+Causalm: Causal model expla-
+nation through counterfactual language models.
+Computational Linguistics, 47(2):333–386.
+Matthew Finlayson, Aaron Mueller, Sebastian
+Gehrmann, Stuart Shieber, Tal Linzen, and
+Yonatan Belinkov. 2021.
+Causal analysis of
+syntactic agreement mechanisms in neural lan-
+guage models. In Proceedings of the 59th An-
+nual Meeting of the Association for Compu-
+tational Linguistics and the 11th International
+Joint Conference on Natural Language Pro-
+cessing (Volume 1: Long Papers), pages 1828–
+1843, Online. Association for Computational
+Linguistics.
+Christian Fong and Justin Grimmer. 2016. Dis-
+covery of treatments from text corpora. In Pro-
+ceedings of the 54th Annual Meeting of the As-
+sociation for Computational Linguistics (Vol-
+ume 1: Long Papers), pages 1600–1609.
+Christian Fong and Justin Grimmer. 2021. Causal
+inference with latent treatments.
+American
+Journal of Political Science. Forthcoming.
+Matt Gardner, Yoav Artzi, Victoria Basmov,
+Jonathan Berant, Ben Bogin, Sihao Chen,
+Pradeep Dasigi, Dheeru Dua, Yanai Elazar,
+Ananth Gottumukkala, Nitish Gupta, Hannaneh
+Hajishirzi, Gabriel Ilharco, Daniel Khashabi,
+Kevin Lin, Jiangming Liu, Nelson F. Liu,
+Phoebe Mulcaire, Qiang Ning, Sameer Singh,
+Noah A. Smith, Sanjay Subramanian, Reut
+Tsarfaty, Eric Wallace, Ally Zhang, and Ben
+Zhou. 2020.
+Evaluating models’ local deci-
+sion boundaries via contrast sets. In Findings
+of the Association for Computational Linguis-
+tics: EMNLP 2020, pages 1307–1323, Online.
+Association for Computational Linguistics.
+Sahaj Garg, Vincent Perot, Nicole Limtiaco,
+Ankur Taly, Ed H Chi, and Alex Beutel. 2019.
+Counterfactual fairness in text classiﬁcation
+through robustness. In Proceedings of the 2019
+AAAI/ACM Conference on AI, Ethics, and Soci-
+ety, pages 219–226.
+Atticus Geiger, Hanson Lu, Thomas Icard, and
+Christopher Potts. 2021. Causal abstractions of
+neural networks. Advances in Neural Informa-
+tion Processing Systems, 34.
+Alan S Gerber, Donald P Green, and Christo-
+pher W Larimer. 2008.
+Social pressure and
+voter turnout: Evidence from a large-scale ﬁeld
+experiment. American political Science review,
+102(1):33–48.
+Muhammad Ghifary, W Bastiaan Kleijn, Mengjie
+Zhang, and David Balduzzi. 2015.
+Domain
+generalization for object recognition with multi-
+task autoencoders. In Proceedings of the IEEE
+international conference on computer vision,
+pages 2551–2559.
+Seraphina Goldfarb-Tarrant, Rebecca Marchant,
+Ricardo Muñoz Sánchez, Mugdha Pandya, and
+Adam Lopez. 2021. Intrinsic bias metrics do
+not correlate with application bias. In Proceed-
+ings of the 59th Annual Meeting of the Asso-
+ciation for Computational Linguistics and the
+11th International Joint Conference on Natu-
+ral Language Processing (Volume 1: Long Pa-
+pers), pages 1926–1940, Online. Association
+for Computational Linguistics.
+Riccardo Guidotti, Anna Monreale, Salvatore
+Ruggieri, Franco Turini, Fosca Giannotti, and
+Dino Pedreschi. 2018. A survey of methods for
+explaining black box models. ACM computing
+surveys (CSUR), 51(5):1–42.
+Ishaan Gulrajani and David Lopez-Paz. 2020. In
+search of lost domain generalization.
+arXiv
+preprint arXiv:2007.01434.
+Suchin Gururangan, Swabha Swayamdipta, Omer
+Levy, Roy Schwartz, Samuel R Bowman, and
+Noah A Smith. 2018.
+Annotation artifacts in
+natural language inference data.
+Proceedings
+of the North American Chapter of the Associ-
+ation for Computational Linguistics: Human
+Language Technologies (NAACL).
+Alex Hanna, Emily Denton, Andrew Smart, and
+Jamila Smith-Loud. 2020.
+Towards a critical
+race methodology in algorithmic fairness.
+In
+Proceedings of the 2020 conference on fairness,
+accountability, and transparency, pages 501–
+512.
+Moritz Hardt, Eric Price, and Nati Srebro. 2016.
+Equality of opportunity in supervised learning.
+Advances in neural information processing sys-
+tems, 29:3315–3323.
+Miguel A Hernán. 2016. Does water kill? a call
+for less casual causal inferences. Annals of epi-
+demiology, 26(10):674–680.
+Paul W Holland. 1986. Statistics and causal infer-
+ence. Journal of the American statistical Asso-
+ciation, 81(396):945–960.
+Zhiting Hu and Li Erran Li. 2021. A causal lens
+for controllable text generation.
+Advances in
+Neural Information Processing Systems, 34.
+Po-Sen Huang, Huan Zhang, Ray Jiang, Robert
+Stanforth, Johannes Welbl, Jack Rae, Vishal
+Maini, Dani Yogatama, and Pushmeet Kohli.
+2019.
+Reducing sentiment bias in language
+models via counterfactual evaluation.
+arXiv
+preprint arXiv:1911.03064.
+Guido W Imbens and Donald B Rubin. 2015.
+Causal inference in statistics,
+social,
+and
+biomedical sciences.
+Cambridge University
+Press.
+Alon Jacovi and Yoav Goldberg. 2020.
+To-
+wards faithfully interpretable nlp systems: How
+should we deﬁne and evaluate faithfulness? In
+Proceedings of the 58th Annual Meeting of
+the Association for Computational Linguistics,
+pages 4198–4205.
+Alon Jacovi, Ana Marasovi´c, Tim Miller, and
+Yoav Goldberg. 2021. Formalizing trust in ar-
+tiﬁcial intelligence: Prerequisites, causes and
+goals of human trust in ai. In Proceedings of the
+2021 ACM Conference on Fairness, Account-
+ability, and Transparency, pages 624–635.
+Sarthak Jain and Byron C Wallace. 2019.
+At-
+tention is not explanation.
+arXiv preprint
+arXiv:1902.10186.
+Rohan Jha, Charles Lovering, and Ellie Pavlick.
+2020.
+Does data augmentation improve
+generalization in nlp?
+arXiv preprint
+arXiv:2004.15012.
+Shagun Jhaver, Sucheta Ghoshal, Amy Bruck-
+man, and Eric Gilbert. 2018. Online harassment
+and content moderation: The case of blocklists.
+ACM Transactions on Computer-Human Inter-
+action (TOCHI), 25(2):1–33.
+Zhijing Jin, Julius von Kügelgen, Jingwei Ni, Te-
+jas Vaidhya, Ayush Kaushal, Mrinmaya Sachan,
+and Bernhard Schoelkopf. 2021. Causal direc-
+tion of data collection matters: Implications of
+causal and anticausal learning for nlp. In Pro-
+ceedings of the 2021 Conference on Empiri-
+cal Methods in Natural Language Processing,
+pages 9499–9513.
+Nitish Joshi and He He. 2021. An investigation
+of the (in) effectiveness of counterfactually aug-
+mented data. arXiv preprint arXiv:2107.00753.
+Amir-Hossein Karimi, Bernhard Schölkopf, and
+Isabel Valera. 2021.
+Algorithmic recourse:
+from counterfactual explanations to interven-
+tions. In Proceedings of the 2021 ACM Con-
+ference on Fairness, Accountability, and Trans-
+parency, pages 353–362.
+Divyansh
+Kaushik,
+Eduard
+Hovy,
+and
+Zachary C Lipton. 2019.
+Learning the
+difference
+that
+makes
+a
+difference
+with
+counterfactually-augmented
+data.
+arXiv
+preprint arXiv:1909.12434.
+Divyansh Kaushik, Amrith Setlur, Eduard Hovy,
+and Zachary C Lipton. 2020.
+Explaining the
+efﬁcacy of counterfactually-augmented data.
+arXiv preprint arXiv:2010.02114.
+Katherine Keith, David Jensen, and Brendan
+O’Connor. 2020.
+Text and causal inference:
+A review of using text to remove confounding
+from causal estimates. In ACL.
+Chloé Kiddon, Luke Zettlemoyer, and Yejin Choi.
+2016. Globally coherent text generation with
+neural checklist models. In Proceedings of the
+2016 conference on empirical methods in natu-
+ral language processing, pages 329–339.
+Niki Kilbertus, Mateo Rojas-Carulla, Giambattista
+Parascandolo, Moritz Hardt, Dominik Janz-
+ing, and Bernhard Schölkopf. 2017.
+Avoid-
+ing discrimination through causal reasoning. In
+Proceedings of the 31st International Confer-
+ence on Neural Information Processing Sys-
+tems, pages 656–666.
+Been Kim, Martin Wattenberg, Justin Gilmer, Car-
+rie Cai, James Wexler, Fernanda Viegas, et al.
+2018.
+Interpretability beyond feature attribu-
+tion: Quantitative testing with concept activa-
+tion vectors (tcav). In International Conference
+on Machine Learning, pages 2668–2677.
+Issa Kohler-Hausmann. 2018. Eddie murphy and
+the dangers of counterfactual causal thinking
+about detecting racial discrimination. Nw. UL
+Rev., 113:1163.
+Matt J Kusner, Joshua Loftus, Chris Russell, and
+Ricardo Silva. 2017.
+Counterfactual fairness.
+In Advances in neural information processing
+systems, pages 4066–4076.
+Quoc Le and Tomas Mikolov. 2014. Distributed
+representations of sentences and documents. In
+International conference on machine learning,
+pages 1188–1196. PMLR.
+Xiaodong Liu,
+Jianfeng Gao,
+Xiaodong He,
+Li Deng, Kevin Duh, and Ye-Yi Wang. 2015.
+Representation learning using multi-task deep
+neural networks for semantic classiﬁcation and
+information retrieval.
+In Proceedings of the
+2015 Conference of the North American Chap-
+ter of the Association for Computational Lin-
+guistics: Human Language Technologies, pages
+912–921.
+Yang Liu and Mirella Lapata. 2018.
+Learning
+structured text representations. Transactions of
+the Association for Computational Linguistics,
+6:63–75.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei
+Du, Mandar Joshi, Danqi Chen, Omer Levy,
+Mike Lewis, Luke Zettlemoyer, and Veselin
+Stoyanov. 2019.
+Roberta:
+A robustly opti-
+mized bert pretraining approach. arXiv preprint
+arXiv:1907.11692.
+Lajanugen Logeswaran, Honglak Lee, and Samy
+Bengio. 2018. Content preserving text genera-
+tion with attribute controls. Advances in Neural
+Information Processing Systems, 31.
+Shayne Longpre, Kartik Perisetla, Anthony Chen,
+Nikhil Ramesh, Chris DuBois, and Sameer
+Singh. 2021. Entity-based knowledge conﬂicts
+in question answering. In Proceedings of the
+2021 Conference on Empirical Methods in Nat-
+ural Language Processing, pages 7052–7063.
+Scott M Lundberg and Su-In Lee. 2017. A uniﬁed
+approach to interpreting model predictions. In
+Advances in neural information processing sys-
+tems, pages 4765–4774.
+Rowan Hall Maudslay, Hila Gonen, Ryan Cot-
+terell, and Simone Teufel. 2019. It’s all in the
+name: Mitigating gender bias with name-based
+counterfactual data substitution. arXiv preprint
+arXiv:1909.00871.
+David McClosky, Eugene Charniak, and Mark
+Johnson. 2006. Effective self-training for pars-
+ing.
+In Proceedings of the main conference
+on human language technology conference of
+the North American Chapter of the Association
+of Computational Linguistics, pages 152–159.
+Citeseer.
+R Thomas McCoy, Ellie Pavlick, and Tal Linzen.
+2019. Right for the wrong reasons: Diagnos-
+ing syntactic heuristics in natural language in-
+ference. arXiv preprint arXiv:1902.01007.
+Kevin Meng, David Bau, Alex Andonian, and
+Yonatan Belinkov. 2022.
+Locating and edit-
+ing factual knowledge in gpt.
+arXiv preprint
+arXiv:2202.05262.
+Stephen L Morgan and Christopher Winship.
+2015.
+Counterfactuals and causal inference.
+Cambridge University Press.
+Ramaravind K Mothilal, Amit Sharma, and Chen-
+hao Tan. 2020.
+Explaining machine learning
+classiﬁers through diverse counterfactual expla-
+nations. In Proceedings of the 2020 Conference
+on Fairness, Accountability, and Transparency,
+pages 607–617.
+Reagan Mozer, Luke Miratrix, Aaron Russell
+Kaufman, and L Jason Anastasopoulos. 2020.
+Matching with text data: An experimental eval-
+uation of methods for matching documents and
+of measuring match quality. Political Analysis,
+28(4):445–468.
+Krikamol Muandet, David Balduzzi, and Bernhard
+Schölkopf. 2013. Domain generalization via in-
+variant feature representation. In International
+Conference on Machine Learning, pages 10–18.
+Aakanksha Naik, Abhilasha Ravichander, Nor-
+man Sadeh, Carolyn Rose, and Graham Neu-
+big. 2018. Stress test evaluation for natural lan-
+guage inference. In Proceedings of the 27th In-
+ternational Conference on Computational Lin-
+guistics, pages 2340–2353, Santa Fe, New Mex-
+ico, USA. Association for Computational Lin-
+guistics.
+Tong Niu and Mohit Bansal. 2018. Polite dialogue
+generation without parallel data. Transactions
+of the Association for Computational Linguis-
+tics, 6:373–389.
+Yaakov Ophir, Refael Tikochinski, Christa SC
+Asterhan, Itay Sisso, and Roi Reichart. 2020.
+Deep neural networks detect suicide risk from
+textual facebook posts.
+Scientiﬁc reports,
+10(1):1–10.
+Silviu Paun, Bob Carpenter, Jon Chamberlain,
+Dirk Hovy, Udo Kruschwitz, and Massimo Poe-
+sio. 2018. Comparing bayesian models of an-
+notation.
+Transactions of the Association for
+Computational Linguistics, 6:571–585.
+Ellie Pavlick and Tom Kwiatkowski. 2019. Inher-
+ent disagreements in human textual inferences.
+Transactions of the Association for Computa-
+tional Linguistics, 7:677–694.
+Judea Pearl. 1994. A probabilistic calculus of ac-
+tions. In Uncertainty Proceedings 1994, pages
+454–462. Elsevier.
+Judea Pearl. 2009. Causality. Cambridge univer-
+sity press.
+J Peters, P Bühlmann, and N Meinshausen. 2016.
+Causal inference using invariant prediction:
+identiﬁcation and conﬁdence intervals.
+Jour-
+nal of the Royal Statistical Society-Statistical
+Methodology-Series B, 78(5):947–1012.
+Matthew E. Peters, Mark Neumann, Mohit Iyyer,
+Matt Gardner, Christopher Clark, Kenton Lee,
+and Luke Zettlemoyer. 2018. Deep contextu-
+alized word representations.
+In Proceedings
+of the 2018 Conference of the North American
+Chapter of the Association for Computational
+Linguistics:
+Human Language Technologies,
+NAACL-HLT 2018, New Orleans, Louisiana,
+USA, June 1-6, 2018, Volume 1 (Long Papers),
+pages 2227–2237. Association for Computa-
+tional Linguistics.
+Adam
+Poliak,
+Jason
+Naradowsky,
+Aparajita
+Haldar,
+Rachel
+Rudinger,
+and
+Benjamin
+Van Durme. 2018. Hypothesis only baselines
+in natural language inference.
+arXiv preprint
+arXiv:1805.01042.
+Reid Pryzant, Dallas Card, Dan Jurafsky, Victor
+Veitch, and Dhanya Sridhar. 2021. Causal ef-
+fects of linguistic properties.
+In Proceedings
+of the 2021 Conference of the North Ameri-
+can Chapter of the Association for Computa-
+tional Linguistics: Human Language Technolo-
+gies, pages 4095–4109.
+Reid Pryzant, Youngjoo Chung, and Dan Juraf-
+sky. 2017. Predicting sales from the language
+of product descriptions. In eCOM@ SIGIR.
+Reid Pryzant, Kelly Shen, Dan Jurafsky, and Ste-
+fan Wagner. 2018. Deconfounded lexicon in-
+duction for interpretable social science. In Pro-
+ceedings of the 2018 Conference of the North
+American Chapter of the Association for Com-
+putational Linguistics: Human Language Tech-
+nologies, Volume 1 (Long Papers), pages 1615–
+1625.
+Shauli Ravfogel,
+Yanai Elazar,
+Hila Gonen,
+Michael Twiton, and Yoav Goldberg. 2020.
+Null it out: Guarding protected attributes by
+iterative nullspace projection.
+arXiv preprint
+arXiv:2004.07667.
+Shauli Ravfogel, Grusha Prasad, Tal Linzen, and
+Yoav Goldberg. 2021. Counterfactual interven-
+tions reveal the causal effect of relative clause
+representations on agreement prediction. arXiv
+preprint arXiv:2105.06965.
+Roi Reichart and Ari Rappoport. 2007.
+Self-
+training for enhancement and domain adap-
+tation of statistical parsers trained on small
+datasets.
+In Proceedings of the 45th Annual
+Meeting of the Association of Computational
+Linguistics, pages 616–623.
+Marco Tulio Ribeiro, Sameer Singh, and Carlos
+Guestrin. 2016. Why should i trust you?: Ex-
+plaining the predictions of any classiﬁer.
+In
+Proceedings of the 22nd ACM SIGKDD in-
+ternational conference on knowledge discovery
+and data mining, pages 1135–1144. ACM.
+Marco Tulio Ribeiro, Tongshuang Wu, Carlos
+Guestrin, and Sameer Singh. 2020. Beyond ac-
+curacy: Behavioral testing of NLP models with
+CheckList. In Proceedings of the 58th Annual
+Meeting of the Association for Computational
+Linguistics, pages 4902–4912, Online. Associ-
+ation for Computational Linguistics.
+Parker Riley, Noah Constant, Mandy Guo, Girish
+Kumar, David Uthus, and Zarana Parekh. 2020.
+Textsettr: Label-free text style extraction and
+tunable targeted restyling.
+arXiv preprint
+arXiv:2010.03802.
+Margaret E Roberts, Brandon M Stewart, and
+Richard A Nielsen. 2020. Adjusting for con-
+founding with text matching. American Journal
+of Political Science, 64(4):887–903.
+Margaret E Roberts, Brandon M Stewart, Dustin
+Tingley, Christopher Lucas, Jetson Leder-Luis,
+Shana Kushner Gadarian, Bethany Albertson,
+and David G Rand. 2014. Structural topic mod-
+els for open-ended survey responses. American
+Journal of Political Science, 58(4):1064–1082.
+Paul R Rosenbaum. 2007. Interference between
+units in randomized experiments. Journal of the
+american statistical association, 102(477):191–
+200.
+Daniel Rosenberg, Itai Gat, Amir Feder, and Roi
+Reichart. 2021.
+Are vqa systems rad? mea-
+suring robustness to augmented data with fo-
+cused interventions. In Proceedings of the 59th
+Annual Meeting of the Association for Compu-
+tational Linguistics and the 11th International
+Joint Conference on Natural Language Pro-
+cessing (Volume 2: Short Papers), pages 61–70.
+Elan Rosenfeld, Pradeep Ravikumar, and Andrej
+Risteski. 2021.
+The risks of invariant risk
+minimization. In International Conference on
+Learning Representations, volume 9.
+Alexis
+Ross,
+Tongshuang
+Wu,
+Hao
+Peng,
+Matthew E Peters, and Matt Gardner. 2021. Tai-
+lor: Generating and perturbing text with seman-
+tic controls. arXiv preprint arXiv:2107.07150.
+Donald B Rubin. 1974. Estimating causal effects
+of treatments in randomized and nonrandom-
+ized studies. Journal of educational Psychol-
+ogy, 66(5):688.
+Donald B Rubin. 2005. Causal inference using po-
+tential outcomes: Design, modeling, decisions.
+Journal of the American Statistical Association,
+100(469):322–331.
+Jennifer D Rubin, Lindsay Blackwell, and Terri D
+Conley. 2020. Fragile masculinity: Men, gen-
+der, and online harassment. In Proceedings of
+the 2020 CHI Conference on Human Factors in
+Computing Systems, pages 1–14.
+B Schölkopf, D Janzing, J Peters, E Sgouritsa,
+K Zhang, and J Mooij. 2012.
+On causal
+and anticausal learning.
+In 29th Interna-
+tional Conference on Machine Learning (ICML
+2012), pages 1255–1262. International Machine
+Learning Society.
+Ravi
+Shekhar,
+Sandro
+Pezzelle,
+Yauhen
+Klimovich,
+Aurélie Herbelot,
+Moin Nabi,
+Enver Sangineto, and Raffaella Bernardi. 2017.
+FOIL it!
+ﬁnd one mismatch between image
+and language caption.
+In Proceedings of the
+55th Annual Meeting of the Association for
+Computational Linguistics (Volume 1:
+Long
+Papers), pages 255–265, Vancouver, Canada.
+Association for Computational Linguistics.
+Anders Søgaard. 2013.
+Semi-supervised learn-
+ing and domain adaptation in natural language
+processing. Synthesis Lectures on Human Lan-
+guage Technologies, 6(2):1–103.
+Dhanya Sridhar and Lise Getoor. 2019. Estimat-
+ing causal effects of tone in online debates. In
+International Joint Conference on Artiﬁcial In-
+telligence.
+Mark Steedman, Miles Osborne, Anoop Sarkar,
+Stephen Clark, Rebecca Hwa, Julia Hocken-
+maier, Paul Ruhlen, Steven Baker, and Jeremiah
+Crim. 2003.
+Bootstrapping statistical parsers
+from small datasets. In 10th conference of the
+European chapter of the association for compu-
+tational linguistics.
+Eric J Tchetgen Tchetgen, Andrew Ying, Yifan
+Cui, Xu Shi, and Wang Miao. 2020.
+An in-
+troduction to proximal causal learning. arXiv
+preprint arXiv:2009.10982.
+Matt Thomas, Bo Pang, and Lillian Lee. 2006.
+Get out the vote: Determining support or op-
+position from congressional ﬂoor-debate tran-
+scripts. In Proceedings of the 2006 Conference
+on Empirical Methods in Natural Language
+Processing, pages 327–335, Sydney, Australia.
+Association for Computational Linguistics.
+Victor Veitch, Alexander D’Amour, Steve Yad-
+lowsky, and Jacob Eisenstein. 2021. Counter-
+factual invariance to spurious correlations: Why
+and how to pass stress tests.
+arXiv preprint
+arXiv:2106.00545.
+Victor Veitch, Dhanya Sridhar, and David M Blei.
+2020. Adapting text embeddings for causal in-
+ference. In UAI.
+Jesse Vig, Sebastian Gehrmann, Yonatan Be-
+linkov,
+Sharon Qian,
+Daniel Nevo,
+Yaron
+Singer, and Stuart M. Shieber. 2020.
+Inves-
+tigating gender bias in language models using
+causal mediation analysis. In Advances in Neu-
+ral Information Processing Systems 33: Annual
+Conference on Neural Information Processing
+Systems 2020, NeurIPS 2020, December 6-12,
+2020, virtual.
+Sandra Wachter, Brent Mittelstadt, and Chris Rus-
+sell. 2017. Counterfactual explanations without
+opening the black box: Automated decisions
+and the gdpr. Harv. JL & Tech., 31:841.
+Stefan Wager and Susan Athey. 2018.
+Esti-
+mation and inference of heterogeneous treat-
+ment effects using random forests.
+Jour-
+nal of the American Statistical Association,
+113(523):1228–1242.
+Yoav Wald, Amir Feder, Daniel Greenfeld, and
+Uri Shalit. 2021.
+On calibration and out-
+of-domain generalization.
+arXiv preprint
+arXiv:2102.10395.
+Yequan Wang, Minlie Huang, Xiaoyan Zhu, and
+Li Zhao. 2016.
+Attention-based LSTM for
+aspect-level sentiment classiﬁcation.
+In Pro-
+ceedings of the 2016 Conference on Empiri-
+cal Methods in Natural Language Processing,
+pages 606–615, Austin, Texas. Association for
+Computational Linguistics.
+Galen Weld, Peter West, Maria Glenski, David
+Arbour, Ryan Rossi, and Tim Althoff. 2022.
+Adjusting for confounders with text:
+Chal-
+lenges and an empirical evaluation framework
+for causal inference. ICWSM.
+Zach Wood-Doughty, Ilya Shpitser, and Mark
+Dredze. 2018.
+Challenges of using text clas-
+siﬁers for causal inference. In EMNLP.
+Zach Wood-Doughty, Ilya Shpitser, and Mark
+Dredze. 2021.
+Generating synthetic text data
+to evaluate causal inference methods.
+arXiv
+preprint arXiv:2102.05638.
+Tongshuang Wu, Marco Tulio Ribeiro, Jeffrey
+Heer, and Daniel S Weld. 2021. Polyjuice: Au-
+tomated, general-purpose counterfactual gener-
+ation. arXiv preprint arXiv:2101.00288.
+Kelvin Xu, Jimmy Ba, Ryan Kiros, Kyunghyun
+Cho, Aaron Courville, Ruslan Salakhudinov,
+Rich Zemel, and Yoshua Bengio. 2015. Show,
+attend and tell: Neural image caption genera-
+tion with visual attention. In International con-
+ference on machine learning, pages 2048–2057.
+PMLR.
+Justine Zhang, Sendhil Mullainathan, and Cristian
+Danescu-Niculescu-Mizil. 2020.
+Quantifying
+the causal effects of conversational tendencies.
+Proceedings of the ACM on Human-Computer
+Interaction, 4(CSCW2):1–24.
+Yi-Fan Zhang, Hanlin Zhang, Zachary C Lipton,
+Li Erran Li, and Eric P Xing. 2022. Can trans-
+formers be strong treatment effect estimators?
+arXiv preprint arXiv:2202.01336.
+Jieyu Zhao, Tianlu Wang, Mark Yatskar, Vicente
+Ordonez, and Kai-Wei Chang. 2017. Men also
+like shopping: Reducing gender bias ampliﬁ-
+cation using corpus-level constraints. In Pro-
+ceedings of the 2017 Conference on Empiri-
+cal Methods in Natural Language Processing,
+pages 2979–2989, Copenhagen, Denmark. As-
+sociation for Computational Linguistics.
+Jieyu Zhao, Tianlu Wang, Mark Yatskar, Vicente
+Ordonez, and Kai-Wei Chang. 2018.
+Gender
+bias in coreference resolution: Evaluation and
+debiasing methods. In Proceedings of the 2018
+Conference of the North American Chapter
+of the Association for Computational Linguis-
+tics: Human Language Technologies, Volume
+2 (Short Papers), pages 15–20, New Orleans,
+Louisiana. Association for Computational Lin-
+guistics.
+Ran Zmigrod, Sabrina J. Mielke, Hanna Wal-
+lach, and Ryan Cotterell. 2019.
+Counterfac-
+tual data augmentation for mitigating gender
+stereotypes in languages with rich morphology.
+In Proceedings of the 57th Annual Meeting of
+the Association for Computational Linguistics,
+pages 1651–1661, Florence, Italy. Association
+for Computational Linguistics.

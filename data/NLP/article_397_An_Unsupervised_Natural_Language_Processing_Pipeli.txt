@@ -1,0 +1,6628 @@
+Title: An Unsupervised Natural Language Processing Pipeline for Assessing Referral Appropriateness
+Source URL: http://arxiv.org/abs/2501.14701v2
+--------------------------------------------------
+
+An Unsupervised Natural Language Processing
+Pipeline for Assessing Referral Appropriateness
+Vittorio Torri PhD1*, Annamaria Bottelli MSc2,
+Michele Ercolanoni MSc2, Olivia Leoni PhD3,
+Francesca Ieva PhD1,4
+1*MOX - Modelling and Scientific Computing Lab, Department of
+Mathematics, Politecnico di Milano, Piazza Leonardo da Vinci 32,
+Milan, 20133, Italy.
+2ARIA s.p.a - Azienda Regionale per l’Innovazione e gli Acquisti, Via
+Taramelli 26, Milan, 20124, Italy.
+3U.O. Osservatorio Epidemiologico, DG Welfare, Regione Lombardia,
+Piazza Citt`a di Lombardia 1, Milan, 20124, Italy.
+4HDS - Health Data Science Centre, Human Technopole, Viale Rita
+Levi-Montalcini 1, Milan, 20157, Italy.
+*Corresponding author(s). E-mail(s): vittorio.torri@polimi.it;
+Abstract
+Background: Assessing the appropriateness of diagnostic referrals is critical for
+improving healthcare efficiency and reducing unnecessary procedures. However,
+this task becomes challenging when referral reasons are recorded only as free
+text rather than structured codes. In the Italian National Health Service (NHS),
+referral motivations are systematically entered as unstructured text, making
+large-scale evaluation against official guidelines difficult to automate and scale.
+To address this gap, we propose a fully unsupervised Natural Language Process-
+ing (NLP) pipeline capable of extracting and evaluating referral reasons without
+relying on labelled datasets, which are costly and time-consuming to produce.
+Methods: Our pipeline leverages Transformer-based embeddings pre-trained on
+Italian medical texts to semantically cluster referral reasons and assess their align-
+ment with appropriateness guidelines. It operates in an unsupervised setting and
+is designed to generalize across different examination types. We analyzed two
+complete regional datasets from the Lombardy Region (Italy), covering all refer-
+rals between 2019 and 2021 for venous echocolordoppler of the lower limbs (ECD;
+n=496,971) and flexible endoscope colonoscopy (FEC; n=407,949). The pipeline
+1
+arXiv:2501.14701v2  [cs.CL]  4 Sep 2025
+was developed on the ECD dataset and tested on the FEC dataset. For both,
+a random sample of 1,000 referrals was manually annotated to measure perfor-
+mance. Results were also stratified by year, region, and physician type.
+Results:
+The
+pipeline
+achieved
+high
+performance
+in
+identifying
+referral
+reasons (Precision=92.43% (ECD), 93.59% (FEC); Recall=83.28% (ECD),
+92.70% (FEC)) and appropriateness (Precision=93.58% (ECD), 94.66% (FEC);
+Recall=91.52% (ECD), 93.96% (FEC)). Inappropriate referrals were significantly
+more prevalent for ECD (34.1%) than for FEC (5.3%). The analysis revealed
+geographical, temporal, and physician type variations, including a drop in inap-
+propriate referrals during the COVID-19 pandemic in 2020. Additionally, several
+referral motivations not covered by current guidelines were identified, highlight-
+ing areas for policy improvement. These findings contributed to updates to the
+regional guidelines in Lombardy.
+Conclusions: This study presents a robust, scalable, unsupervised NLP pipeline
+for assessing referral appropriateness from unstructured texts in large, real-world
+datasets. It demonstrates how such data can be effectively leveraged, provid-
+ing public health authorities with a deployable AI tool to monitor practices and
+support evidence-based policy.
+Keywords: Natural language processing, Artificial Intelligence, Machine Learning,
+Referrals, Unsupervised learning, Examination appropriateness, Guideline adherence,
+Public healthcare system, Quality of healthcare
+MSC Classification: 68T50
+1 Background
+In Italy, the National Health Service (NHS) is the primary provider of healthcare
+services, offering universal coverage, with administration decentralized at the regional
+level [1]. Despite its strong performance in international rankings, the Italian NHS has
+faced growing challenges in providing timely access to healthcare services in recent
+years, with increasing numbers of citizens turning to private providers [2].
+One significant contributor to these delays is the issue of referrals appropriateness,
+a concern shared by many advanced healthcare systems [3, 4]. Inappropriate referrals
+lead to resource waste, increased waiting times, and delays in accurate diagnoses,
+ultimately reducing the effectiveness of the healthcare system [5]. Within the Italian
+NHS, referrals from general practitioners (GPs) and specialists are required to book
+diagnostic examinations, making it crucial to assess the reasons behind these referrals
+to ensure their appropriateness.
+When issuing a referral, Italian physicians must complete a standardized form,
+including a free-text field known as the Clinical Question, where they specify the
+reason for the prescription. The unstructured nature of this field, coupled with the
+absence of standardized alternatives, poses a major challenge for systematic analysis.
+Addressing this issue requires Natural Language Processing (NLP) techniques. In this
+study, we frame the task as a clustering problem: clinical questions are grouped using
+2
+Transformer-based embeddings [6] to capture semantic similarity, and clusters are
+subsequently mapped to guideline-derived categories of appropriateness.
+Despite its importance, research on NLP-driven analysis of Italian referrals is lim-
+ited. Venturelli et al. [7] used proprietary commercial software (Clinika VAP [8]) to
+classify referrals as appropriate or inappropriate, but without explicitly identifying
+the reasons for prescriptions. To the best of our knowledge, the only other study
+applying NLP on Italian referrals’ texts is [9], which focused on extracting and ana-
+lyzing follow-up waiting times from clinical questions rather than assessing referrals
+appropriateness.
+Most previous studies on appropriateness in the Italian NHS relied on struc-
+tured data or manual text analysis, focusing on medication prescriptions rather than
+medical examinations [10–12]. Research on the appropriateness of examinations is
+more limited [13, 14] and has not incorporated textual data. Other studies focused
+on the development of decision-support systems for guideline adherence, both in
+primary care [15, 16] and hospital settings [17, 18]. While effective in specific scenar-
+ios [19, 20], such tools are not suited for retrospective analyses of their performance
+or for quantifying the prevalence of appropriate or inappropriate referrals.
+Internationally, several studies have employed NLP and rule-based systems to
+assess referral appropriateness, often in disease-specific contexts. Haddad et al. [21]
+analyzed Russian referrals’ texts for appropriateness using labelled data; Sagheb et
+al. [22] designed a rule-based algorithm to verify guidelines adherence for asthma
+patients from EHR documents; similarly in [23] a rule-based approach was applied
+to assess guideline adherence for gout patients. Dimitrov et al. [24] conducted a
+nationwide evaluation of breast cancer guideline adherence in EHRs using proprietary
+commercial software (Danny platform [25]), which incorporated rules and manual
+reviews. Villeana et al. [26] analyzed Chilean referrals’ texts using labelled data to
+binary classify them for correct priority classes.
+However, all these approaches rely on labeled data or proprietary software, limiting
+their adaptability and scalability across different examination types.
+To address these gaps, this study proposes the first fully unsupervised NLP pipeline
+for analyzing appropriateness in Italian referrals. The pipeline is applicable to any
+examination for which guidelines define appropriate and inappropriate referral reasons.
+We developed this approach on a first case study related to venous echocolordoppler
+of the lower limbs (ECD) and we present results also on a second case study related
+to flexible endoscope colonoscopy (FEC). Both datasets include all referrals issued
+during three years in the entire the Lombardy Region, the most populated Italian
+region, with approximately 10 million inhabitants - akin to a small state.
+These two examinations were selected because both are characterized by a high
+prevalence of inappropriate referrals [27–30] and had already been targeted by Lom-
+bardy’s 2015 resolutions on angiology and gastroenterology [31, 32]. However, no
+comprehensive study has assessed the impact of those resolutions at scale. Our anal-
+ysis provides, for the first time, a regional-scale evaluation of referral appropriateness
+and of guideline effectiveness, which informed the Lombardy Region’s December 2023
+resolution [33].
+3
+This work thus provides both a methodological contribution, by introducing a
+scalable NLP pipeline for appropriateness assessment, and an applied contribution, by
+generating evidence that informed regional policies.
+The remainder of this paper is structured as follows: Section 2 describes the
+datasets and the pipeline, Section 3 presents the results, Section 4 addresses
+implications, limitations, and future developments; and Section 5 concludes.
+2 Methods
+2.1 Data
+2.1.1 Referrals datasets
+The datasets analyzed in this study are extracted from all referrals issued in the Lom-
+bardy Region between 2019 and 2021 for ECD and FEC, totalling 496,971 referrals for
+ECD and 407,949 for FEC. Each referral includes the clinical question, the year, the
+Local Health Authority (LHA) of the prescribing physician and the type of prescribing
+physician. Physician types are categorized as general practitioners (GPs) or special-
+ized physicians, while LHAs are the eight healthcare administrative areas within the
+Lombardy Region. Figure 1 illustrates the distribution of referrals among these groups.
+The analysis focuses on the clinical question (CQ), a free-text field typically con-
+taining one or a few sentences. These texts exhibit frequent spelling and typing errors,
+heavy use of abbreviations, inconsistent punctuation, and non-standard capitalization.
+The dataset for ECD includes 229,509 distinct CQ, with only 15% appearing more
+than once, while the dataset for FEC includes 89,734 distinct CQ, with 41% appear-
+ing more than once. The median length for ECD is 71 characters (IQR=39), while for
+FEC it is 57 (IQR=20). Only 189 for ECD (0.08%) and 137 for FEC (0.15%) contain a
+meaningful ICD code, underscoring the necessity of employing NLP for this analysis.
+The clinical questions do not contain personal information about patients or
+physicians.
+2.1.2 Manual annotations
+To validate the pipeline, a randomly selected subset of 1,000 distinct clinical questions
+was manually labelled for both ECD and FEC. The labels correspond to categories
+representing diseases or symptoms that prompted the referral. During an initial review
+of this subset, ambiguous cases were identified, and an angiologist and a gastroenterol-
+ogist were consulted to resolve these doubts and align the clusters with prescription
+guidelines. Annotation guidelines were subsequently refined, and the entire subset
+was annotated accordingly. Two other reviews of the annotations corrected remaining
+errors and clarified uncertainties, ensuring the final labelled datasets were error-free.
+More details on the manual annotations are provided in Additional File 1, Section A.
+2.1.3 Prescription guidelines
+The guidelines used as a reference to assess referral appropriateness are extracted
+from [31] for ECD and from [32] for FEC. In particular, we extracted the appropriate
+4
+2019
+2020
+2021
+0
+25000
+50000
+75000
+100000
+125000
+150000
+175000
+200000
+Number of Referrals
+32.4%
+26.5%
+41.1%
+A
+Number of Referrals per Year
+2019
+2020
+2021
+0
+20000
+40000
+60000
+80000
+100000
+120000
+140000
+160000
+Number of Referrals
+32.4%
+27.6%
+40.0%
+B
+Number of Referrals per Year
+GP
+SPEC. PH.
+0
+100000
+200000
+300000
+400000
+Number of Referrals
+83.5%
+16.5%
+C
+Number of Referrals per Physician Type
+GP
+SPEC. PH.
+0
+50000
+100000
+150000
+200000
+250000
+300000
+350000
+Number of Referrals
+83.1%
+16.9%
+D
+Number of Referrals per Physician Type
+LHA 1
+LHA 2
+LHA 3
+LHA 4
+LHA 5
+LHA 6
+LHA 7
+LHA 8
+0
+25000
+50000
+75000
+100000
+125000
+150000
+175000
+200000
+Number of Referrals
+9.0%
+37.3%
+9.8%
+13.1%
+10.5%
+13.0%
+4.8%
+2.5%
+E
+Number of Referrals per LHA
+LHA 1
+LHA 2
+LHA 3
+LHA 4
+LHA 5
+LHA 6
+LHA 7
+LHA 8
+0
+20000
+40000
+60000
+80000
+100000
+120000
+140000
+160000
+Number of Referrals
+6.2%
+39.1%
+8.5%
+13.6%
+10.1%
+14.9%
+5.2%
+2.3%
+F
+Number of Referrals per LHA
+ECD
+FEC
+Fig. 1 Referrals distributions across years (A, B), type of prescribing physicians (C, D) and LHA
+(E, F) for ECD (A,C,E) and FEC (B,D,F).
+5
+and inappropriate diseases and symptoms, considering separately also cases that are
+more likely to be appropriate or more likely to be inappropriate, depending on details
+that might not be available in clinical questions. English schematized summaries of
+these guidelines are reported in Figure 2.
+2.2 Evaluation of prescription appropriateness
+In this section, we present our pipeline to evaluate prescription appropriateness. The
+process can be divided into two main steps:
+1. Identify the reason for the referral: extract the central semantic meaning from the
+clinical question.
+2. Verify appropriateness: determine if the identified reason aligns with established
+guidelines.
+The absence of labels for this type of data prevented us from adopting a supervised
+approach. A rule-based approach was excluded since we aim to build a pipeline that
+can generalize to any examination, and it would not be feasible to develop tailored rules
+for each type of examination. Moreover, we are interested in understanding the reasons
+for these referrals, which might include additional and/or more detailed categories
+than those mentioned in the guidelines. Because of this, the problem was addressed
+as a clustering problem.
+Figure 3 depicts our pipeline with the blocks that compose it, and below, we detail
+each block.
+2.2.1 Pre-processing
+Physicians write referrals during patients’ examinations, with limited time available.
+This leads them to write clinical questions that are far from well-readable and correct
+texts. The grammar of the sentences is often poor, there are frequent typing errors, and
+the punctuation is either not used or used incorrectly. The use of uppercase letters does
+not have any particular meaning, and the use of abbreviations is very frequent. Even
+in the two types of examination analyzed in this study, multiple abbreviations can
+indicate the same disease/symptoms. In the manually labelled subsets, 15% of clinical
+questions were marked as having typing errors and 68% as containing abbreviations.
+To address these issues, suitable pre-processing steps are applied:
+1. lowercasing
+2. punctuation removal
+3. abbreviation expansion
+4. (partial) typos correction
+We remove all punctuation and lowercase sentences due to the inconsistent use of these
+elements.
+For abbreviation expansion, we extract all the unique words with length ≤
+3,
+and we identify those corresponding to abbreviations of medical terms, defining a
+vocabulary for their replacement in the texts.
+6
+•
+Varicose veins in the lower limbs
+•
+Bilateral edema of the lower limbs
+•
+Paresthesia in the lower limbs
+•
+Chronic venous insufficiency in the lower 
+limbs
+•
+Telangiectasias in the lower limbs
+•
+Venous insufficiency in the limbs
+Patient in emergency
+•
+Clinical signs (clinical suspicion) of Deep
+Vein Thrombosis (DVT)
+•
+Superficial phlebitis of the thigh
+Patient NOT in emergency
+•
+Suspected post thrombotic syndrome
+•
+Superficial phlebitis of the leg
+•
+Ulcer of suspected vascular nature
+•
+Candidate for surgery or endovascular or 
+sclerotherapy for varicose veins in the lower 
+limbs
+Follow-up
+1. Check-up post-DVT patient at the end of the 
+anticoagulant therapy
+2. Check-up after surgery or endovascular or 
+sclerotherapy for varicose veins in the lower 
+limbs
+NO
+Venous echocolordoppler of the 
+lower limbs
+Deferred urgent execution 
+(within 3 days)
+Scheduled execution
+1. Check-up at the end of therapy 
+and after 6 and 12 months
+2. Check-up according to 
+specialist indication
+ECD
+•
+Irritable bowel syndrome
+•
+Diverticolosis
+•
+Diverticulitis
+•
+Suspected colic lesion detected by 
+other investigation technique
+•
+Bleeding of undetermined origin
+•
+Sideropenic anaemia of undetermined 
+origin
+•
+Colon cancer: finding synchronous 
+lesion or after curative resection
+•
+Surveillance of polyps
+•
+Chronic diarrhoea (> 4 weeks) 
+•
+Family history of colorectal cancer
+•
+Surveillance of chronic inflammatory 
+bowel diseases 
+Colonoscopy not appropriate 
+Colonoscopy appropriate 
+Gastroenterological 
+evaluation
+FEC
+Fig. 2 Guidelines for referrals for ECD and FEC in the Lombardy Region. Derived from the the
+Appendix 3 of [31] and the Appendix 2 of [32], translated into English.
+7
+PRE-PROCESSING
+▪Abbreviations
+▪Typos
+▪Punctuation
+Referrals’ Clinical Questions
+TEXT EMBEDDING
+via BERT-Based model
+CLUSTERING
+Iterative HDBscan
+CLUSTERING
+Iterative HDBscan
+CLUSTERING
+Iterative HDBscan
+Data chunks clustered in parallel 
+CLUSTER 
+SUMMARIZATION
+Relevant keywords
+Prescription 
+Guidelines
+APPROPRIATE AND 
+INAPPROPRIATE 
+CLINICAL 
+QUESTIONS
+MAPPING CLUSTERS 
+TO GUIDELINES
+via embeddings similarity
+ASSESSMENT OF 
+PRESCRIPTION 
+APPROPRIATENESS
+Identification and 
+quantification of 
+referrals’ 
+motivations
+Fig. 3 Schema of the pipeline for assessing referrals reasons and appropriateness
+To fix the typing mistakes, all words appearing with frequency < 1% and having
+another word similar to them with frequency >
+1% are selected. These words are
+considered misspelt, and the most similar word with frequency > 1% is chosen as their
+correction. The similarity is measured with edit distance, and the minimum threshold
+is chosen by minimizing errors in a manually reviewed sample of 100 corrections.
+Examples of pre-processing effects and an ablation analysis are reported in
+Additional File 1, Section B.
+2.2.2 Text embedding
+To appropriately cluster the clinical questions, it is necessary to produce a representa-
+tion capturing the central semantics of these texts without getting confused by their
+widely present noise.
+Considering the many synonyms and composite terms of the medical jargon used
+in these texts, vocabulary-based representations, such as TF-IDF [34], cannot be
+expected to work well for this task.
+Static word embeddings, such as Word2Vec [35], can capture the semantic similar-
+ities between words with similar meanings (e.g., vasculopathy - arteriopathy, phlebitis
+- thrombophlebitis) differently from vocabulary-based representations. Nevertheless,
+they might have more difficulty distinguishing between relevant and irrelevant tokens
+in our sentences since they do not consider the context in which tokens appear.
+On the contrary, context-based embeddings produced by transformers model con-
+sider the surrounding context while embedding each token and have often shown
+superior performances in the recent clinical NLP literature [36–39]. The problem is
+8
+particularly challenging in our case due to the limited number of embedding models
+available for the Italian language, especially for the clinical domain.
+To this purpose, we adopt the same model developed in [40] to cluster sentences
+extracted from Italian discharge summaries, and we verify that even with referrals’
+clinical questions, its performances are superior to other models. This model consists
+of a fine-tuned version of the last Italian version of BERT, Umberto [41], on a dataset
+of publicly available medical documents in Italian and other languages (translated into
+Italian) [42].
+2.2.3 Clustering
+Some studies have shown that HDBSCAN often outperforms other clustering algo-
+rithms—such as K-Means, hierarchical clustering, and DBSCAN-when applied to text
+embeddings, particularly when preceded by a dimensionality reduction step [43, 44].
+Text embeddings typically lie on complex, non-linear manifolds and may form clusters
+with varying densities and irregular shapes. Algorithms like K-Means assume convex
+cluster geometries and require predefining the number of clusters, which is impracti-
+cal for our task. Hierarchical clustering is sensitive to noise and outliers and lacks the
+ability to leave out unclustered data points, often producing forced or less meaning-
+ful groupings. In contrast, HDBSCAN does not require the number of clusters to be
+specified in advance and allows some data points to remain unclustered, making it
+a better fit for our scenario. Based on these advantages and on a comparison of the
+results on the ECD dataset, we selected HDBSCAN for the clustering step.
+HDBSCAN requires specifying some hyperparameters, including the minimum
+cluster size, the minimum number of samples in the neighborhood of a core point
+(min samples), and the epsilon. To better accommodate the varying sizes of clusters
+in our dataset, we adopted a recursive strategy: the minimum cluster size was itera-
+tively reduced, halving at each step, and applied only to data points that remained
+unclustered in the previous iteration. For the dimensionality reduction, we compared
+PCA, UMAP and no dimensionality reduction.
+We performed a grid search and we selected the configuration with PCA with
+80% of variance threshold, reducing the minimum cluster size from 500 to 10, with
+min samples = 5 and ϵ = 0.1. The complete grid search results, together with compar-
+isons to k-means and agglomerative hierarchical clustering, are reported in Additional
+File 1, Section C.
+Due to resource constraints, it was not feasible to run HDBSCAN on the entire
+datasets. Therefore, we divided the data into chunks of 30,000 clinical questions and
+clustered them independently. In later stages, the summarization and mapping pro-
+cedures allow to merge clusters from different chunks that correspond to the same
+diseases or symptoms.
+2.2.4 Cluster summarization
+Summarizing the identified clusters is necessary to understand the symptoms or dis-
+eases corresponding to each cluster. To automatize this step, we extracted keywords
+from each cluster. The most frequent words in each cluster were initially selected, con-
+sidering a decreasing frequency threshold from 80% until at least two keywords were
+9
+found. Among these, we excluded those with high frequency in at least half of the
+clusters. This allowed us to exclude not only stop words but also frequent words for
+the specific examination we are analyzing.
+2.2.5 Mapping clusters to guidelines
+After summarization, the keyword representation of the clusters is used to map them
+to the guidelines. The process involves:
+1. Computing embeddings for each clinical question described in the guidelines.
+2. Generating an embedding for each cluster based on its keyword summary, enabling
+direct comparison with the guideline embeddings.
+3. Comparing cluster embeddings with guideline embeddings using cosine similarity.
+Clusters were assigned to the guideline entry with the highest similarity, provided
+there is one with similarity > 0.50.
+2.3 Experiments and Evaluation
+In this section, we detail the experimental settings and the evaluation procedure for
+our pipeline, which are summarized in Figure 4.
+2.3.1 Experimental Setup and Constraints
+All experiments were conducted in an offline environment with limited computa-
+tional resources: 16 GB of RAM, 16 cores Intel Xeon CPU, no GPU. For security
+and privacy reasons the data could not be move out of this environment. These con-
+straints, commonly present in healthcare settings, influenced several pipeline design
+decisions, such as splitting the dataset into chunks for clustering, avoiding re-training
+Tranformer-based models and avoiding the use of generative large language models.
+2.3.2 Evaluation Procedure
+The pipeline was evaluated by comparing its output with the labels on the man-
+ually annotated subsets. Rather than applying the pipeline solely to the labelled
+records—which would hinder clustering performance due to limited data—we ran the
+full pipeline on the entire datasets and then extracted results for the annotated subsets.
+This ensured meaningful cluster formation and fair evaluation.
+We performed evaluation at two levels:
+• Disease label evaluation: We assessed the accuracy of the disease labels produced
+by the pipeline by comparing them to ground-truth labels. To reduce noise, we
+retained only labels with more than 10 occurrences (1%) in the labelled subset,
+grouping all others into an Other category. Clusters not mapped to any label or
+unclustered clinical questions were assigned to the Other category. Metrics were
+computed at:
+– Aggregate level: to measure overall precision, recall, and F1-score across all labels.
+– Per-label level: to evaluate performance on individual categories.
+10
+Labelled Subset
+ECD
+Algorithms and 
+hyperparameters
+selection
+PIPELINE
+EVALUATION
+Clinical 
+Questions
+Referrals
+Disease categories
+Appropriateness level
+Labelled Subset
+FEC
+REGIONAL ANALYSIS
+Referrals’ reasons
+Referrals’ 
+appropriateness
+By LHA
+By Year
+By Type of Physician
+Sospetta TVP
+Fig. 4 Summary of the experiments and evaluation procedure
+11
+• Appropriateness label evaluation: The quality of the pipeline’s assignment of
+appropriateness labels was evaluated using a four-class scheme: appropriate, inappro-
+priate, likely (in)appropriate, and undetermined. The likely (in)appropriate category
+included referrals where reasons mentioned in the guidelines were present, but the
+text lacked complete information to assess the (in)appropriateness. The undeter-
+mined category was used for referrals not addressed in the clinical guidelines. Also
+in this case, we computed metrics and the aggregate and per-label levels.
+At both levels, we computed the metrics at the single clinical questions level and
+weighting clinical questions by their corresponding referral counts. The latter allows
+to incorporating the datasets’ real-world distributions into the analysis.
+We also qualitatively show t-SNE 2D projections of the embeddings of the labelled
+clinical questions. Although this type of visualization has known limitations [45], it
+remains a common approach in the literature for obtaining a qualitative overview of
+embedding structures [46].
+2.3.3 Hyperparameter Selection and Validation Strategy
+Clustering algorithm selection and hyperparameter tuning was carried out exclusively
+on the ECD dataset. The FEC dataset was reserved for external validation only,
+ensuring that all performance results reported on FEC represent generalization to
+unseen data and are free from overfitting to the development set.
+2.3.4 Comparative Evaluation
+To benchmark our pipeline, we compared it with alternative approaches using different
+text representations and/or clustering methods. These included:
+• Embeddings from the original UmBERTo model (baseline)
+• Embeddings from an Italian Word2Vec model [47]
+• TF-IDF vector representations
+• Latent Dirichlet Allocation (LDA)
+• Direct matching between embeddings of clinical questions and embeddings of
+diseases from the guidelines
+Additional details are provided in Additional File 1, Section C.
+2.3.5 Regional and Temporal Analysis
+Finally, we applied the pipeline to the full datasets and reported results at a regional
+level. This provides a complete quantification of referrals for each identified cat-
+egory, together with their appropriateness. Moreover, we present an enrichment
+analysis stratifying results by year (pre-, during, and post-COVID pandemic), Local
+Health Authority (LHA), and prescribing physician type (general practitioners vs.
+specialists).
+12
+Table 1 Summary evaluation on the disease labels
+P-CQ
+R-CQ
+F1-CQ
+P-REF
+R-REF
+F1-REF
+ECD
+Umberto-E3C-Pipeline
+86.81
+77.32
+79.48
+92.43
+83.28
+86.49
+Umberto-Base
+82.11
+73.62
+77.21
+87.45
+77.81
+81.89
+Word2Vec
+76.21
+67.55
+71.24
+81.67
+72.35
+76.73
+TF-IDF
+50.11
+41.20
+42.43
+52.54
+44.81
+45.45
+LDA
+27.74
+34.04
+28.48
+19.19
+27.57
+29.90
+Embedding Match
+68.29
+58.44
+59.21
+70.59
+61.52
+62.09
+FEC
+Umberto-E3C-Pipeline
+90.42
+88.78
+88.60
+93.59
+92.70
+92.67
+Umberto-Base
+84.56
+75.24
+79.63
+88.58
+79.66
+83.88
+Word2Vec
+81.21
+70.55
+75.51
+82.45
+73.86
+77.92
+TF-IDF
+58.42
+51.23
+54.59
+60.41
+53.49
+56.74
+LDA
+35.26
+41.25
+38.02
+31.78
+38.64
+34.88
+Embedding Match
+75.69
+66.62
+70.54
+77.11
+69.85
+73.03
+Summary results of mapping to the disease labels defined by manual annotations on
+the test sets, computed for clinical questions (CQ) and referrals (REF). P=Precision-
+R=Recall- F1=F1-Score. The values of all metrics are expressed as percentages.
+3 Results
+3.1 Pipeline evaluation
+Table 1 presents the summary results of the evaluation performed on the manually
+annotated subsets, at the disease level, comparing different approaches. The pipeline
+with our fine-tuned Umberto embeddings demonstrates superior performance com-
+pared to alternative text representations and clustering algorithms, confirming the
+importance of contextual representations. The approach with direct matching between
+embeddings of clinical questions and embeddings of diseases from guidelines exhibits
+discrete results, but lower than our pipeline, confirming that the clustering procedure
+act as a useful smoothing step. The metrics are computed for both clinical questions
+(CQ) and referrals (REF). The referral-level scores are higher for all methods, except
+LDA, due to the influence of clinical questions that occur more frequently, which seem
+to be easier to cluster for them, being less detailed.
+Table 2 shows the same results achieved by grouping labels into the appropriate,
+inappropriate, likely (in)appropriate and undetermined categories. These results show
+higher aggregate performance scores for ECD, compared to Table 1, indicating that
+most errors occurred within the same appropriateness category rather than across
+categories. The results for FEC are also superior, but the improvement is limited.
+This suggests that distinguishing between appropriate and inappropriate referrals is
+simpler, while finer distinctions at the label level are more challenging. Table 3 details
+the metric by appropriateness label, for our pipeline. At the clinical question level,
+it highlights issues with the likely inappropriate class for ECD, which corresponds
+directly to the varices class at disease level, and it shows slightly lower results for the
+undetermined class, but at the referrals level the only relevant difference is with the
+undetermined class for ECD.
+13
+Table 2 Summary evaluation on the appropriateness labels
+P-CQ
+R-CQ
+F1-CQ
+P-REF
+R-REF
+F1-REF
+ECD
+Umberto-E3C-Pipeline
+89.24
+88.27
+88.64
+93.58
+91.52
+92.51
+Umberto-Base
+86.02
+80.78
+83.13
+89.15
+84.97
+86.55
+Word2Vec
+80.66
+74.29
+77.01
+85.41
+77.54
+80.88
+TF-IDF
+73.51
+68.45
+67.92
+79.44
+75.70
+74.22
+LDA
+47.61
+48.43
+47.83
+42.64
+46.31
+41.31
+Embedding Match
+74.82
+61.90
+62.83
+77.52
+62.29
+64.46
+FEC
+Umberto-E3C-Pipeline
+92.05
+90.96
+90.88
+94.66
+93.96
+94.05
+Umberto-Base
+87.41
+80.55
+83.84
+89.62
+82.16
+85.73
+Word2Vec
+83.24
+74.15
+78.43
+85.77
+75.63
+80.38
+TF-IDF
+67.11
+57.96
+62.20
+68.14
+60.85
+64.29
+LDA
+38.96
+45.62
+42.03
+35.41
+42.93
+38.81
+Embedding Match
+80.07
+69.92
+74.20
+81.15
+73.92
+77.15
+Summary
+results
+of
+mapping
+to
+the
+appropriate/inappropriate/likely
+(in)appropriate/undetermined categories on the manually labelled test sets, com-
+puted for clinical questions (CQ) and referrals (REF). P=Precision- R=Recall-
+F1=F1-Score. The values of all metrics are expressed as percentages.
+Table 3 Detailed results of the cluster mapping to the appropriateness labels for our pipeline
+P-CQ
+R-CQ
+F1-CQ
+#CQ
+P-REF
+R-REF
+F1-REF
+# REF
+ECD
+Appropriate
+98.55
+93.15
+95.77
+365
+98.97
+93.95
+96.39
+512
+Inappropriate
+91.29
+81.88
+86.33
+320
+96.49
+89.58
+92.91
+921
+Likely inappr.
+43.28
+89.23
+58.29
+65
+84.03
+89.89
+90.86
+628
+Undetermined
+84.62
+79.20
+81.82
+250
+87.22
+83.33
+85.23
+426
+FEC
+Appropriate
+99.36
+89.44
+94.14
+521
+99.88
+96.96
+98.40
+2501
+Inappropriate
+95.35
+87.23
+91.11
+47
+95.71
+88.16
+91.78
+76
+Likely appr.
+98.27
+87.18
+92.39
+195
+98.88
+90.72
+94.62
+388
+Undetermined
+75.24
+100.00
+85.87
+237
+84.19
+100.00
+91.42
+591
+Detailed results of the cluster mapping to the appropriateness labels for our pipeline, on the man-
+ually labelled test sets, computed for clinical questions (CQ) and referrals (REF). P=Precision,
+R=Recall, F1=F1-Score. The values of all metrics are expressed as percentages.
+Tables 4 and 5 detail metrics by disease for our pipeline. Most diseases achieve
+F1-CQ > 80%, with many exceeding > 90%. Lower scores are observed for some
+ECD categories such as varices, varices surgery, vasculopathy, claudicatio and other,
+while for FEC only other exhibits poor precision. At the referral level (F1-REF), only
+claudicatio, varices surgery and other achieve scores below 80% for ECD, while for
+FEC only other is below 80%.
+14
+Table 4 Detailed results of the cluster mapping for each disease label for our pipeline on ECD
+dataset
+Category
+P-CQ
+R-CQ
+F1-CQ
+# CQ
+P-REF
+R-REF
+F1-REF
+# REF
+Claudicatio
+83.33
+45.45
+58.82
+11
+90.00
+56.25
+69.23
+16
+Pain
+85.00
+91.07
+87.93
+56
+88.61
+93.33
+90.91
+75
+Edema
+85.47
+96.15
+90.50
+104
+89.51
+97.32
+93.25
+149
+Venous insuff.
+94.90
+74.50
+83.47
+200
+98.06
+88.09
+92.81
+747
+Paresthesis
+100.00
+81.25
+89.66
+16
+100.00
+88.00
+93.62
+25
+Saphenectomy
+100.00
+92.59
+96.15
+27
+100.00
+93.94
+96.88
+33
+(Trombo)
+Phlebitis
+98.70
+93.83
+96.20
+81
+99.09
+93.16
+96.04
+117
+Thrombosis
+96.24
+94.04
+95.13
+218
+96.99
+94.77
+95.87
+306
+Ulcer
+95.83
+92.00
+93.88
+25
+97.44
+92.68
+95.00
+41
+Varices
+43.28
+89.23
+58.29
+65
+84.03
+98.89
+90.86
+628
+Varices surgery
+100.00
+42.86
+60.00
+14
+100.00
+46.67
+63.64
+15
+Vasculopathy
+82.14
+44.23
+57.50
+52
+95.33
+68.92
+80.00
+148
+Other
+63.57
+67.94
+65.68
+131
+62.56
+70.59
+66.33
+187
+Detailed results of the cluster mapping for each disease for our pipeline, on the manually labelled
+test set for ECD, computed for clinical questions (CQ) and referrals (REF). Labels with support
+< 10 are grouped with Other. P=Precision, R=Recall, F1=F1-Score. The values of all metrics are
+expressed as percentages.
+The confusion matrices shown in Figure 5 allow for a more detailed analysis of
+misclassification errors. For ECD, errors in varices surgery are often due to mis-
+classifications as varices, a strictly related cluster. Regarding varices, its precision is
+mainly affected by misclassifications from venous insufficiency and other. Looking at
+the specific clinical questions manually labelled as venous insufficiency and classified
+as varices, we notice that some present both diagnoses, making this misclassification
+reasonable. For the remaining ECD classes, misclassified samples fall mainly into the
+other group, affecting its precision. For FEC, the majority of misclassification errors
+are wrong assignments to the other class. A few are wrong assignments to abdomi-
+nal pain, which are in multiple cases due to the mention of this symptom along with
+others that were more relevant. A detailed list of all identified clusters, together with
+their mapping, is reported in Additional File 1, Section C.
+Figure 6 displays t-SNE 2D projections of the embedding vectors of the clinical
+questions in the two labelled subsets, showing that for most classes there are one
+or more distinct regions of the 2D space that tend to concentrate the corresponding
+clinical questions.
+3.2 Analysis of the entire dataset
+Tables 6 and 7 extend the analysis to the entire ECD and FEC datasets, highlighting
+the appropriateness labels for each cluster. We can observe that the distribution of
+the reasons for the referrals is unbalanced, with 75% of referrals covered by the first
+five reasons in ECD and by the first seven reasons in FEC. In ECD, varices cluster
+was assigned to likely inappropriate since this diagnosis is inappropriate unless it is
+associated with surgery, an element that is often difficult to exclude, even for a human
+reader. In FEC, colon cancer familiarity / prevention and chronic inflammatory bowel
+15
+Table 5 Detailed results of the cluster mapping for each disease label for our pipeline on FEC
+dataset
+Category
+P-CQ
+R-CQ
+F1-CQ
+# CQ
+P-REF
+R-RE
+F1-REF
+# REF
+Bleeding
+100.00
+77.91
+87.59
+163
+100.00
+97.31
+98.64
+1748
+Polyps
+99.35
+97.47
+98.40
+158
+99.71
+98.55
+99.12
+344
+Family history
+/ prevention
+97.56
+86.33
+91.60
+139
+98.57
+91.39
+94.85
+302
+Colon cancer
+96.84
+85.98
+91.09
+107
+98.24
+89.30
+93.56
+187
+Abdominal
+pain
+88.57
+89.42
+89.00
+104
+93.66
+89.72
+91.65
+214
+Anaemia
+92.75
+98.46
+95.52
+65
+95.73
+97.39
+96.55
+115
+Chronic
+inflammatory
+bowel disease
+100.00
+89.29
+94.34
+56
+100.00
+88.37
+93.83
+86
+Constipation
+78.38
+80.56
+79.45
+36
+91.61
+94.24
+92.91
+139
+Diverticulosis
+90.00
+81.82
+85.71
+33
+86.67
+81.25
+83.87
+48
+Altered bowel
+84.85
+93.33
+88.89
+30
+92.54
+95.38
+93.94
+65
+Chronic
+diar-
+rhoea
+100.00
+82.14
+90.20
+28
+100.00
+93.46
+96.62
+107
+Diverticulitis
+100.00
+92.86
+96.30
+14
+100.00
+89.29
+94.34
+28
+Other
+47.14
+98.51
+63.77
+67
+59.93
+99.42
+74.78
+173
+Detailed results of the cluster mapping for each disease for our pipeline, on the manually labelled
+test set for FEC, computed for clinical questions (CQ) and referrals (REF). Labels with support
+< 10 are grouped with Other. P=Precision, R=Recall, F1=F1-Score. The values of all metrics are
+expressed as percentages.
+disease were instead marked as likely appropriate since guidelines state that physicians
+should carefully consider the patient history and condition to establish if and when
+they should be performed. Specific conditions mentioned in the guidelines — such as
+requiring ten years from diagnosis or significant colon involvement — were largely
+absent from referral texts.
+Summarizing Table 6, for ECD, 34.32% of referrals appear to be appropriate, while
+34.07% seems to be not appropriate. The remaining 31.61% referrals can be further
+divided into 14.37% more likely to be not appropriate, 10.20% that are not men-
+tioned on the guidelines, and 7.04% that cannot be clustered or cannot be mapped
+to the labels defined by manual annotations. For FEC, 55.98% of referrals appear
+to be appropriate, while only 5.33% seems to be not appropriate. There are then
+15.95% more likely to be appropriate, 15.77% that are not mentioned on the guide-
+lines, and 6.98% that cannot be clustered or cannot be mapped to the labels defined
+by manual annotations. Notably, in both datasets the other group is limited, while
+there are clusters for many symptoms and diseases not mentioned in the guidelines,
+especially for ECD. Although individually rare, these uncovered reasons accounted
+for a non-negligible proportion of overall referrals, suggesting the need for a broader
+guideline scope. Additionally, we observed ambiguity in referrals citing varices, where
+physicians often omitted whether surgical intervention was required. In contrast, FEC
+referrals showed higher levels of appropriateness, though some inappropriate clusters
+were identified.
+16
+other
+claudicatio
+pain
+edema
+venous insufficiency
+paresthesias
+saphenectomy
+(thrombo)phlebitis
+thrombosis
+ulcer
+varices
+varices surgery
+vasculopathy
+Predicted Labels
+other
+claudicatio
+pain
+edema
+venous insufficiency
+paresthesias
+saphenectomy
+(thrombo)phlebitis
+thrombosis
+ulcer
+varices
+varices surgery
+vasculopathy
+True Labels
+89
+1
+4
+8
+2
+0
+0
+0
+0
+0
+25
+0
+2
+1
+5
+1
+0
+1
+0
+0
+0
+0
+0
+3
+0
+0
+1
+0
+51
+0
+0
+0
+0
+0
+2
+0
+2
+0
+0
+0
+0
+0
+100
+4
+0
+0
+0
+0
+0
+0
+0
+0
+16
+0
+2
+4
+149
+0
+0
+0
+1
+1
+25
+0
+2
+1
+0
+1
+1
+0
+13
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+25
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+76
+3
+0
+1
+0
+1
+7
+0
+0
+1
+0
+0
+0
+0
+205
+0
+5
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+23
+2
+0
+0
+3
+0
+1
+2
+0
+0
+0
+1
+0
+0
+58
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+1
+0
+6
+6
+0
+20
+0
+0
+1
+1
+0
+0
+0
+0
+0
+7
+0
+23
+A
+other
+claudicatio
+pain
+edema
+venous insufficiency
+paresthesias
+saphenectomy
+(thrombo)phlebitis
+thrombosis
+ulcer
+varices
+varices surgery
+vasculopathy
+Predicted Labels
+other
+claudicatio
+pain
+edema
+venous insufficiency
+paresthesias
+saphenectomy
+(thrombo)phlebitis
+thrombosis
+ulcer
+varices
+varices surgery
+vasculopathy
+True Labels
+132
+1
+4
+8
+2
+0
+0
+0
+0
+0
+38
+0
+2
+1
+9
+1
+0
+1
+0
+0
+0
+0
+0
+4
+0
+0
+1
+0
+70
+0
+0
+0
+0
+0
+2
+0
+2
+0
+0
+0
+0
+0
+145
+4
+0
+0
+0
+0
+0
+0
+0
+0
+29
+0
+2
+4
+658
+0
+0
+0
+1
+1
+50
+0
+2
+1
+0
+1
+1
+0
+22
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+31
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+109
+4
+0
+3
+0
+1
+10
+0
+0
+1
+0
+0
+0
+0
+290
+0
+5
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+38
+3
+0
+0
+3
+0
+1
+2
+0
+0
+0
+1
+0
+0
+621
+0
+0
+1
+0
+0
+0
+0
+0
+0
+0
+1
+0
+6
+7
+0
+32
+0
+0
+1
+6
+0
+0
+0
+0
+0
+7
+0
+102
+B
+abdominal pain
+other
+altered bowel
+anaemia
+chronic diarrhoea
+diverticulitis
+diverticulosis
+chronic inflammatory bowel disease
+polyps
+family history / prevention
+bleeding
+constipation
+colon cancer
+Predicted Labels
+abdominal pain
+other
+altered bowel
+anaemia
+chronic diarrhoea
+diverticulitis
+diverticulosis
+chronic inflammatory bowel disease
+polyps
+family history / prevention
+bleeding
+constipation
+colon cancer
+True Labels
+93
+11
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+66
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+28
+0
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+64
+0
+0
+0
+0
+0
+0
+0
+1
+0
+1
+3
+0
+0
+23
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+0
+0
+13
+1
+0
+0
+0
+0
+0
+0
+0
+5
+0
+0
+0
+0
+27
+0
+0
+1
+0
+0
+0
+1
+5
+0
+0
+0
+0
+0
+50
+0
+0
+0
+0
+0
+2
+0
+0
+0
+0
+0
+0
+0
+154
+0
+0
+2
+0
+2
+11
+1
+0
+0
+0
+1
+0
+0
+120
+0
+1
+3
+2
+20
+4
+5
+0
+0
+1
+0
+0
+2
+127
+2
+0
+3
+4
+0
+0
+0
+0
+0
+0
+0
+0
+0
+29
+0
+0
+14
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+92
+C
+abdominal pain
+other
+altered bowel
+anaemia
+chronic diarrhoea
+diverticulitis
+diverticulosis
+chronic inflammatory bowel disease
+polyps
+family history / prevention
+bleeding
+constipation
+colon cancer
+Predicted Labels
+abdominal pain
+other
+altered bowel
+anaemia
+chronic diarrhoea
+diverticulitis
+diverticulosis
+chronic inflammatory bowel disease
+polyps
+family history / prevention
+bleeding
+constipation
+colon cancer
+True Labels
+192 22
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+1
+172
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+2
+62
+0
+0
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+0
+112
+0
+0
+0
+0
+0
+0
+0
+3
+0
+1
+4
+0
+0
+100
+0
+0
+0
+0
+0
+0
+2
+0
+0
+0
+0
+0
+0
+25
+3
+0
+0
+0
+0
+0
+0
+0
+7
+0
+0
+0
+0
+39
+0
+0
+2
+0
+0
+0
+1
+9
+0
+0
+0
+0
+0
+76
+0
+0
+0
+0
+0
+2
+0
+0
+0
+0
+0
+0
+0
+339
+0
+0
+3
+0
+2
+18
+1
+0
+0
+0
+1
+0
+0
+276
+0
+1
+3
+2
+30
+4
+5
+0
+0
+2
+0
+0
+2 1701 2
+0
+4
+4
+0
+0
+0
+0
+0
+0
+0
+0
+0
+131
+0
+0
+19
+0
+0
+0
+0
+0
+0
+1
+0
+0
+0
+167
+D
+ECD
+FEC
+Fig. 5 Confusion matrix of the clustering assignment to the labels on the manually annotated test
+sets, for ECD (A, B) and FEC (C,D) computed considering the number of clinical questions (A, C)
+and the number of referrals (B, D)
+Figure 7 provides some examples, along with their English translation, of clustered
+clinical questions.
+Figure 8 reports the level of appropriateness stratified by LHA, type of prescribing
+physicians and year, providing additional insights into the reasons for inappropriate
+prescriptions. This stratified analysis reveals significant geographical variability for
+both examinations and especially for ECD, suggesting that targeted interventions are
+needed in specific Local Health Authorities. General practitioners exhibited higher
+rates of inappropriate ECD referrals compared to specialist physicians. This might
+17
+200
+150
+100
+50
+0
+50
+100
+150
+TSNE1
+100
+50
+0
+50
+100
+150
+TSNE2
+A
+ECD Embeddings
+Vasculopathy (52)
+Varices (65)
+Thrombosis (218)
+Edema (104)
+Venous insufficiency (200)
+Pain (56)
+Paresthesis (16)
+Saphenectomy (27)
+Ulcer (25)
+Varices surgery (14)
+Claudication (11)
+150
+100
+50
+0
+50
+100
+TSNE1
+100
+50
+0
+50
+100
+TSNE2
+B
+FEC Embeddings
+Bleeding (160)
+Polyps (156)
+Altered bowel (30)
+Colon cancer (105)
+Abdominal pain (103)
+CIBD (55)
+Family history / prevention (139)
+Chronic diarrohea (27)
+Constipation (34)
+Diverticulosis (32)
+Anaemia (65)
+Diverticulitis (14)
+Fig. 6 2D t-SNE projections of embeddings of clinical questions from the validation sets of ECD
+(A) and FEC (B) with their labels, excluding the Other class
+18
+Venous insufficiency
+Diverticulosis
+Varices
+Chronic inflammatory bowel disease
+Thrombosis
+Occult blood
+▪[000] - in anamnesi insuff venosa arti inferiori gia' 
+sottoposta a terapie sclerosanti. riferisce dolore
+▪INSUFF.VOSA SAFENA ARTO INF.SX
+▪insuff venoso linfatica arti inferiori prevalente  arto 
+inf sx in obesitÃ cronica
+▪[000] - in history of lower limb venous insufficiency 
+already undergoing sclerosing therapy. reports pain
+▪VENOUS INSUFFICIENCY SAFENA LEFT LOWER 
+LIMB
+▪lymphatic venous insufficiency lower limb 
+prevailing left lower limb in chronic obesity
+▪VARICOSITA' DXmaggioreSX IN PZ GRAVIDA
+▪[000] - Follow-up di s.varicosa arti inferiori.
+▪varici superficiali gamba dx
+▪RIGHT greater LEFT VARICOSITIES IN PREGNANT 
+PATIENT
+▪[000] - Follow-up of varicose leg syndrome
+▪ superficial varices right leg
+▪SOSPETTA TVP AI DESTRO
+▪Sospetta TV arto inf sx in trobocitemia  con 
+mutazione JACK2
+▪PAZIENTE CON PREGRESSA TVP FEMORALE 
+COMUNE ARTO INFERIORE SX ; RECIDIVA???
+▪SUSPECTED DEEP VEIN THROMBOSIS RIGHT 
+LOWER LIMB
+▪Suspected VENOUS THROMBOSIS left lower limb 
+in trobocythaemia with JACK2 mutation
+▪PATIENT WITH PREVIOUS DEEP VEIN THROMBOSIS 
+COMMON FEMORAL LEFT LOWER LIMB; 
+RECURRENCE???
+▪Sospetta diverticolosi del colon
+▪ per sospetta diverticolosi intestinale
+▪s. malattia diverticolare del colon
+▪ Suspected diverticulosis of the colon 
+▪ for suspected intestinal diverticulosis 
+▪ suspected diverticular disease of the colon
+▪[000] - Colite ulcerosa - M. di Crohn
+▪RIACUTIZZAZIONE DI RETTOCOLITE ULCEROSA
+▪[000] - IBD?
+▪[000] - Ulcerative colitis - Crohn's disease
+▪FLARE-UP OF ULCERATIVE RECTOCOLITIS
+▪[000] - IBD?
+▪[000] - SANGUE OCCULTO FECALE POSITIVO
+▪SANGUINAMENTO nelle feci DNDD
+▪SANGUINAMENTO DNDD 
+(EMATOCHEZIAmaggiore45AA, EMATOCHEZIA 
+RICORRENTEminore45AA, MELENA DOPO EGDS 
+NEG, FOBT POS)
+▪[000] - FAECAL OCCULT BLOOD POSITIVE
+▪ BLEEDING in faeces of a nature to be determined
+▪BLEEDING of nature to be determined 
+(HEMATOCHETICS major 45AA, HEMATOCHETICS 
+lower 45AA, MELENA AFTER EGDS NEG, FOBT POS)
+Fig. 7 Examples of clustered clinical questions. English translations do not completely reflect the
+abbreviations and typos of the original Italian texts.
+19
+LHA 1 LHA 2 LHA 3 LHA 4 LHA 5 LHA 6 LHA 7 LHA 8
+0
+10
+20
+30
+40
+Percentage (%)
+A
+Appropriateness by LHA
+LHA 1 LHA 2 LHA 3 LHA 4 LHA 5 LHA 6 LHA 7 LHA 8
+0
+10
+20
+30
+40
+50
+60
+Percentage (%)
+B
+Appropriateness by LHA
+GP
+Specialized Physician
+0
+5
+10
+15
+20
+25
+30
+35
+40
+Percentage (%)
+C
+Appropriateness by ph. type
+GP
+Specialized Physician
+0
+10
+20
+30
+40
+50
+Percentage (%)
+D
+Appropriateness by ph. type
+2019
+2020
+2021
+15
+20
+25
+30
+35
+Percentage (%)
+E
+Appropriateness by year
+2019
+2020
+2021
+10
+20
+30
+40
+50
+Percentage (%)
+F
+Appropriateness by year
+ECD
+FEC
+Appropriate
+Insufficient details
+Inappropriate
+Not in guidelines
+Fig. 8 Prescription appropriateness stratified by LHA (A, B), type of prescribing physicians (C, D)
+and year (E, F) for ECD (A,C,E) and FEC (B,D,F).
+20
+Table 6 Summary of referrals’ clusters for
+ECD with appropriateness labels
+Cluster Label
+# REF
+%
+venous insufficiency
+102,339
+20.63
+thrombosis
+98,821
+19.92
+varices
+71,269
+14.37
+edema
+61,822
+12.46
+(thrombo)phlebitis
+49,537
+9.99
+pain
+21,131
+4.26
+vasculopathy
+11,244
+2.27
+saphenectomy
+8,290
+1.67
+varices surgery
+7,126
+1.44
+diabetes
+6,583
+1.33
+ulcer
+6,272
+1.26
+paresthesias
+4,856
+0.98
+claudicatio
+3,570
+0.72
+dimer
+1,601
+0.32
+swelling
+1,238
+0.25
+respiratory insufficiency
+1,060
+0.21
+heavy legs
+705
+0.14
+ischaemia
+617
+0.12
+stent
+612
+0.12
+dermatitis
+474
+0.10
+hypercolesterolaemia
+416
+0.08
+pregnancy
+225
+0.05
+dialisis
+222
+0.04
+surgery
+198
+0.04
+smoker
+193
+0.04
+dyspnoea
+171
+0.03
+tingling
+170
+0.03
+cold legs
+147
+0.03
+hypoesthesia
+80
+0.02
+metabolic syndrome
+48
+0.01
+bleeding
+29
+0.01
+other
+34,917
+7.04
+Summary
+of
+referrals’
+clusters
+for
+ECD,
+mapped to all labels defined in manual anno-
+tations. Green indicates appropriate clusters,
+red inappropriate clusters, yellow clusters for
+which the information might not be sufficient
+to define the appropriateness but is more likely
+inappropriate, and light grey those not men-
+tioned in the guidelines.
+have multiple reasons, including a larger patient base, more frequent encounters with
+less severe cases, and a lower knowledge and/or agreement with guidelines [48, 49].
+For FEC, the rate of inappropriateness is similar but specialized physicians have
+more appropriate referrals. An important trend emerges when analyzing the impact of
+COVID-19 on referral practices. During the early pandemic phase in 2020, inappropri-
+ate ECD referrals dropped significantly, likely due to resource constraints prompting
+physicians to prioritize urgent cases. This pattern is consistent with existing litera-
+ture, which reports a general reduction in non-urgent medical procedures and a shift
+21
+Table 7 Summary of referrals’ clusters for FEC with appropriateness labels
+Cluster Label
+# REF
+%
+polyps
+81,111
+19.88
+occult blood
+76,487
+18.75
+colon cancer familiarity / prevention
+43,615
+10.69
+abdominal pain
+31,316
+7.68
+colon cancer
+30,434
+7.46
+anaemia
+23,133
+5.67
+chronic inflammatory bowel disease
+21,470
+5.26
+constipation
+15,109
+3.70
+diverticulosis
+15,058
+3.69
+chronic diarrhoea
+13,533
+3.32
+altered bowel
+10,933
+2.68
+haemorrhoidal disease
+5,379
+1.32
+diverticulitis
+4,669
+1.14
+suspected colic lesion detected by other investigation technique
+3671
+0.90
+irritable bowel syndrome
+2,023
+0.50
+surgery
+797
+0.20
+lynch syndrome
+787
+0.19
+other
+28,424
+6.98
+Summary of referrals’ clusters for FEC, mapped to all labels defined in manual annota-
+tions. Green indicates appropriate clusters, red inappropriate clusters, yellow clusters
+for which the information might not be sufficient to define the appropriateness but is
+more likely appropriate, and light grey those not mentioned in the guidelines.
+toward more conservative referral behaviour during the pandemic [50–53]. However,
+this decline was temporary, with inappropriate referrals rebounding in 2021 as health-
+care services normalized. A similar, though less pronounced, trend was observed for
+FEC, possibly due to the already limited number of inappropriate referrals for this
+examination.
+4 Discussion
+In this study, we proposed a methodological pipeline leveraging NLP techniques to
+assess the appropriateness of diagnostic referrals in the Italian NHS. We illstrated its
+use through two case studies on venous echocolordoppler of the lower limbs in angiology
+and flexible endoscope colonoscopy in gastroenterology. By applying an unsupervised
+approach, we uncovered key trends in referral motivations and guideline adherence,
+offering the first large-scale assessment of this kind in Italy.
+Our work presents several strengths. The pipeline operates in an unsupervised
+setting, without the need for labelled data, which are costly and time-consuming to
+produce. This makes it applicable to any examination with established guidelines
+defined in terms of appropriate and inappropriate reasons for referrals. It is also
+designed to run on large datasets without requiring high computational resources, low-
+ering the barrier for adoption. In addition to quantifying appropriateness, the pipeline
+offers a detailed picture of referral motivations, thereby revealing reasons not explicitly
+covered by existing guidelines.
+22
+We demonstrated these capabilities on two population-scale datasets, covering an
+entire Italian region with 10 million inhabitants for three years. Validation on manually
+annotated subsets confirmed the robustness of our pipeline and demonstrated that
+contextual embedding models significantly outperform simpler clustering techniques
+in capturing the semantic nuances of referral texts. We observed consistently high
+performances at the appropriate/inappropriate level and for most diseases/symptoms,
+with only two clusters in ECD with lower recall and one cluster in FEC with lower
+precision. The excellent results on two different examinations, one of which was not
+used during pipeline development, confirmed the generalizability of our methodology.
+The large-scale analysis enabled, for the first time, a comprehensive view of referral
+motivations for these examinations. This is a relevant result for public health authori-
+ties, given the absence of structured recording of this information in the Italian NHS.
+The identification of undocumented reasons for referrals highlighted potential gaps in
+the existing guidelines and the stratified analyses further revealed geographical and
+temporal patterns and variations across physician types, consistent with findings in
+the literature and suggestive of targeted interventions to reduce inappropriate refer-
+rals. Importantly, the findings directly supported the Lombardy Region in issuing a
+new resolution extending and reinforcing referral guidelines. This represents one of the
+first documented cases in Italy where an AI-based analysis of routine healthcare data
+directly shaped health policy.
+This study is a relevant example of a real-world, large-scale application of artificial
+intelligence in healthcare. Despite a growing body of research, the adoption of AI-
+based solutions in clinical practice faces significant challenges [54] and remains largely
+dominated by diagnostic tools in medical imaging [55, 56], particularly in Italy [57].
+Our work points to a complementary direction: leveraging large-scale textual data to
+monitor referral practices. In this way, it illustrates how AI can extend its role beyond
+diagnosis to support healthcare governance and inform evidence-based policy.
+Despite its strengths, this study has some limitations. Manual annotation was
+limited to a subset of the data due to time constraints, and performed by a single
+annotator, limiting the possibility of inter-annotator agreement analysis. Our approach
+also assigns a single primary reason per referral, potentially overlooking multi-reason
+referrals, which could be better addressed through fuzzy clustering techniques. More-
+over, the lack of access to patient histories limited our ability to fully assess clinical
+appropriateness in certain cases, such as referrals for varices, where prior surgical indi-
+cation is relevant. It is important to clarify that our pipeline does not aim to assess
+the appropriateness of individual referrals. Instead, our approach provides a system-
+atic, automated, and large-scale evaluation of prescription practices at the regional
+level, offering valuable insights for policymakers and healthcare administrators.
+In future work, we aim to extend the validation of the pipeline to other exami-
+nations and broader settings, including larger annotated datasets and other Italian
+regions, to further support the adoption of data-driven tools for evaluating referral
+practices and improving healthcare delivery.
+23
+5 Conclusions
+This study proposed a methodological pipeline for assessing the level of appropriate-
+ness of Italian referrals. We presented two case studies on venous echocolordoppler of
+the lower limbs and flexible endoscope colonoscopy in the Lombardy Region, demon-
+strating excellent performance on manually annotated test sets and deriving relevant
+insights for public health authorities. The outcome of this analysis allowed the Lom-
+bardy Region to reinforce existing guidelines for physicians, with the aim of reducing
+the number of inappropriate referrals. This work is an example of how artificial intel-
+ligence can be deployed on large, real-world administrative datasets, highlighting the
+potential of AI to support healthcare systems in monitoring practices, informing pol-
+icy, and ultimately alleviating significant burdens on the Italian NHS by lowering
+waiting times and enhancing overall effectiveness of care.
+Supplementary information.
+• Name: Additional file 1
+Format: pdf
+Title: Supplementary Material
+Description: contains more details about the manual annotation process, hyperpa-
+rameters selection and additional results
+List of abbreviations.
+1. AI: Artificial Intelligence
+2. BERT: Bidirectional Encoder Representation for Transformers
+3. CIBD: Chronic Inflammatory Bowel Disease
+4. CQ: Clinical Question
+5. DGR: Decreto della Giunta Regionale (Regional Law)
+6. ECD: venous EcoColorDoppler of the lower limbs
+7. EHR: Electronic Health Record
+8. FEC: Flexible Endoscope Colonscopy with possible biopsies
+9. GP: General Practitioner
+10. ICD: International Classification of Diseases
+11. IQR: InterQuartile Range
+12. LDA: Latent Dirichlet Allocation
+13. ATS/LHA: Agenzia di Tutela della Salute / Local Health Authority
+14. NHS: National Health Service
+15. NLP: Natural Language Processing
+16. REF: Referral
+17. TF-IDF: Term Frequency - Inverse Document Frequency
+Declarations
+Ethics approval and Consent to participate
+The need for ethics approval is deemed unnecessary according to national regu-
+lations. In particular, according to the rules from the Italian Medicines Agency
+24
+(available at: https://www.gazzettaufficiale.it/eli/id/2024/08/20/24A04320/sg), ret-
+rospective studies using administrative databases do not require Ethics Committee
+protocol approval.
+The need for consent to participate is deemed unnecessary according to national
+regulations. In particular, see the rules of the Italian Privacy Authority avail-
+able at https://www.garanteprivacy.it/web/guest/home/docweb/-/docweb-display/
+docweb/9124510 and the European Union regulation n. 2016/679 (GDPR) Art. 1
+c. 1 (https://gdpr.eu/article-1-subject-matter-and-objectives-overview/), Art. 4 c.1
+(https://gdpr.eu/article-4-definitions/) and Recital 26 (https://gdpr-info.eu/recitals/
+no-26/).
+Consent for publication
+Not applicable.
+Availability of data and materials
+The data that support the findings of this study are available from Regione Lombardia
+but restrictions apply to the availability of these data, which were used under license
+for the current study, and so are not publicly available. Data are however available
+from the authors upon reasonable request and with permission of Regione Lombardia.
+Code availability
+The code is available at https://github.com/vittot/ReferralsAppropriateness
+Competing interests
+The authors declare that they have no competing interests.
+Funding
+No fundings supported this research.
+Authors’ contributions
+VT: analysis and interpretation of data, development of the methodology, drafting
+of the manuscript AB: concept and design of the study, acquisition, analysis and
+interpretation of data ME: concept and design of the study, acquisition, analysis and
+interpretation of data OL: concept and design of the study, acquisition, analysis and
+interpretation of data FI: concept and design of the study, analysis and interpretation
+of data, critical revision of the manuscript, supervision. All authors read and approved
+the final manuscript.
+Acknowledgements
+The present research is part of the activities of “Dipartimento di Eccellenza 2023-
+2027”. We thank the Welfare Directorate of Regione Lombardia (Agreement between
+25
+Politecnico di Milano and Regione Lombardia DGR n. XI/5301-27/09/2021) and, in
+particular, the working group on waiting list monitoring. We thank Dr. Paola Colombo
+for the consultation regarding the reasons for angiology referrals and Dr. Marco Soncini
+for gastroenterology referrals.
+References
+[1] Signorelli C, Odone A, Oradini-Alacreu A, Pelissero G. Universal Health Coverage
+in Italy: lights and shades of the Italian National Health Service which celebrated
+its 40th anniversary. Health Policy. 2020;124(1):69–74.
+[2] Maietti E, Sanmarchi F, Toth F, De Pietro C, Fantini MP, Golinelli D. Changes
+in private health service utilisation and access to the Italian National Health
+Service between 2006 and 2019: a cross-sectional comparative study. BMJ Open.
+2023;13(5):e070975.
+[3] Brownlee S, Chalkidou K, Doust J, Elshaug AG, Glasziou P, Heath I, et al.
+Evidence for overuse of medical services around the world.
+The Lancet.
+2017;390(10090):156–168.
+[4] Kale MS, Bishop TF, Federman AD, Keyhani S.
+Trends in the overuse of
+ambulatory health care services in the United States. JAMA Internal Medicine.
+2013;173(2):142–148.
+[5] Hyttinen V, Jyrkk¨a J, Valtonen H. A systematic review of the impact of poten-
+tially inappropriate medication on health care utilization and costs among older
+adults. Medical care. 2016;54(10):950–964.
+[6] Vaswani A, Shazeer N, Parmar N, Uszkoreit J, Jones L, Gomez AN, et al.
+Attention is all you need. Advances in neural information processing systems.
+2017;30.
+[7] Venturelli F, Ottone M, Pignatti F, Bellocchio E, Pinotti M, Besutti G, et al.
+Using text analysis software to identify determinants of inappropriate clinical
+question reporting and diagnostic procedure referrals in Reggio Emilia, Italy.
+BMC Health Services Research. 2021;21(1):1–13.
+[8] Artexe spa.: Clinika VAP Software.
+Accessed on 02-09-2025.
+https://clinika.
+mapsgroup.it/supporto-alle-decisioni/appropriatezza-prescrittiva/.
+[9] Torri V, Ercolanoni M, Bortolan F, Leoni O, Ieva F. A NLP-based semi-automatic
+identification system for delays in follow-up examinations: an Italian case study on
+clinical referrals. BMC Medical Informatics and Decision Making. 2024;24(1):107.
+[10] Cattaneo D, Pasina L, Maggioni AP, Giacomelli A, Oreni L, Covizzi A,
+et al. Drug–drug interactions and prescription appropriateness in patients with
+COVID-19: a retrospective analysis from a reference hospital in Northern Italy.
+26
+Drugs & aging. 2020;37:925–933.
+[11] Segala FV, Murri R, Taddei E, Giovannenze F, Del Vecchio P, Birocchi E, et al.
+Antibiotic appropriateness and adherence to local guidelines in perioperative pro-
+phylaxis: results from an antimicrobial stewardship intervention. Antimicrobial
+Resistance & Infection Control. 2020;9:1–6.
+[12] Franchi C, Mannucci PM, Nobili A, Ardoino I. Use and prescription appropriate-
+ness of drugs for peptic ulcer and gastrooesophageal reflux disease in hospitalized
+older people. European Journal of Clinical Pharmacology. 2020;76:459–465.
+[13] Gion M, Cardinali G, Guzzinati S, Morandi P, Trevisiol C, Fabricio AS, et al. Use
+of routine health datasets to assess the appropriateness of diagnostic tests in the
+follow-up of breast cancer patients: a population-based study on 3930 patients.
+Risk Management and Healthcare Policy. 2022;p. 1087–1100.
+[14] Lencioni R, Fanni SC, Morganti R, Febi M, Ambrosini I, De Gori C, et al. Looking
+for appropriateness in follow-up CT of oncologic patients: Results from a cross-
+sectional study. European Journal of Radiology. 2023;167:111080.
+[15] Camerotto A, Truppo V, Pozzato A, Bedendo S, Angiolelli G, Lucchiari A, et al.
+Ermete: A Decision Support System for an Innovative Management of Knowl-
+edge and Prescription in Laboratory Medicine: A Trial of Two Italian Local
+Health Authorities. American Journal of Clinical and Experimental Medicine.
+2017;5(4):115–122.
+[16] Calcaterra D, Di Modica G, Tomarchio O, Romeo P. A clinical decision support
+system to increase appropriateness of diagnostic imaging prescriptions. Journal
+of Network and Computer Applications. 2018;117:17–29.
+[17] Roncato R, Dal Cin L, Mezzalira S, Comello F, De Mattia E, Bignucolo A, et al.
+FARMAPRICE: a pharmacogenetic clinical decision support system for precise
+and cost-effective therapy. Genes. 2019;10(4):276.
+[18] Ghibelli S, Marengoni A, Djade CD, Nobili A, Tettamanti M, Franchi C, et al.
+Prevention of inappropriate prescribing in hospitalized older patients using a
+computerized prescription support system (INTERcheck®).
+Drugs & aging.
+2013;30:821–828.
+[19] Gupta A, Ip IK, Raja AS, Andruchow JE, Sodickson A, Khorasani R. Effect
+of clinical decision support on documented guideline adherence for head CT in
+emergency department patients with mild traumatic brain injury. Journal of the
+American Medical Informatics Association. 2014;21(e2):e347–e351.
+[20] Mariotti G, Siciliani L, Rebba V, Coretti S, Gentilini M.
+Consensus among
+clinicians on referrals’ priority and use of digital decision-making support systems.
+Health Policy. 2022;126(9):906–914.
+27
+[21] Haddad N, Myshenkov KS, Afanasiev GI.
+Introducing Text Analysis Algo-
+rithms in Decision Support Systems for Automated Evaluation of the Doctor
+Prescriptions. In: 2024 6th International Youth Conference on Radio Electronics,
+Electrical and Power Engineering (REEPE). IEEE; 2024. p. 1–5.
+[22] Sagheb E, Wi CI, Yoon J, Seol HY, Shrestha P, Ryu E, et al. Artificial intelligence
+assesses clinicians’ adherence to asthma guidelines using electronic health records.
+The Journal of Allergy and Clinical Immunology: In Practice. 2022;10(4):1047–
+1056.
+[23] Kerr GS, Richards JS, Nunziato CA, Patterson OV, DuVall SL, Aujero M, et al.
+Measuring physician adherence with gout quality indicators: a role for natural
+language processing. Arthritis care & research. 2015;67(2):273–279.
+[24] Dimitrov D, Daskalova I, Petrova I, Shoshkova M, Yotsov T, Boychev D, et al.
+Nationwide analysis of the breast cancer guidelines adherence in Bulgaria. Clinical
+Surgical Oncology. 2024;3(2):100044.
+[25] Sqilline.: Danny Platform Software.
+Accessed on 02-09-2025.
+https://sqilline.
+com/products/danny-platform/.
+[26] Villena F, P´erez J, Lagos R, Dunstan J. Supporting the classification of patients
+in public hospitals in Chile by designing, deploying and validating a system based
+on natural language processing. BMC medical informatics and decision making.
+2021;21:1–11.
+[27] Petruzziello L, Hassan C, Alvaro D, Kohn A, Rossi Z, Zullo A, et al. Appropri-
+ateness of the indication for colonoscopy: is the endoscopist the ‘gold standard’?
+Journal of clinical gastroenterology. 2012;46(7):590–594.
+[28] Hassan C, Bersani G, Buri L, Zullo A, Anti M, Bianco MA, et al. Appropriate-
+ness of upper-GI endoscopy: an Italian survey on behalf of the Italian Society of
+Digestive Endoscopy. Gastrointestinal endoscopy. 2007;65(6):767–774.
+[29] Zanatta N, Cioffi A, Brocco E, Mognol D, Santonastaso M.
+Appropriate-
+ness of requests of echo-color-Doppler tests.
+Recenti Progressi in Medicina.
+2002;93(5):294–297.
+[30] Stegher S, Occhiuto MT, Mazzaccaro DP, Righini PC, Modafferi A, Malacrida
+G, et al. Appropriateness of Duplex ultrasound assessment on venous system of
+the legs: a two-month preliminary analysis. Ann Ital Chir. 2017;88:1–6.
+[31] Regione
+Lombardia.:
+DGR
+X/3993
+04/08/2015.
+Accessed
+on
+02-09-2025.
+https://www.regione.lombardia.it/
+wps/wcm/connect/f51334d7-fb9e-4151-ac34-b2e5dc41ff36/
+dgr 3993 04 08 15.pdf?MOD=AJPERES&CACHEID=
+ROOTWORKSPACE-f51334d7-fb9e-4151-ac34-b2e5dc41ff36-oRAnnDd.
+28
+[32] Regione
+Lombardia.:
+DGR
+X/4702
+29/12/2015.
+Accessed
+on
+02-09-2025.
+https://www.regione.lombardia.it/
+wps/wcm/connect/f873eec5-1cf4-4446-8d33-dab9c0fea7ff/
+DGR2015 4702 regole2016.pdf?MOD=AJPERES&CACHEID=
+ROOTWORKSPACE-f873eec5-1cf4-4446-8d33-dab9c0fea7ff-oRAnnBa.
+[33] Regione Lombardia.: DGR XII/1568 18/12/2023. Accessed on 02-09-2025. https:
+//www.regione.lombardia.it/wps/portal/istituzionale/HP/istituzione/Giunta/
+sedute-delibere-giunta-regionale/DettaglioDelibere/delibera-1568-legislatura-12.
+[34] Leskovec J, Rajaraman A, Ullman JD. Mining of massive data sets. Cambridge
+University Press; 2020.
+[35] Mikolov T. Efficient estimation of word representations in vector space. arXiv
+preprint arXiv:13013781. 2013;3781.
+[36] Si Y, Wang J, Xu H, Roberts K.
+Enhancing clinical concept extraction with
+contextual embeddings. Journal of the American Medical Informatics Association.
+2019;26(11):1297–1304.
+[37] Beaney T, Jha S, Alaa A, Smith A, Clarke J, Woodcock T, et al. Comparing
+natural language processing representations of coded disease sequences for pre-
+diction in electronic health records. Journal of the American Medical Informatics
+Association. 2024;p. ocae091.
+[38] Zhang X, Zhang Y, Zhang Q, Ren Y, Qiu T, Ma J, et al. Extracting comprehensive
+clinical information for breast cancer using deep learning methods. International
+journal of medical informatics. 2019;132:103985.
+[39] Saha B, Lisboa S, Ghosh S.
+Understanding patient complaint characteristics
+using contextual clinical BERT embeddings. In: 2020 42nd Annual International
+Conference of the IEEE Engineering in Medicine & Biology Society (EMBC).
+IEEE; 2020. p. 5847–5850.
+[40] Torri V, Barbieri E, Cantarutti A, Giaquinto C, Ieva F. Weakly-supervised diag-
+nosis identification from Italian discharge letters. arXiv preprint arXiv:241015051.
+2024;.
+[41] Tamburini F, et al. How “BERTology” changed the state-of-the-art also for Italian
+NLP. In: CEUR WORKSHOP PROCEEDINGS. vol. 2769. CEUR-WS; 2020. p.
+1–7.
+[42] Magnini B, Altuna B, Lavelli A, Minard AL, Speranza M, Zanoli R. European
+clinical case corpus. In: European Language Grid: A Language Technology Plat-
+form for Multilingual Europe. Springer International Publishing Cham; 2022. p.
+283–288.
+29
+[43] Asyaky MS, Mandala R. Improving the performance of HDBSCAN on short text
+clustering by using word embedding and UMAP. In: 2021 8th international con-
+ference on advanced informatics: Concepts, theory and applications (ICAICTA).
+IEEE; 2021. p. 1–6.
+[44] Saha R. Influence of various text embeddings on clustering performance in NLP.
+arXiv preprint arXiv:230503144. 2023;.
+[45] Liu S, Bremer PT, Thiagarajan JJ, Srikumar V, Wang B, Livnat Y, et al.
+Visual exploration of semantic relationships in neural word embeddings. IEEE
+Transactions on Visualization and Computer Graphics. 2017;24(1):553–562.
+[46] Oubenali N, Messaoud S, Filiot A, Lamer A, Andrey P. Visualization of medical
+concepts represented using word embeddings: a scoping review. BMC Medical
+Informatics and Decision Making. 2022;22(1):83.
+[47] Di Gennaro G, Buonanno A, Di Girolamo A, Ospedale A, Palmieri FA, Fedele
+G. An analysis of Word2Vec for the Italian language. Progresses in Artificial
+Intelligence and Neural Systems. 2021;p. 137–146.
+[48] Piccoliori G, Wiedermann CJ, Barbieri V, Engl A. The Role of Homogeneous
+Waiting Group Criteria in Patient Referrals: Views of General Practitioners and
+Specialists in South Tyrol, Italy. In: Healthcare. vol. 12. MDPI; 2024. p. 985.
+[49] Lane T, Sritharan K, Herbert J, Franklin I, Davies A. Management of chronic
+venous disease by primary care. Phlebology. 2013;28(6):299–304.
+[50] Maida M, Sferrazza S, Savarino E, Ricciardiello L, Repici A, Morisco F, et al.
+Impact of the COVID-19 pandemic on gastroenterology divisions in Italy: a
+national survey. Digestive and Liver Disease. 2020;52(8):808–815.
+[51] Di Bidino R, Cicchetti A.
+Impact of SARS-CoV-2 on provided healthcare.
+Evidence from the emergency phase in Italy.
+Frontiers in Public Health.
+2020;8:583583.
+[52] Moynihan R, Johansson M, Maybee A, Lang E, L´egar´e F.: Covid-19: an oppor-
+tunity to reduce unnecessary healthcare.
+British Medical Journal Publishing
+Group.
+[53] Coccia M. The impact of first and second wave of the COVID-19 pandemic in
+society: comparative analysis to support control measures to cope with negative
+effects of future infectious diseases. Environmental Research. 2021;197:111099.
+[54] Carini C, Seyhan AA. Tribulations and future opportunities for artificial intelli-
+gence in precision medicine. Journal of translational medicine. 2024;22(1):411.
+30
+[55] Rajpurkar P, Chen E, Banerjee O, Topol EJ. AI in health and medicine. Nature
+medicine. 2022;28(1):31–38.
+[56] Bizzo BC, Dasegowda G, Bridge C, Miller B, Hillis JM, Kalra MK, et al.
+Addressing the challenges of implementing artificial intelligence tools in clini-
+cal practice: principles from experience.
+Journal of the American College of
+Radiology. 2023;20(3):352–360.
+[57] Ardito V, Cappellaro G, Compagni A, Petracca F, Preti LM. Adoption of artificial
+intelligence applications in clinical practice: Insights from a Survey of Healthcare
+Organizations in Lombardy, Italy. Digital Health. 2025;11:20552076251355680.
+31
+A Manual annotations
+A validation set of 1,000 clinical questions was manually annotated for the main dis-
+ease/symptom determining the referrals, for both ECD and FEC datasets. The existing
+guidelines from the Lombardy Region [31, 32] were used as a reference, but labels
+were not forced to be one of the categories mentioned in the guidelines as appropriate
+or inappropriate. If none of the categories mentioned in the guidelines fit the reason
+for the referral, a new category representing the main disease or symptom mentioned
+in the referral was created. The other category was used only when it was impossible
+to identify a symptom or a disease determining the referral (e.g., “in-depth examina-
+tion to actually establish whether there is an ongoing pathology given the symptoms
+present” or “gfwhdfg”).
+In case of multiple diseases or symptoms, the following priority order was defined:
+1. Reasons mentioned as appropriate in the guidelines
+2. Reasons mentioned as inappropriate among the guidelines
+3. Reasons not mentioned in the guidelines
+If considering these priority levels, there were still multiple diseases/symptoms, the
+following priority order was defined:
+1. If there is one symptom/disease which looks like the leading cause, prefer it
+2. If there are multiple symptoms/diseases mentioned in the guidelines, choose the
+first one to be mentioned in the text
+3. If there are multiple symptoms/diseases not mentioned in the guidelines, prefer
+those for which a category was already created, otherwise the first one to be
+mentioned in the text
+This procedure, after four iterations, including consultation with specialist physicians,
+defined the labels reported in Tables A.1 and A.2. After review of these labels, some
+of them were merged:
+• bleeding and occult blood since bleeding in this context is always an occult bleeding
+• colitis, chron’s disease, ulcerative rectocolitis, chronic inflammatory bowel disease,
+under the latter which is a category comprehensive of all these diseases
+B Pre-processing results
+Table B.1 reports the list of the 50 most frequent abbreviations that were expanded
+by our pre-processing, while Table B.2 contains an example list of 50 misspelt words
+that were detected and corrected during our pre-processing. Table B.3 reports the
+summary results on disease labels without applying pre-processing.
+I
+Table A.1 Labels derived by manual
+annotations on the validation set of 1,000
+clinical questions for ECD.
+Label
+# CQ
+# REF
+Thrombosis
+218
+306
+Venous insufficiency
+200
+747
+Edema
+104
+149
+(Thrombo)phlebitis
+81
+117
+Varices
+65
+628
+Pain
+56
+75
+Vasculopaty
+52
+148
+Safenectomy
+27
+33
+Surgery
+26
+26
+Ulcer
+25
+41
+Paresthesis
+16
+25
+Varices surgery
+14
+15
+Other
+13
+16
+Claudicatio
+11
+16
+Swelling
+9
+10
+Transplanctation
+8
+8
+Teleangectasias
+7
+7
+Cardiopathy
+6
+15
+Dermatitis
+6
+12
+Dimer
+6
+6
+Ischaemia
+5
+5
+Diabetes
+4
+5
+Prosthesis
+4
+4
+Cancer
+3
+5
+Heavy Legs
+3
+4
+Hypertension
+3
+6
+Stent
+3
+2
+Arthritis
+2
+3
+Calcification
+2
+2
+Cold legs
+2
+2
+Dyslipidaemia
+2
+2
+Tingling
+2
+3
+Dialysis
+1
+1
+Dyspnoea
+1
+1
+Embolism
+1
+2
+Haemorrhage
+1
+1
+Hypercholesterolaemia
+1
+3
+Hypertrophy
+1
+1
+Hyposthesia
+1
+1
+Infection
+1
+1
+Lymphangitis
+1
+1
+Metabolic syndrome
+1
+1
+Multiple sclerosis
+1
+1
+Neuropathy
+1
+1
+Pregnancy
+1
+1
+Smoker
+1
+1
+Vascular encephalopathy
+1
+1
+II
+Table A.2 Labels derived by manual annotations on the
+validation set of 1,000 clinical questions for FEC
+Label
+# CQ
+# REF
+Polyps
+158
+344
+Bleeding
+127
+959
+Colon cancer
+107
+187
+Abdominalgia
+104
+214
+Colon cancer familiarity
+82
+141
+Anaemia
+65
+115
+Prevention
+57
+161
+Occult blood
+36
+789
+Constipation
+36
+139
+Diverticulosis
+33
+48
+Altered bowel
+30
+65
+Colitis
+28
+40
+Chronic diarrhoea
+28
+107
+Diverticulitis
+14
+28
+Crohn’s disease
+12
+16
+Haemorrhoidal disease
+9
+30
+Chronic inflammatory bowel disease
+8
+15
+Ulcerative rectocolitis
+8
+15
+Surgery
+5
+6
+Intestinal obstruction
+5
+10
+Dyspepsia
+4
+5
+Weight loss
+3
+8
+Irritable bowel syndrome
+3
+6
+Lymphoma
+3
+4
+Transplant
+3
+15
+Other
+2
+2
+Colonpathy
+2
+7
+Enteritis
+2
+3
+Proctitis
+2
+4
+Rectal prolapse
+2
+12
+Lynch syndrome
+2
+2
+Angiodysplasia
+1
+1
+Appendicitis
+1
+1
+Celiac disease
+1
+1
+Intestinal loops distension
+1
+1
+Hepatopathy
+1
+1
+Protruding formation
+1
+1
+Gastritis
+1
+2
+Ileitis
+1
+1
+Hypercholesterolaemia
+1
+1
+Splenic flexure thickening
+1
+3
+Rectal wall thickening
+1
+2
+Sigma wall thickening
+1
+1
+Behcet’s disease
+1
+1
+Liver disease
+1
+1
+Pancreatitis
+1
+1
+Proctalgia
+1
+3
+Sigmoiditis
+1
+1
+Suspected colic lesion
+1
+33
+Splenic fissure stenosis
+1
+1
+Rectal tenesmus
+1
+2
+III
+Table B.1 Most frequent abbreviations in clinical questions for echocolordoppler of the venous limbs,
+along with their expansions in Italian and English.
+Abbr
+Freq
+Expansion
+Expansion [ENG]
+dx
+41942
+destra
+right
+sx
+35400
+sinistra
+left
+tvp
+35392
+trombosi venosa profonda
+deep vein thrombosis
+inf
+26644
+inferiore
+inferior
+sin
+8490
+sinistra
+left
+pz
+6100
+paziente
+patient
+ndd
+4555
+di natura da determinare
+of a nature to be determined
+aa
+4079
+arti
+limbs
+tvs
+3650
+trombosi venosa superficiale
+superficial venous thrombosis
+sn
+3055
+sinistra
+left
+x
+2210
+per
+for
+k
+2170
+cancro
+cancer
+ivc
+2124
+insufficienza venosa cronica
+chronic venous insufficiency
+ii
+1768
+inferiori
+inferior
+tep
+1695
+tromboembolia polmonare
+pulmonary thromboembolism
+nao
+1291
+nuovi anticoagulanti orali
+new oral anticoagulants
+ca
+1262
+cancro
+cancer
+ds
+1001
+destra
+right
+paz
+959
+paziente
+patient
+tao
+924
+terapia anticoagulante orale
+oral anticoagulant therapy
+vgs
+911
+vena grande safena
+great saphenous vein
+tv
+875
+trombosi venosa
+venous thrombosis
+tp
+852
+trombosi profonda
+deep thrombosis
+s
+819
+sindrome
+syndrome
+dm
+800
+diabete mellito
+diabetes mellitus
+bil
+792
+bilaterale
+bilateral
+irc
+650
+insufficienza renale cronica
+chronic renal failure
+ins
+620
+insufficienza
+failure
+sup
+608
+superiore
+upper
+fa
+592
+fibrillazione atriale
+atrial fibrillation
+v
+576
+venosa
+venous
+iv
+497
+insufficienza venosa
+venous insufficiency
+spt
+469
+sindrome post trombotica
+post-thrombotic syndrome
+npl
+451
+neoplasia
+neoplasm
+iii
+444
+inferiori
+inferior
+ep
+421
+episodio
+episode
+tx
+364
+trapianto
+transplantation
+ctr
+351
+controllo
+control
+art
+327
+tromboembolismo venoso
+venous thromboembolism
+tpv
+326
+trombosi profonda venosa
+deep vein thrombosis
+vs
+307
+vena safena
+saphenous vein
+cr
+297
+cronica
+chronic
+gg
+269
+giorni
+days
+tev
+256
+tromboembolia venosa
+venous thromboembolism
+pta
+251
+angioplastica percutanea transluminale
+percutaneous transluminal angioplasty
+ven
+235
+venosa
+venous
+int
+227
+intervento
+surgery
+mvc
+225
+malattia venosa cronica
+chronic venous disease
+ev
+220
+eventuale
+possible
+tt
+203
+tibio-tarsica
+tibio-tarsal
+IV
+Table B.2 Sample of 50 misspelt words with the corresponding
+replacements applied by our pre-processing.
+Original Word
+Corrected Word
+Corrected Word [ENG]
+iprtensioone
+ipertensione
+hypertension
+stwnosi
+stenosi
+stenosis
+areomasica
+ateromasia
+atheromasia
+aduta
+caduta
+fall
+clacifiche
+calcifiche
+calcifications
+lipitimiche
+lipotimie
+lipothymias
+esignificative
+significative
+significant
+veriginosa
+vertiginosa
+vertiginous
+lipotimoco
+lipotimici
+lipotimics
+emicrani
+emicrania
+migraine
+cardiopatiia
+cardiopatia
+heart disease
+30anni
+anni
+years
+sinndrome
+sindrome
+syndrome
+vertigicnosa
+vertiginosa
+vertiginous
+eriosa
+arteriosa
+arterial
+srteriopatia
+arteriopatia
+arteriopathy
+carotgidee
+carotidea
+carotid
+nvertiginosa
+vertiginosa
+vertiginous
+nlipotimia
+lipotimici
+lipothymic
+pregressotia
+pregresso
+previous
+priomo
+primo
+first
+dislipemua
+dislipidemia
+dyslipidaemia
+caroltidea
+carotidea
+carotid
+iportesa
+ipertesa
+hypertensive
+cerebricolare
+cerebrovascolare
+cerebrovascular
+neurologoin
+neurologo
+neurologist
+cronarico
+coronarica
+coronary
+arteiopatia
+arteriopatia
+arteriopathy
+bilaterati
+bilaterale
+bilateral
+aritimica
+aritmica
+arrhythmic
+bpcoe
+bpco
+bpco
+extrasisoliche
+extrasistolia
+extrasystole
+paiente
+paziente
+patient
+iprtnsione
+ipertensione
+hypertension
+teriopati
+arteriopatia
+arteriopathy
+caprtidea
+carotidea
+carotid
+soszpetta
+sospetta
+suspected
+dislidemica
+dislipidemia
+dyslipidaemia
+lipotimicio
+lipotimici
+lipothymics
+epeisodi
+episodi
+episodes
+ipertrigliceridiemia
+ipertrigliceridemia
+hypertriglyceridaemia
+ertiginosa
+vertiginosa
+vertigo
+iperpensione
+ipertensione
+hypertension
+neopla
+neoplasia
+neoplasia
+oderata
+moderata
+moderate
+cardiopataia
+cardiopatia
+cardiopathy
+polidistrettuae
+polidistrettuale
+polydistrict
+dislipidemiaecocolo
+dislipidemico
+dyslipidaemic
+ipwrtensone
+ipertensione
+hypertension
+acugene
+acufene
+tinnitus
+V
+Table B.3 Results of clusters mapped to the disease labels on the manually labelled
+test sets, computed for clinical question (CQ) and referrals (REF) without applying
+pre-processing steps. P=Precision, R=Recall, F1=F1-Score. The values of all metrics
+are expressed as percentages.
+P-CQ
+R-CQ
+F1-CQ
+P-REF
+R-REF
+F1-REF
+ECD
+Umberto-E3C-Pipeline
+84.01
+73.51
+78.40
+89.15
+79.28
+83.95
+Umberto-Base
+77.99
+70.68
+74.18
+85.01
+73.18
+78.66
+Word2Vec
+75.63
+62.25
+68.27
+78.90
+67.77
+72.99
+TF-IDF
+46.28
+33.61
+38.92
+45.73
+37.83
+41.46
+LDA
+24.38
+32.27
+27.88
+16.51
+25.97
+20.24
+FEC
+Umberto-E3C-Pipeline
+88.59
+85.53
+87.12
+90.99
+87.65
+89.32
+Umberto-Base
+80.28
+70.31
+75.02
+85.79
+75.42
+80.35
+Word2Vec
+78.66
+68.55
+73.27
+80.15
+70.38
+74.96
+TF-IDF
+55.45
+44.91
+49.69
+55.95
+49.60
+52.65
+LDA
+31.52
+36.30
+33.80
+26.70
+33.91
+29.86
+VI
+C Clustering
+C.1 Hyperparameters and algorithms selection
+Table C.1 reports the grid search for HDBSCAN hyperparameters, evaluated with
+F1-CQ on ECD dataset.
+Table C.1: Grid search for HDBSCAN hyperparameters, with F1-
+CQ on ECD dataset
+min cluster size
+min samples
+cluster selection epsilon
+F1-CQ [%]
+20
+0
+11.42
+20
+0.1
+11.42
+20
+0.5
+11.42
+20
+1
+0
+63.91
+20
+1
+0.1
+63.91
+20
+1
+0.5
+63.91
+20
+5
+0
+10.13
+20
+5
+0.1
+10.13
+20
+5
+0.5
+10.13
+20
+10
+0
+77.85
+20
+10
+0.1
+77.85
+20
+10
+0.5
+77.85
+20
+20
+0
+11.42
+20
+20
+0.1
+11.42
+20
+20
+0.5
+11.42
+50
+0
+40.31
+50
+0.1
+40.31
+50
+0.5
+40.31
+50
+1
+0
+60.81
+50
+1
+0.1
+60.81
+50
+1
+0.5
+60.81
+50
+5
+0
+71.72
+50
+5
+0.1
+71.72
+50
+5
+0.5
+71.72
+50
+10
+0
+70.40
+50
+10
+0.1
+70.40
+50
+10
+0.5
+70.40
+50
+20
+0
+40.31
+50
+20
+0.1
+40.31
+50
+20
+0.5
+40.31
+100
+0
+23.87
+100
+0.1
+23.87
+100
+0.5
+23.87
+(continues)
+VII
+min cluster size
+min samples
+cluster selection epsilon
+F1-CQ [%]
+100
+1
+0
+75.64
+100
+1
+0.1
+75.64
+100
+1
+0.5
+75.64
+100
+5
+0
+44.60
+100
+5
+0.1
+44.60
+100
+5
+0.5
+44.60
+100
+10
+0
+51.82
+100
+10
+0.1
+51.82
+100
+10
+0.5
+51.82
+100
+20
+0
+40.31
+100
+20
+0.1
+40.31
+100
+20
+0.5
+40.31
+200
+0
+14.46
+200
+0.1
+14.46
+200
+0.5
+14.46
+200
+1
+0
+67.41
+200
+1
+0.1
+67.41
+200
+1
+0.5
+67.41
+200
+5
+0
+36.43
+200
+5
+0.1
+36.43
+200
+5
+0.5
+36.43
+200
+10
+0
+43.32
+200
+10
+0.1
+43.32
+200
+10
+0.5
+43.32
+200
+20
+0
+31.80
+200
+20
+0.1
+31.80
+200
+20
+0.5
+31.80
+500
+0
+18.64
+500
+0.1
+18.64
+500
+0.5
+18.64
+500
+1
+0
+15.48
+500
+1
+0.1
+15.48
+500
+1
+0.5
+15.48
+500
+5
+0
+14.45
+500
+5
+0.1
+14.45
+500
+5
+0.5
+14.45
+500
+10
+0
+23.37
+500
+10
+0.1
+23.37
+500
+10
+0.5
+23.37
+500
+20
+0
+16.31
+500
+20
+0.1
+16.31
+500
+20
+0.5
+16.31
+(continues)
+VIII
+min cluster size
+min samples
+cluster selection epsilon
+F1-CQ [%]
+step from 500
+0
+34.52
+step from 500
+0.1
+34.52
+step from 500
+0.5
+34.52
+step from 500
+1
+0
+71.54
+step from 500
+1
+0.1
+71.54
+step from 500
+1
+0.5
+71.54
+step from 500
+5
+0
+79.48
+step from 500
+5
+0.1
+79.48
+step from 500
+5
+0.5
+79.48
+step from 500
+10
+0
+63.28
+step from 500
+10
+0.1
+63.28
+step from 500
+10
+0.5
+63.28
+step from 500
+20
+0
+41.95
+step from 500
+20
+0.1
+41.95
+step from 500
+20
+0.5
+41.95
+Figures C.1 and C.2 report the performance of K-Means and Agglomerative Hierar-
+chical Clustering on the ECD dataset, at the CQ level, varying the number of clusters.
+Their results are consistently lower than those from HDBSCAN.
+3 6 10
+18
+30
+45
+65
+90
+120
+150
+Number of Clusters (k)
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+Score
+KMeans performance by k
+Precision
+Recall
+F1-score
+Fig. C.1 K-means performance on ECD-CQ varying the number of clusters
+For TF-IDF representation, we limited the vocabulary to the top 1,000 most fre-
+quent tokens. The best results presented are obtained with K-Means. The number of
+clusters was selected with the knee-elbow method analyzing WSS with k from 2 to 50,
+which led to k=40 for ECD and k=35 for FEC.
+IX
+3 6 10
+18
+30
+45
+65
+90
+120
+150
+Number of Clusters (k)
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+Score
+Agglomerative hierarchical clustering performance by k
+Precision
+Recall
+F1-score
+Fig. C.2 Agglomerative hierarchical clustering performance on ECD-CQ varying the number of
+clusters
+For LDA, the number of topics (clusters) was selected by analyzing coherence with
+k from 2 to 50, which led to k=7 for ECD and k=9 for FEC.
+For direct embeddings match, we matched Umberto embeddings of clinical ques-
+tions with embeddings of known diseases/symptoms from guidelines, using cosine
+similarity. If no element in the guidelines matched with a similarity of at least 0.6 we
+assigned the Other label.
+X
+C.2 Additional clustering results
+Tables C.2 and C.3 present all the clusters identified for ECD and FEC, respectively,
+with their keyword descriptions, the sizes and the labels they were assigned.
+Table C.2: Summary of all clusters identified for ECD, including their keyword
+representation, the label assigned them and the number of distinct clinical questions
+(CQ) and referrals (REF) that they contain.
+ID
+CLUSTER
+KEYWORDS
+[ITA]
+CLUSTER
+KEYWORDS
+[ENG]
+CLUSTER LABEL
+# CQ
+# REF
+1
+claudicatio; riferita
+claudication; referred
+claudication
+1132
+1686
+2
+claudicatio; intermittens
+claudicatio; intermittens
+claudication
+653
+1179
+3
+claudicatio
+claudicatio
+claudication
+402
+530
+4
+claudicatio; sospetta; claudi-
+cazio
+claudicatio; suspected; clau-
+dication
+claudication
+60
+126
+5
+claudicatio; arti; inferiori
+claudicatio; limbs; lower
+claudication
+41
+49
+6
+dermatite
+dermatitis
+dermatitis
+421
+474
+7
+diabete
+diabetes
+diabetes
+1540
+3249
+8
+diabete; mellito
+diabetes; mellitus
+diabetes
+534
+1847
+9
+diabete; cardiopatia; mellito;
+diabetes; heart disease; mel-
+litus
+diabetes
+755
+1254
+10
+diabetico; diabetica
+diabetes; diabetic
+diabetes
+209
+165
+11
+dislipidemia; diabete
+dyslipidaemia; diabetes
+diabetes
+36
+68
+12
+dialisi
+dialysis
+dialysis
+110
+222
+13
+dimero
+dimer
+dimer
+1343
+1601
+14
+dispnea
+dyspnoea
+dyspnoea
+104
+171
+15
+dolore
+pain
+pain
+6343
+12051
+16
+deambulazione; dolore; diffi-
+colta
+walking; pain; difficulty
+pain
+1294
+3884
+17
+algia; artralgia; piedi
+algia; arthralgia; foot
+pain
+1028
+2491
+18
+polpaccio; dolore
+calf; pain
+pain
+707
+1753
+19
+algie;
+arti;
+gambe;
+pol-
+pacci;
+bilaterali;
+natura;
+determinare
+pain; limbs; calves; bilateral;
+nature; determine
+pain
+160
+631
+20
+dolore; natura; determinare;
+algie
+pain;
+nature;
+determine;
+pain
+pain
+53
+126
+21
+dolore; popliteo
+pain; popliteal
+pain
+35
+117
+22
+algia; covid; gamba
+pain; covid; leg
+pain
+30
+63
+23
+dolore;
+polpaccio;
+natura;
+determinare
+pain; calf; nature; determine
+pain
+12
+10
+24
+crampi; notturni
+cramps; nocturnal
+pain
+6
+5
+25
+edema
+edema
+edema
+11686
+20723
+26
+edemi; declivi
+edema; declivities
+edema
+9491
+16473
+27
+edema; arti; edemi
+edema; limbs; edemas
+edema
+3712
+7867
+28
+arti; inferiori; edemi
+limbs; lower; edemas
+edema
+528
+2486
+29
+edema; gamba; piede; pol-
+paccio
+edema; leg; foot; calf
+edema
+1046
+2467
+30
+edema; arti; inferiori
+edema; limbs; lower
+edema
+899
+2350
+31
+edema; perimalleolare
+edema; perimalleolar
+edema
+1039
+2214
+32
+edema; natura; determinare
+edema; nature; determine
+edema
+1027
+2199
+33
+edemi; perimalleolari
+edema; perimalleolar
+edema
+1190
+2151
+34
+edema; malleolare
+edema; malleolar
+edema
+935
+1136
+35
+edemi; vasculopatia; declivi;
+edema
+edema; vasculopathy; decliv-
+ities
+edema
+529
+602
+36
+edema; flebite
+edema; phlebitis
+edema
+217
+297
+37
+arti;
+bilaterale;
+piede;
+edema;
+succulenza;
+perimalleolare
+limbs; bilateral; foot; edema;
+succulence; perimalleolar
+edema
+117
+192
+38
+arti; inferiori; edema
+limbs; lower; edema
+edema
+80
+168
+39
+arti; inferiori; natura; deter-
+minare; edema; edemi
+limbs; lower; nature; deter-
+mine; edema
+edema
+80
+168
+40
+edema; inferiori; arti
+edema; lower; limbs
+edema
+74
+163
+(continues)
+XI
+ID
+CLUSTER
+KEYWORDS
+[ITA]
+CLUSTER
+KEYWORDS
+[ENG]
+CLUSTER LABEL
+# CQ
+# REF
+41
+edema; sinistra
+edema; left
+edema
+61
+108
+42
+claudicatio;
+edemi;
+edema;
+cardiopatia;
+arti;
+inferiore;
+lieve
+claudication; edema; edema;
+cardiopathy;
+limbs;
+lower;
+mild
+edema
+32
+34
+43
+linfedema; arti
+lymphedema; limbs
+edema
+23
+24
+44
+emorragia
+haemorrhage
+haemorrhage
+18
+29
+45
+formicolio
+tingling
+tingling
+43
+170
+46
+freddo
+cold
+cold
+49
+147
+47
+fumatore
+smoker
+smoker
+121
+193
+48
+gravidanza
+pregnancy
+pregnancy
+92
+225
+49
+insufficienza respiratoria
+respiratory insufficiency
+respiratory
+insufficiency
+724
+1060
+50
+venosa; insufficienza
+venous; insufficiency
+venous insufficiency
+30324
+71150
+51
+venosa; arti; inferiori; insuf-
+ficienza; sospetta
+venous; limbs; lower; insuffi-
+ciency; suspected
+venous insufficiency
+19532
+28831
+52
+superficiale; venosa; insuffi-
+cienza
+superficial;
+venous;
+insuffi-
+ciency
+venous insufficiency
+276
+613
+53
+insufficienza; venosa; cronica
+venous; insufficiency; chronic
+venous insufficiency
+415
+506
+54
+venosa; safenectomia; insuf-
+ficienza
+venous;
+saphenectomy;
+insufficiency
+venous insufficiency
+280
+311
+55
+venosa; claudicatio; insuffi-
+cienza
+venous; claudication; insuffi-
+ciency
+venous insufficiency
+109
+180
+56
+venosa;
+arti;
+insufficienza;
+varici
+venous;
+limb;
+insufficiency;
+varicose
+venous insufficiency
+110
+112
+57
+insufficienza;
+venosa;
+arti;
+inferiori
+venous; insufficiency; limbs;
+lower
+venous insufficiency
+23
+102
+58
+venoso; circolo; deficit; arti;
+venous; circulation; insuffi-
+ciency; limbs
+venous insufficiency
+74
+102
+59
+venosa;
+insufficienza;
+arti;
+inferiori; edemi
+venous; insufficiency; limbs;
+lower; edemas
+venous insufficiency
+47
+58
+60
+insufficienza; venosa
+venous; insufficiency
+venous insufficiency
+0
+0
+61
+arti; venosa; inferiori
+limbs; venous; lower
+venous insufficiency
+0
+0
+62
+venosa; edemi; declivi; insuf-
+ficienza
+venous;
+edemas;
+declivity;
+insufficiency
+venous insufficiency
+0
+0
+63
+venosa; insufficienza; edemi;
+arti; inferiori
+venous;
+insufficiency;
+ede-
+mas; limbs; lower
+venous insufficiency
+0
+0
+64
+venosa; cronica
+venous; chronic
+venous insufficiency
+0
+0
+65
+insufficienza;
+venosa;
+cron-
+ica; sospetta
+venous;
+insufficiency;
+chronic; suspected
+venous insufficiency
+264
+374
+66
+intervento; ginocchio; artro-
+protesi; valutazione
+surgery; knee; arthroplasty;
+evaluation
+intervention
+67
+77
+67
+lista; trapianto; rene; inseri-
+mento
+list;
+transplant;
+kidney;
+insertion
+intervention
+61
+69
+68
+lista; trapianto; valutazione;
+inserimento;
+rene;
+sinistra;
+dialisi; intervento
+list; transplant; evaluation;
+insertion; kidney; left; dialy-
+sis; intervention
+intervention
+49
+52
+69
+ipercolesterolemia
+hypercholesterolaemia
+hypercholesterolaemia
+363
+416
+70
+ipoestesia
+hypoesthesia
+hypoesthesia
+31
+80
+71
+ischemia
+ischaemia
+ischaemia
+517
+617
+72
+parestesie
+paresthesias
+paresthesias
+1834
+3965
+73
+parestesie; gamba; sinistra
+paresthesias; leg; left
+paresthesias
+541
+891
+74
+pesantezza
+heaviness
+heaviness
+215
+475
+75
+arti;
+inferiori;
+linfedema;
+pesantezza
+limbs;
+lower;
+lymphedema;
+heaviness
+heaviness
+25
+124
+76
+arti; inferiori; pesantezza
+limbs; lower; heaviness
+heaviness
+18
+106
+77
+safenectomia
+saphenectomy
+saphenectomy
+1988
+4177
+78
+safenectomia; esiti
+saphenectomy; outcomes
+saphenectomy
+1374
+3617
+79
+safenectomia; pregressa
+saphenectomy; previous
+saphenectomy
+342
+379
+80
+safenectomia; edemi
+saphenectomy; edemas
+saphenectomy
+41
+117
+81
+sindrome metabolica
+metabolic syndrome
+metabolic syndrome
+12
+48
+82
+stent
+stent
+stent
+301
+612
+83
+tromboflebite
+thrombophlebitis
+thrombophlebitis
+7073
+17415
+84
+flebite; sospetta
+phlebitis; suspected
+thrombophlebitis
+5408
+12379
+85
+flebite; gamba; superficiale
+phlebitis; leg; superficial
+thrombophlebitis
+3037
+8850
+(continues)
+XII
+ID
+CLUSTER
+KEYWORDS
+[ITA]
+CLUSTER
+KEYWORDS
+[ENG]
+CLUSTER LABEL
+# CQ
+# REF
+86
+varicoflebite; sospetta; trom-
+boflebite
+varicophlebitis;
+suspected;
+thrombophlebitis
+thrombophlebitis
+4546
+7739
+87
+tromboflebite; superficiale
+thrombophlebitis; superficial
+thrombophlebitis
+950
+1648
+88
+gamba; tromboflebite; destra
+leg; thrombophlebitis; right
+thrombophlebitis
+397
+486
+89
+tromboflebite; safena
+thrombophlebitis; saphenous
+vein
+thrombophlebitis
+386
+384
+90
+flebite; coscia; superficiale
+phlebitis; thigh; superficial
+thrombophlebitis
+109
+194
+91
+flebopatia;
+sospetta;
+arti;
+inferiori; sospetta
+phlebopathy;
+suspected;
+lower; limbs
+thrombophlebitis
+209
+175
+92
+tromboflebite; poplitea; arti;
+inferiori
+thrombophlebitis; popliteal;
+lower; limbs
+thrombophlebitis
+54
+102
+93
+flebite; superficiale; gamba
+phlebitis; superficial; leg
+thrombophlebitis
+48
+97
+94
+tromboflebite; sospetta;
+thrombophlebitis; suspected
+thrombophlebitis
+30
+68
+95
+trombosi
+thrombosis
+thrombosis
+17060
+43558
+96
+trombosi; venosa; profonda
+thrombosis; venous; deep
+thrombosis
+17453
+38230
+97
+trombosi; vascolare;
+thrombosis; vascular
+thrombosis
+5086
+10180
+98
+trombosi; venosa
+venous; thrombosis
+thrombosis
+1325
+3337
+99
+venosa; trombosi; profonda;
+sospetto; segni; clinici; clin-
+ico
+venous;
+thrombosis;
+deep;
+suspected; signs; clinical
+thrombosis
+566
+1152
+100
+poplitea; trombosi
+popliteal; thrombosis
+thrombosis
+607
+642
+101
+venosa; trombosi; poplitea
+venous;
+thrombosis;
+popliteal
+thrombosis
+407
+525
+102
+trombosi;
+safena;
+insufficienza
+thrombosis;
+saphenous;
+insufficiency
+thrombosis
+362
+472
+103
+segni; clinici; sospetto; clin-
+ico; trombosi; venosa; pro-
+fonda; edema
+signs;
+clinical;
+suspected;
+clinical; venous; thrombosis;
+deep; edema
+thrombosis
+342
+389
+104
+safena; trombosi
+saphenous vein; thrombosis
+thrombosis
+301
+263
+105
+post; trombotica
+post; thrombotic
+thrombosis
+36
+73
+106
+tumefazione
+swelling
+swelling
+533
+741
+107
+tumefazione; gamba
+swelling; leg
+swelling
+172
+448
+108
+destro;
+polpaccio;
+tumefazione; paziente
+right; calf; swelling; patient
+swelling
+35
+49
+109
+ulcera; vascolare
+ulcer; vascular
+ulcer
+828
+3861
+110
+ulcera
+ulcer
+ulcer
+1258
+2411
+111
+varici
+varices
+varices
+13999
+35939
+112
+arti; inferiori; varici
+limbs; lower; varices
+varices
+7018
+18157
+113
+venose; varici
+venous; varices
+varices
+4957
+13554
+114
+varicosita; stasi
+varicosities; stasis
+varices
+957
+2701
+115
+varici; arti; inferiori
+varices; limbs; lower limbs
+varices
+219
+277
+116
+vene; varicose; algie
+veins; varicose; algie
+varices
+121
+194
+117
+safena; varici
+saphenous veins; varicose
+varices
+47
+136
+118
+varicosita; varicosita’
+varicosities; varicositis
+varices
+86
+97
+119
+vascolari;
+esiti;
+polmonite;
+varici; chirurgici; linfangite
+vascular; outcomes; pneumo-
+nia; varices; surgical; lym-
+phangitis
+varices
+60
+88
+120
+varici; sospette
+varicose veins; suspected
+varices
+34
+63
+121
+varicosita; gamba
+varicosities; leg
+varices
+80
+63
+122
+varici; intervento
+varicosities; surgery
+varices intervention
+3144
+7126
+123
+vasculopatia; periferica
+vasculopathy; peripheral
+vasculopathy
+3820
+8200
+124
+vasculopatia
+vasculopathy; peripheral
+vasculopathy
+769
+1886
+125
+vasculopatia; diabetico
+vasculopathy; diabetic
+vasculopathy
+393
+408
+126
+arteriopatia; obliterante
+arteriopathy; obliterative
+vasculopathy
+288
+272
+127
+arteriopatia;
+obliterante;
+periferica
+arteriopathy;
+obliterative;
+peripheral
+vasculopathy
+47
+117
+128
+iperteso; vasculopatico; vas-
+culopatia; dislipidemico
+hypertensive;
+vasculopathy;
+dyslipidemic
+vasculopathy
+17
+97
+129
+aneurisma;
+aorta;
+esiti;
+popliteo;
+addominale;
+aortico
+aneurysm; aorta; popliteal;
+abdominal; aortic
+vasculopathy
+42
+78
+130
+vasculopatia; arti; inferiori
+vasculopathy; limbs; lower
+vasculopathy
+36
+78
+131
+vasculopatia; arti; inferiori;
+polidistrettuale
+vasculopathy;
+limb;
+lower;
+polydistrict
+vasculopathy
+35
+49
+(continues)
+XIII
+ID
+CLUSTER
+KEYWORDS
+[ITA]
+CLUSTER
+KEYWORDS
+[ENG]
+CLUSTER LABEL
+# CQ
+# REF
+132
+vasculopatia; venosa
+vasculopathy; venous
+vasculopathy
+25
+34
+133
+arteriopatia
+arteriopathy
+vasculopathy
+20
+25
+134
+natura; determinare; perifer-
+ica
+nature;
+determine;
+periph-
+eral
+other
+3978
+10039
+135
+natura;
+determinare;
+arti;
+inferiori
+nature;
+determine;
+limbs;
+lower
+other
+5018
+9601
+136
+paziente; polsi; periferici
+patient; wrists; peripheral
+other
+2018
+8015
+137
+arti; inferiori
+limbs; lower
+other
+2190
+5165
+138
+safena; incontinenza
+saphenous; incontinence
+other
+288
+782
+139
+ipertrofia
+hypertrophy
+hypertrophy
+506
+591
+140
+tromboembolia;
+polmonare;
+esiti
+thromboembolism;
+pulmonary; outcomes
+other
+386
+379
+141
+embolia; polmonare
+embolism; pulmonary
+embolism
+110
+174
+142
+femoro; femorale; paziente;
+popliteo;
+sospetta;
+asse;
+esiti; venosa
+femoral;
+femoral;
+patient;
+popliteal;
+suspected;
+axis;
+outcomes; venous
+other
+49
+49
+143
+stenosi; venoso
+stenosis; venous
+other
+30
+49
+144
+dislipidemia; ipertensione
+dyslipidaemia; hypertension
+dyslipidaemia
+25
+44
+145
+aorta; sottorenale
+aorta; subrenal
+other
+25
+29
+Table C.3: Summary of all clusters identified for FEC, including their keyword rep-
+resentation, the label assigned to them and the number of distinct clinical questions
+(CQ) and referrals (REF) that they contain.
+ID
+CLUSTER
+KEYWORDS
+[ITA]
+CLUSTER
+KEYWORDS
+[ENG]
+CLUSTER LABEL
+# CQ
+# REF
+1
+addominalgia; alvo
+abdominalgia; alvo
+abdominal pain
+163
+371
+2
+addominalgie; natura; deter-
+minare
+abdominalgia; nature; deter-
+mine
+abdominal pain
+714
+5.801
+3
+addominali; algie; dolori
+abdominalgia; algia; pain
+abdominal pain
+894
+5.430
+4
+addominali; coliche
+abdominal; colic
+abdominal pain
+240
+3.775
+5
+alvo; addominalgie
+bowel; abdominal pain
+abdominal pain
+224
+2.507
+6
+calo; ponderale; addominal-
+gia
+fall; weight; abdominalgia
+abdominal pain
+100
+215
+7
+natura; determinare; coliche
+nature; determine; colic
+abdominal pain
+325
+2.590
+8
+natura; determinare; addom-
+inali; coliche
+nature; determine; abdomi-
+nal; colic
+abdominal pain
+3.687
+5.605
+9
+fianco; dolore; persistente
+flank; pain; persistent
+abdominal pain
+61
+121
+10
+fossa; addominalgia
+fossa; abdominalgia
+abdominal pain
+192
+2.125
+11
+fossa; iliaca; algia
+fossa; iliac; algia
+abdominal pain
+90
+194
+12
+fossa; iliaca; algie
+fossa; iliac; algia
+abdominal pain
+33
+71
+13
+fossa; iliaca; dolore
+fossa; iliac; pain
+abdominal pain
+302
+662
+14
+ipocondrio;
+destra;
+dolore;
+sinistra
+hypochondrium; right; pain;
+left
+abdominal pain
+127
+281
+15
+quadranti;
+addominalgia;
+addominalgie
+quadrant;
+abdominalgia;
+abdominalgia
+abdominal pain
+33
+74
+16
+stipsi; addominalgia
+constipation; abdominalgia
+abdominal pain
+501
+1.105
+17
+stipsi; addominali
+constipation; abdominal
+abdominal pain
+112
+250
+18
+stipsi; addominali; algie
+constipation;
+abdominal;
+pain
+abdominal pain
+61
+139
+19
+alvo; alterazione; alterazioni
+alvo; alteration
+altered bowel
+432
+3.500
+20
+alvo; alterno
+bowel; abdominalgia
+altered bowel
+610
+2.496
+21
+alvo; alterno; addominalgia
+bowel; abdominalgia
+altered bowel
+287
+1.925
+22
+alvo; calo; ponderale
+bowel; decline; weight
+altered bowel
+196
+1.655
+23
+alvo; stipsi
+bowel; constipation
+altered bowel
+129
+277
+24
+fossa; alvo
+fossa; alvo
+altered bowel
+197
+1.080
+25
+anemia; emoglobina
+anaemia; haemoglobin
+anaemia
+61
+128
+26
+anemia;
+natura;
+determinare; grave
+anaemia; nature; determine;
+severe
+anaemia
+602
+4.392
+27
+anemia;
+sangue;
+occulto;
+positivo
+anaemia; blood; occult; pos-
+itive
+anaemia
+315
+2.366
+XIV
+28
+anemia;
+sideropenica;
+orig-
+ine; indeterminata
+anaemia; sideropenic; origin;
+undetermined
+anaemia
+332
+6.663
+29
+anemia;
+sideropenica;
+sangue; occulto
+anaemia; sideropenic; blood;
+occult
+anaemia
+49
+112
+30
+anemizzazione;
+grave;
+sev-
+era; sangue
+anaemia; severe; blood
+anaemia
+456
+3.814
+31
+anemizzazione;
+natura;
+determinare
+anaemia; nature; determine
+anaemia
+250
+2.504
+32
+sideropenica; anemia
+iron deficiency; anaemia
+anaemia
+365
+3.154
+33
+diarrea; colite; cronica
+diarrhoea; colitis; chronic
+chronic diarrhoea
+95
+757
+34
+diarrea; cronica
+diarrhoea; chronic
+chronic diarrhoea
+778
+7.668
+35
+diarroico; alvo
+diarrhoeic; alvo
+chronic diarrhoea
+193
+2.694
+36
+natura;
+determinare;
+diar-
+rea; dolore; addominale
+nature;
+determine;
+diarrhoea; pain; abdominal
+chronic diarrhoea
+409
+2.414
+37
+colite; ischemica
+colitis; ischaemic
+chronic
+inflam-
+matory
+bowel
+disease
+119
+286
+38
+crohn; morbo
+crohn disease; disease
+chronic
+inflam-
+matory
+bowel
+disease
+540
+3.812
+39
+crohn; morbo; ileo
+crohn; disease; ileum
+chronic
+inflam-
+matory
+bowel
+disease
+71
+202
+40
+infiammatoria;
+malattia;
+intestinale; cronica
+inflammatory;
+disease;
+intestinal; chronic
+chronic
+inflam-
+matory
+bowel
+disease
+220
+2.333
+41
+malattie;
+infiammatorie;
+croniche; intestinali
+diseases;
+inflammatory;
+chronic; intestinal; disease
+chronic
+inflam-
+matory
+bowel
+disease
+313
+3.780
+42
+malattie;
+infiammato-
+rie;
+croniche;
+intestinali;
+calprotectina
+inflammatory;
+dis-
+ease;
+chronic;
+intestinal;
+calprotectin
+chronic
+inflam-
+matory
+bowel
+disease
+19
+51
+43
+stipsi; colite
+constipation; colitis
+chronic
+inflam-
+matory
+bowel
+disease
+74
+185
+44
+ulcerosa; colite
+ulcerative; colitis
+chronic
+inflam-
+matory
+bowel
+disease
+2.985
+7.323
+45
+ulcerosa; rettocolite
+ulcerative; rectocolitis
+chronic
+inflam-
+matory
+bowel
+disease
+283
+3.498
+46
+adenocarcinoma; colon
+adenocarcinoma; colon
+colon cancer
+336
+753
+47
+adenoma; adenomi; colon
+adenoma; adenomas; colon
+colon cancer
+50
+102
+48
+alvo; tumore; colon
+bowel; cancer; colon
+colon cancer
+57
+120
+49
+anamnesi; colon
+anamnesis; colon
+colon cancer
+76
+301
+50
+colico; tumore
+colic; cancer
+colon cancer
+97
+219
+51
+colon;
+adenoma;
+adenomi;
+linfoma
+colon; adenoma; lymphoma
+colon cancer
+123
+394
+52
+colon; discendente; tumore
+colon; descending; cancer
+colon cancer
+61
+137
+53
+colon;
+pregressa;
+asportazione; tumore
+colon;
+previous;
+removal;
+cancer
+colon cancer
+41
+80
+54
+colon;
+ricerca;
+resezione;
+dopo;
+sincrone;
+cancro;
+lesioni; curativa
+colon;
+research;
+resection;
+after;
+synchronous;
+cancer;
+lesions; curative
+colon cancer
+171
+2.878
+55
+ematochezia; tumore; colon
+haematochezia; cancer; colon
+colon cancer
+389
+867
+56
+emicolectomia; tumore; esiti;
+destra; colon
+haemolectomy; cancer; out-
+comes; right; colon
+colon cancer
+452
+1.055
+57
+neoformazione;
+rettale;
+retto; colon
+neoformation;
+rectal;
+rectum; colon
+colon cancer
+51
+119
+58
+neoplasia; colon
+neoplasia; colon
+colon cancer
+438
+1.323
+59
+neoplasia; eteroplasia
+neoplasm; heteroplasm
+colon cancer
+113
+289
+60
+sigma; tumore
+sigma; cancer
+colon cancer
+197
+449
+61
+stipsi; tumore; colon
+constipation; cancer; colon
+colon cancer
+286
+682
+62
+tumore; colon
+cancer; colon
+colon cancer
+5.725
+16.757
+63
+tumore; colon; controllo
+cancer; colon; control
+colon cancer
+108
+324
+64
+tumore; colon; famigliarita
+cancer; colon; familial
+colon cancer
+346
+1.111
+65
+tumore; intestinale
+cancer; intestine
+colon cancer
+305
+840
+66
+tumore; pregresso; colon
+cancer; proctorragia; colon
+colon cancer
+306
+815
+XV
+67
+tumore; proctorragia; colon
+cancer; proctorragia; colon
+colon cancer
+71
+148
+68
+tumore; retto
+cancer; rectum
+colon cancer
+266
+671
+69
+ostinata; stipsi
+obstinate; constipation
+constipation
+2.356
+5.962
+70
+stipsi; cronica
+constipation; chronic
+constipation
+745
+7.521
+71
+stipsi; fossa; iliaca
+constipation; iliac fossa
+constipation
+27
+59
+72
+stipsi; ostinata; addominali
+constipation;
+obstinate;
+abdominal
+constipation
+88
+190
+73
+stipsi; ponderale; calo
+constipation; ponderal; fall
+constipation
+122
+1.377
+74
+diverticolite
+diverticulitis
+diverticulitis
+759
+3.148
+75
+diverticolite; acuta; recente
+diverticulitis; acute; recent
+diverticulitis
+373
+1.172
+76
+sigma; diverticolite
+sigma; diverticulitis
+diverticulitis
+101
+221
+77
+sigmoidite; sospetta; recente;
+episodio; diverticolare; esiti;
+diverticolite; diverticolosi
+sigmoiditis;
+suspected;
+recent;
+episode;
+diverticu-
+lar; outcome; diverticulitis;
+diverticulosis
+diverticulitis
+55
+128
+78
+alvo; diverticolosi
+bowel; diverticulosis
+diverticulosis
+359
+2.126
+79
+diverticolare; malattia
+diverticular; disease
+diverticulosis
+147
+438
+80
+diverticoli;
+diverticolare;
+colon; poliposi
+diverticula;
+diverticular;
+colon; polyposis
+diverticulosis
+388
+1.849
+81
+diverticolosi; addominalgia
+diverticulosis; abdominalgia
+diverticulosis
+355
+782
+82
+diverticolosi; addominali
+diverticulosis; abdominal
+diverticulosis
+264
+2.213
+83
+diverticolosi; colon
+diverticulosis; colon
+diverticulosis
+337
+3.281
+84
+diverticolosi; colon; diverti-
+colite
+diverticulosis; colon; diverti-
+culitis
+diverticulosis
+253
+754
+85
+diverticolosi; sigma
+diverticulosis; sigma
+diverticulosis
+117
+256
+86
+pregressa;
+asportazione;
+diverticolosi
+previous; removal; diverticu-
+losis
+diverticulosis
+412
+2.096
+87
+pregressa;
+polipectomia;
+diverticolosi
+previous;
+polypectomy;
+diverticulosis
+diverticulosis
+142
+306
+88
+stipsi; diverticolosi
+constipation; diverticulosis
+diverticulosis
+136
+957
+89
+emorroidaria;
+sindrome;
+patologia
+haemorrhoidal;
+syndrome;
+pathology
+haemorrhoidal
+disease
+113
+259
+90
+prevenzione; emorroidi
+cancer prevention / familiar-
+ity; haemorrhoids
+haemorrhoidal
+disease
+962
+4.647
+91
+prolasso; emorroidario
+prolapse; haemorrhoids
+haemorrhoidal
+disease
+182
+473
+92
+lynch; sindrome; colon
+lynch; syndrome; colon
+lynch syndrome
+140
+787
+93
+addominalgia; proctorragia
+abdominalgia; proctorragia
+bleeding
+99
+217
+94
+alvo; ematochezia
+bowel; haematochezia
+bleeding
+116
+251
+95
+alvo; sangue; occulto; fecale
+bowel; blood; occult; faecal
+bleeding
+175
+382
+96
+alvo; sanguinamento; irrego-
+lare; digestivo
+bowel;
+bleeding;
+irregular;
+digestive
+bleeding
+703
+4.915
+97
+ematiche; perdite
+bleeding; leakage
+bleeding
+151
+639
+98
+ematochezia; positivo; san-
+guinamento; natura; deter-
+minare
+haematochezia;
+positive;
+bleeding; nature; determine
+bleeding
+760
+12.945
+99
+ematochezia;
+addominalgia;
+addominalgie
+haematochezia;
+abdominal-
+gia; abdominalgia
+bleeding
+61
+134
+100
+ematochezia; ematochezie
+haematochezia;
+haematochezia
+bleeding
+500
+5.307
+101
+melena; riferita; episodio
+melaena; reported; episode
+bleeding
+182
+953
+102
+nuovi; anticoagulanti; orali;
+terapia;
+proctorragia;
+ane-
+mia; paziente
+new;
+anticoagulants;
+oral;
+therapy;
+proctorragia;
+anaemia; patient
+bleeding
+66
+152
+103
+occulto; alvo; sangue; posi-
+tivo
+occult; alvo; blood; positive
+bleeding
+41
+86
+104
+occulto; fecale; sangue; ane-
+mia
+occult;
+faecal;
+blood;
+anaemia
+bleeding
+824
+1.917
+105
+occulto; sangue
+occult; blood
+bleeding
+4.459
+12.755
+106
+occulto; sangue; positivo
+occult; blood; positive
+bleeding
+33
+75
+107
+oncologica; prevenzione
+oncological; cancer preven-
+tion / familiarity
+bleeding
+2.346
+4.752
+108
+proctorragia
+proctorrhagia
+bleeding
+279
+1.236
+109
+proctorragia; diverticolosi
+proctorrhagia; diverticulosis
+bleeding
+152
+328
+110
+proctorragia;
+emorroidi;
+episodi
+proctorrhagia;
+haemor-
+rhoids; episodes
+bleeding
+571
+1.439
+111
+proctorragia; rettorragia
+proctorragia; rectorrhagia
+bleeding
+4.219
+13.288
+112
+proctorragie; emorroidi
+proctorragia; haemorrhoids
+bleeding
+65
+220
+XVI
+113
+prolasso; proctorragia; emor-
+roidario
+prolapse;
+proctorragia;
+haemorrhoid
+bleeding
+46
+98
+114
+rettorragia; colon
+rectorrhagia; colon
+bleeding
+48
+104
+115
+rettorragia; episodi
+rectorrhagia; episodes
+bleeding
+408
+1.167
+116
+rettorragia; tumore; colon
+rectorrhagia; cancer; colon
+bleeding
+74
+157
+117
+sangue; episodi; presenza
+blood; episodes; presence
+bleeding
+330
+1.647
+118
+sangue; occulto
+blood; occult
+bleeding
+263
+619
+119
+sangue;
+occulto;
+anemizzazione; positivo
+blood; occult; anaemia; pos-
+itive
+bleeding
+122
+292
+120
+sangue;
+occulto;
+cal-
+protectina;
+fecale;
+positivo
+blood; occult; calprotectin;
+faecal; positive
+bleeding
+25
+64
+121
+sangue; occulto; fecale
+blood; occult; faecal
+bleeding
+2.525
+7.258
+122
+sangue; occulto; fecale; ane-
+mizzazione
+blood;
+occult;
+faecal;
+anaemia
+bleeding
+224
+494
+123
+sangue; occulto; fecale; calo;
+ponderale
+blood; fecal; occult; weight-
+loss
+bleeding
+140
+312
+124
+sangue; occulto; fecale; posi-
+tivita
+blood; fecal; occult; positive
+bleeding
+198
+529
+125
+sangue; occulto; fecale; posi-
+tivo; terapia; anemia
+blood; faecal; occult; posi-
+tive; therapy; anaemia
+bleeding
+38
+96
+126
+sangue;
+occulto;
+fecale;
+tumore
+blood; occult; faecal; cancer
+bleeding
+171
+364
+127
+sangue;
+occulto;
+polipecto-
+mia
+blood; occult; polypectomy
+bleeding
+105
+250
+128
+sangue; occulto; positivo
+blood; occult; positive
+bleeding
+69
+151
+129
+sangue; stipsi; occulto; fecale
+blood; constipation; occult;
+faecal
+bleeding
+163
+357
+130
+stipsi; ematochezia
+constipation; haematochezia
+bleeding
+91
+190
+131
+stipsi; proctorragia
+constipation; proctorragia
+bleeding
+156
+347
+132
+adenomatosi; polipi
+adenomatous; polyps
+polyps
+49
+116
+133
+asportato; colon; polipo
+removed; colon; polyp
+polyps
+182
+424
+134
+asportazione; polipo
+removal; polyp
+polyps
+457
+1.052
+135
+colon; polipi
+colon; polyps
+polyps
+2.079
+6.733
+136
+exeresi; polipi; pregressa
+exeresis; polyps; previous
+polyps
+71
+174
+137
+follow; up; polipectomia
+follow; up; polypectomy
+polyps
+133
+333
+138
+polipectomia; colon
+polypectomy; colon
+polyps
+89
+236
+139
+polipectomia; controllo
+polypectomy; control
+polyps
+516
+2.263
+140
+polipectomia;
+endoscopica;
+pregressa
+polypectomy;
+endoscopic;
+previous
+polyps
+109
+356
+141
+polipectomia;
+pregressa;
+addominalgia
+polypectomy;
+previous;
+abdominalgia
+polyps
+49
+111
+142
+polipectomia; sigma
+polypectomy; sigma
+polyps
+80
+177
+143
+polipectomia; tumore; colon
+polypectomy; cancer; colon
+polyps
+32
+65
+144
+polipi;
+adenomi;
+sorveglianza;
+pazienti;
+serrati
+polyps;
+adenomas;
+surveil-
+lance; patients; serratus
+polyps
+932
+23.390
+145
+polipi; colon
+polyps; colon
+polyps
+610
+15.287
+146
+polipi; controllo
+polyps; control
+polyps
+365
+4.950
+147
+polipi; intestinali
+polyps; intestinal
+polyps
+186
+881
+148
+polipi; pregressi
+polyps; previous
+polyps
+333
+1.128
+149
+polipo; adenomatoso
+polyps; adenomatous
+polyps
+44
+104
+150
+polipo; anale
+polyp; anal
+polyps
+123
+340
+151
+polipo; colon
+polyp; colon
+polyps
+168
+5.634
+152
+poliposi; colon
+polyposis; colon
+polyps
+711
+1.847
+153
+poliposi; intestinale
+polyposis; intestinal
+polyps
+231
+1.876
+154
+poliposi; pregressa
+polyposis; previous
+polyps
+53
+119
+155
+poliposi; sospetta
+polyposis; suspected
+polyps
+263
+875
+156
+pregressa; polipectomia
+previous; polypectomy
+polyps
+981
+6.133
+157
+pregressa; poliposi
+previous; polyposis
+polyps
+412
+2.208
+158
+pregressa;
+sigma;
+asportazione; polipo
+previous;
+sigma;
+removal;
+polyp
+polyps
+79
+165
+159
+pregresso; polipo
+previous; polyp
+polyps
+322
+3.204
+160
+proctorragia; poliposi; colon
+proctorragia;
+polyposis;
+colon
+polyps
+98
+228
+161
+sigma; polipo
+sigma; polyp
+polyps
+272
+621
+162
+stipsi; ostinata; poliposi
+constipation;
+obstinate;
+polyposis
+polyps
+38
+81
+XVII
+163
+alvo; familiarita; tumore
+alvo; familial; cancer
+cancer prevention /
+familiarity
+212
+604
+164
+anamnesi;
+tumore;
+colon;
+familiare
+anamnesis;
+cancer;
+colon;
+familial
+cancer prevention /
+familiarity
+200
+3.358
+165
+colon; familiarita; tumore
+colon; familial; cancer
+cancer prevention /
+familiarity
+302
+6.530
+166
+diagnosi;
+precoce;
+prestaz;
+diagnost; tumori
+early;
+diagnosis;
+per-
+formance;
+diagnostics;
+cancers
+cancer prevention /
+familiarity
+106
+1.378
+167
+familiarita; tumore; colon
+familial; cancer; colon
+cancer prevention /
+familiarity
+1.137
+3.286
+168
+famigliarita; tumore; colon
+familial; cancer; colon
+cancer prevention /
+familiarity
+151
+388
+169
+familiarita; colon; neoplasia
+familiarity; colon; neoplasm
+cancer prevention /
+familiarity
+1.160
+3.450
+170
+familiarita; prevenzione
+familiarity;
+cancer
+preven-
+tion / familiarity
+cancer prevention /
+familiarity
+306
+1.114
+171
+oncologica; familiarita; pre-
+venzione; tumore
+oncological; familial; cancer
+prevention / familiarity; can-
+cer
+cancer prevention /
+familiarity
+195
+453
+172
+prestaz; diagnost; diagnosi;
+precoce; tumori
+prior; diagnosis; early; diag-
+nosis; cancers
+cancer prevention /
+familiarity
+55
+136
+173
+prestaz; diagnost; diagnosi;
+precoce;
+tumori;
+tumore;
+familiarita; colon
+service;
+diagnosis;
+early;
+diagnosis;
+cancers;
+cancer;
+familial; colon
+cancer prevention /
+familiarity
+192
+418
+174
+prestaz; diagnost; diagnosi;
+sangue;
+occulto;
+precoce;
+tumori
+performance;
+diagnosis;
+diagnosis;
+occult;
+blood;
+early; cancers
+cancer prevention /
+familiarity
+49
+126
+175
+tumore; anamnesi; familiare
+cancer; history; family his-
+tory
+cancer prevention /
+familiarity
+280
+3.603
+176
+tumore; colon; familiarita
+cancer; colon; familial
+cancer prevention /
+familiarity
+618
+4.379
+177
+tumore; colon; familiarita’
+cancer; colon; familial
+cancer prevention /
+familiarity
+401
+5.010
+178
+tumore; colon; proctorragia;
+familiarita
+cancer;
+colon;
+proctorship;
+familiarity
+cancer prevention /
+familiarity
+127
+274
+179
+tumore; familiarita
+cancer; familiarity
+cancer prevention /
+familiarity
+3.709
+8.696
+180
+tumore; intestino; familiarita
+cancer; intestine; familiarity
+cancer prevention /
+familiarity
+64
+412
+181
+asportazione; adenoma; esiti
+removal; adenoma; outcome
+surgery
+45
+91
+182
+esiti; resezione; retto
+outcomes; resection; rectum
+surgery
+57
+47
+183
+pregressa; asportazione
+previous; removal
+surgery
+921
+105
+184
+pregressa; asportazione; ade-
+noma
+previous; removal; adenoma
+surgery
+180
+293
+185
+pregressa; emicolectomia
+previous; hemicolectomy
+surgery
+75
+85
+186
+renale;
+trapianto;
+lista;
+insufficienza; cronica; dialisi
+renal; transplantation; list;
+failure; chronic; dialysis
+surgery
+25
+64
+187
+trapianto; fegato
+transplant; liver
+surgery
+86
+112
+188
+colica;
+sospetta;
+lesione;
+riscontrata;
+altra;
+tecnica;
+indagine
+colic;
+suspected;
+lesion;
+found;
+other;
+technique;
+investigation
+suspected
+colic
+lesion
+179
+3.671
+189
+calo; ponderale
+fall; weight
+other
+333
+1.022
+190
+colon; irritabile
+colon; irritable
+other
+263
+1.432
+191
+displasia;
+adenoma;
+tubu-
+lare; grado
+dysplasia; adenoma; tubular;
+grade
+other
+148
+316
+192
+fossa; iliaca
+fossa; iliac
+other
+24
+54
+193
+grado; displasia
+grade; dysplasia
+other
+84
+191
+194
+prolasso; rettale
+prolapse; rectal
+other
+57
+122
+195
+sigma; ispessimento
+sigma; thickening
+other
+43
+87
+196
+subocclusione; intestinale
+sub-occlusion; intestinal
+other
+81
+202
+XVIII

@@ -1,0 +1,728 @@
+Title: A smile is all you need: Predicting limiting activity coefficients from SMILES with natural language processing
+Source URL: http://arxiv.org/abs/2206.07048v1
+--------------------------------------------------
+
+A SMILE IS ALL YOU NEED:
+PREDICTING LIMITING ACTIVITY COEFFICIENTS FROM SMILES
+WITH NATURAL LANGUAGE PROCESSING
+A PREPRINT
+Benedikt A. Winter
+Energy and Process System Engineering
+ETH Zürich
+Tannenstrasse 3, 8092
+Zürich, Switzerland
+bewinter@ethz.ch
+Clemens S. Winter
+OpenAI
+3180 18TH St, CA 94110
+San Francisco, USA
+clemenswinter1@gmail.com
+Johannes Schilling
+Energy and Process System Engineering
+ETH Zürich
+Tannenstrasse 3, 8092
+Zürich, Switzerland
+jschilling@ethz.ch
+André Bardow∗
+Energy and Process System Engineering
+ETH Zürich
+Tannenstrasse 3, 8092
+Zürich, Switzerland
+abardow@ethz.ch
+June 16, 2022
+ABSTRACT
+Knowledge of mixtures’ phase equilibria is crucial in nature and technical chemistry. Phase equi-
+libria calculations of mixtures require activity coefﬁcients. However, experimental data on activity
+coefﬁcients is often limited due to high cost of experiments. For an accurate and efﬁcient prediction
+of activity coefﬁcients, machine learning approaches have been recently developed. However, current
+machine learning approaches still extrapolate poorly for activity coefﬁcients of unknown molecules.
+In this work, we introduce the SMILES-to-Properties-Transformer (SPT), a natural language process-
+ing network to predict binary limiting activity coefﬁcients from SMILES codes. To overcome the
+limitations of available experimental data, we initially train our network on a large dataset of synthetic
+data sampled from COSMO-RS (10 Million data points) and then ﬁne-tune the model on experimental
+data (20 870 data points). This training strategy enables SPT to accurately predict limiting activity
+coefﬁcients even for unknown molecules, cutting the mean prediction error in half compared to
+state-of-the-art models for activity coefﬁcient predictions such as COSMO-RS, UNIFACDortmund, and
+improving on recent machine learning approaches.
+Keywords thermodynamic properties · machine learning · activity coefﬁcients · SMILES
+1
+Introduction
+With over 500 000 molecules registered even in the CAS Common Chemicals database [CAS, 2022], the chemical
+design space of molecules is substantially larger than our capacity to measure their thermodynamic property data. This
+gap further increases when considering that properties usually depend on temperature and pressure, and even more for
+mixtures due to combinatorics and dependency on mixture composition. Binary activity coefﬁcients are of particular
+interest in chemical engineering, as activity coefﬁcients govern the phase equilibria in distillation and extraction, the
+key separations of many chemical processes. However, even large property databases, such as the Dortmund Datenbank
+∗Corresponding author
+arXiv:2206.07048v1  [physics.chem-ph]  15 Jun 2022
+A SMILE is all you need
+A PREPRINT
+(DDB), only hold experimental data for the activity coefﬁcients of 31 000 binary systems, a tiny fraction of all possible
+molecular combinations[Dortmund Datenbank, 2022].
+To overcome the inherent lack of experimental data, predictive thermodynamic property models have been developed
+over recent decades for many molecular properties, e.g., COSMO-RS [Klamt, 1995], COSMO-SAC [Lin and Sandler,
+2002], SAFT-γ Mie [Laﬁtte et al., 2013], and UNIFAC [Fredenslund et al., 1975]. These models can predict thermody-
+namic properties with increasing accuracy and are therefore particularly beneﬁcial for molecule mixtures with missing
+experimental data. However, despite the vital advantages of predictive thermodynamic models, these models come
+with shortcomings. E.g., calculating the surface charges of molecules for COSMO models is time-consuming, whilst
+UNIFAC is limited to known functional groups parametrized to experimental data. Moreover, these physically-based
+predictive models are still less accurate than experiments[Brouwer and Schuur, 2019].
+Computationally efﬁcient alternatives to physically-based predictive models are data-driven models using machine
+learning. Machine learning is currently a rising topic in chemical engineering, as summarized in multiple recent
+reviews [Alshehri and You, 2022, Haghighatlari and Hachmann, 2019, Dobbelaere et al., 2021] that identify challenges
+in many areas such as optimal decision making, introduction and enforcing of physics, information and knowledge
+representation, and safety and trust [Schweidtmann et al., 2021]. The application of machine learning has also already
+led to recent advances in thermodynamic property prediction. Alshehri et al. [2021] developed a data-driven model to
+predict 25 pure component properties based on a Gaussian process. The developed model surpasses classical group
+contribution models in accuracy. Chen et al. [2021a] use a transformer-convolutional model to predict the sigma proﬁles
+of pure components with high accuracy.
+To predict activity coefﬁcients, matrix completion methods have been recently proposed that represent the limiting
+activity coefﬁcient of binary mixtures as a matrix. In matrix completion methods, all mixtures are sorted into a solvent-
+by-solute matrix. Known mixtures are used to learn embeddings for each solvent/solute, which then can be used to ﬁll
+the matrix by interpolating towards unknown combinations. Jirasek et al. [2020] proposed a matrix completion method
+to predict limiting activity coefﬁcients of binary mixtures at 298.15 K that exceeded the accuracy achieved by UNIFAC.
+Recently, Damay et al. [2021] extended the method of Jirasek et al. [2020] to capture temperature dependencies. The
+proposed model has a higher accuracy for the temperature-dependent prediction of limiting activity coefﬁcients than
+UNIFAC. Chen et al. [2021b] developed an approach to extend the UNIFAC-Il model [Nebig and Gmehling, 2010] for
+predicting limiting activity coefﬁcients in ionic liquids by combining matrix completion with convolutional networks.
+These proposed approaches exceed the accuracy of the widely employed UNIFAC model in predicting limiting activity
+coefﬁcients. Moreover, matrix completion approaches do not require any characterization of the molecules to train
+the model and predict thermodynamic properties, as the model solely learns from the correlations within the matrix.
+However, their lack of molecular characterization prevents matrix completion methods from extrapolating beyond the
+space of molecules available for training. Recently, Sanchez Medina et al. [2022] developed a graph neural network
+to predict limiting activity coefﬁcients at constant temperature. In principle, this graph neural network is capable of
+extrapolating to unknown solvents and solutes, but the extrapolatory capabilities of the network were not tested. Thus,
+it is still unclear how well machine learning methods can extrapolate out of the realm of training data onto unknown
+solutes and solvents.
+Here, we present the SMILES-to-Property-Transformer (SPT), a data-driven model with high accuracy for interpolation
+and extrapolation that can predict temperature-dependent limiting activity coefﬁcients from nearly arbitrary SMILES,
+based on natural language processing and a transformer architecture [Vaswani et al., 2017]. Due to their ability to
+learn structural relationships, transformer models have recently shown to be successful in predicting pure component
+properties of various molecules and pharmaceuticals Rong et al. [2020], Skinnider et al. [2021]. However, transformer
+models require large amounts of training data, which is typically unavailable for thermodynamic properties from
+experiments. To overcome the lack of experimental training data, we propose a two-step approach: First, the model is
+trained on a large amount of synthetic data from a physically-based predictive model for limiting activity coefﬁcients
+to convey the grammar of SMILES and the underlying physics of activity coefﬁcients to the model. Second, the
+pretrained model is ﬁne-tuned using available experimental data to improve accuracy and reduce systematic errors of
+physically-based predictive model. We compare the SPT model to state-of-the-art predictive thermodynamic models and
+ML approaches and demonstrate its high accuracy for predicting temperature-dependent limiting activity coefﬁcients of
+unknown molecules after ﬁne-tuning.
+2
+Transformer-based method for thermodynamic property prediction
+The SPT model predicts temperature-dependent limiting activity coefﬁcients of binary mixtures from the SMILES
+codes of the mixture components. For this purpose, we apply a transformer model. For machine learning, two
+major characteristics are vital for success: the model’s architecture and the training data. We ﬁrst describe our
+2
+A SMILE is all you need
+A PREPRINT
+Figure 1: Architecture of SPT to predict limiting binary activity coefﬁcients from SMILES codes. The model takes the
+input sequence consisting of the SMILES of the solvent and solute and the temperature as input. In the Input encoding
+section of the model, the information about the entering SMILES, the temperature and the position of tokens are all
+compiled into a single matrix. The multi-headed attention section performs the main work of the model by transmitting
+information between different parts of the molecules. The head section reduces the multidimensional output of the
+model to a single value.
+model architecture (Section 2.1) and subsequently discuss the datasets used for training and validation of the model
+(Section 2.2), data augmentation (Section 2.3) and model parametrization (Section 2.4).
+2.1
+Architecture of the SMILES-to-Property-Transformer
+The SPT model is based on the transformer architecture developed by Vaswani et al. [2017] for natural language
+processing. Since its conception in 2017, the transformer architecture has proven to be applicable to many tasks beyond
+natural language processing, such as image generation or classiﬁcation [Parmar et al., 2018, Dosovitskiy et al., 2020].
+For molecular property prediction, the transformer model has been successfully applied to predict pure component
+properties for various pharmaceuticals by Lim and Lee [2021] or generate novel molecules with speciﬁc target properties
+[Kim et al., 2021]. However, to the best of the authors’ knowledge, the transformer model has not yet been applied to
+predict thermodynamic properties of binary mixtures.
+As the backbone of SPT, we adopt the GPT-3 architecture [Brown et al., 2020] as implemented by Karpathy [2021] in
+MinGPT with changes to the input encoding and head section of the model (Figure 1). The GPT-3 architecture shows
+higher accuracy than, e.g., the transformer implementation of PyTorch [Pytorch, 2021], most likely due to the use of a
+Post-LN Transformer instead of a Pre-LN Transformer [Xiong et al., 2020].
+2.1.1
+Input encoding
+Calculating the temperature-dependent limiting activity coefﬁcients of a solute in a solvent requires information about
+the structure of both molecules and the temperature. In our model, the molecules are represented by SMILES codes.
+3
+A SMILE is all you need
+A PREPRINT
+The Simpliﬁed Molecular-Input Line-Entry System code, abbreviated to SMILES, was introduced in 1988 by Weininger
+[1988] as a method to represent complex molecules in a single line of text. Since then, the SMILES code has been used
+in many applications and has developed into one of the standard ways to represent molecules. In SMILES, heavy atoms
+are represented as their periodic table symbol, e.g., C for carbon, while hydrogen atoms are implicitly assumed, e.g.,
+ethane has the SMILES code CC. For single bonds, atoms are simply chained together, while double or triple bonds
+are represented by = and #, respectively. Branching arms of a molecule are contained within brackets, and for rings,
+numbers are used to show the joining points of a ring. Thus, the molecule 2-methyl phenol can be represented by the
+following SMILES: Oc1c(C)cccc1. Since SMILES essentially possess a grammar to convey the structure of a molecule
+in a linear form, they can be understood by natural language processing. Thus, SMILES have shown to be a suitable
+input for deep learning models that predict molecular properties [Tetko et al., 2020, Wang et al., 2019].
+In the ﬁrst step of our model, only the molecule’s structural information is passed to the model by constructing an input
+sequence from the SMILES of the solute and the solvent. Four special characters are used to signal 1) the start of the
+ﬁrst molecule, <SOS>, 2) the middle between both molecules <MOS>, 3) the end of the second molecule <EOS>, and
+4) the padding <PAD> to ﬁll the input sequence to a ﬁxed length of nseq , e.g.:
+< SOS >, SMILESsolute, < MOS >, SMILESsolvent, < EOS >, < PAD >, ...
+(1)
+Next, the input sequence is tokenized by assigning a number to each unique character of the SMILES code. In general,
+each token could be longer than a single character per encoding. However, a single character is used in this work for
+simplicity. Consequently, the vocab contains the following tokens: <SOS>, <MOS>, <EOS>, <PAD>, characters that
+can be contained in a SMILES code adapted from Kim et al. [2021] and a special token for water to clearly distinguish
+between pure water (SMILES "O") and oxygen groups on hydrocarbons. Not all tokens included in the vocab are
+part of the molecules of our training data. Thus, the embedding of some tokens remains untrained in our ﬁnal model.
+Including these untrained tokens makes the model easily expandable for more complex structures in later ﬁne-tuning
+steps. However, evaluating SMILES that contain untrained tokens leads to unreliable results. The overall vocab and a
+list of trained and untrained tokens are available in the Supporting Information S1.
+After tokenizing the input sequence characterizing the solute and solvent, the input matrix X is constructed from the
+input sequence and the embedding matrix E. The embedding matrix E contains a learned vector of length demb for
+each token. The input matrix X is constructed by concatenating the embedding vectors belonging to the input tokens
+resulting in an nseq × demb matrix. Next, temperature information is incorporated into the model by projecting the
+temperature into the embedding space via a linear layer and concatenating it to the right of the input matrix. Thereby,
+the matrix size is expanded to nseq+1 × demb. Positional information is included by adding the learned positional
+encoding matrix D of size nseq+1 × demb to X. Next, the input matrix X, which now contains all information about
+the molecules and temperature, is passed to the transformer block, the heart of the model.
+2.1.2
+Transformer block: Multi-headed attention
+In the transformer block, the inputs are normalized via a layer norm and then passed to the multi-headed attention block.
+On a high-level, multi-headed attention allows the model to move information from one token to another. For molecular
+property prediction, multiple attention heads enable each head’s attention to focus on different features. This attention
+mechanism can learn complex structures of molecules even when represented as a linear string. On a mathematical
+level, the output of a single attention head i, Zi, is deﬁned as:
+Zi = softmax
+QiKT
+i
+√dk
+
+Vi
+(2)
+with the query matrix Qi, the key matrix Ki, and the value matrix Vi, and dk = demb/nhead, where nhead is the number
+of attention heads.
+The query, key, and value matrices are calculated by multiplying the input matrix X with the learned matrices W Q
+i , W k
+i ,
+and W V
+i . The matrices Qi, Ki, and Vi have the size nseq+1 × dk. The product of Qi and Ki can be interpreted as the
+relative importance of each token to another token. This result is normalized by the square root of the key dimension dk
+and passed to a softmax function returning the attention from each token to each other token. The value matrix is then
+multiplied with the attention, leading to the matrix Zi of size nseq+1 × dk, which contains for each token information
+of other tokens weighted by their importance.
+The attention operation is repeated for each attention head. The resulting output matrices Zi of each attention operation
+are concatenated and projected to the input size of nseq+1 × demb via a linear layer. Finally, the data is passed through
+4
+A SMILE is all you need
+A PREPRINT
+Figure 2: Creation of the synthetic dataset from COSMO used for pretraining and sampling procedure for the
+experimental data from Brouwer used for ﬁne-tuning. For the COSMO dataset, 5 % of the solvents and solutes are
+removed from the training set constructing Valext, for which neither solvent nor solute is known, and Valedge for which
+either solvent or solute is known. Furthermore, 5 % of the remaining training data is sampled at random and moved
+into the training set Valint. Due to the smaller size of the Brouwer dataset, n-fold cross-validation is used. N mixtures
+are selected and moved into Valext,i, resulting in n = 1000 validation sets. The remaining mixtures are sorted into
+Valedge,i, and Traini depending on the occurrence of their constitutes in Valext,i. Finally, 5 % of mixtures are removed
+from Traini to Valint,i, and the set of all mixtures is reassessed.
+a multilayer perceptron (MLP) layer containing a GeLu non-linearity, concluding the transformer block. In the ﬁrst
+MLP layer, the size of the model is increased by a factor of four for the embedding dimension; the second linear layer
+of the MLP projects it back down to the input size. Residual connections connect the in- and output of the attention
+and MLP block, including their respective layer norms. Multiple transformer blocks can be stacked consecutively to
+increase the depth of the model. In this work, we use two consecutive transformer blocks. For a more in-depth and
+visual explanation, the reader is referred to the blog of Alammar [2018].
+2.1.3
+Head
+The output of the transformer blocks needs to be projected to a single value. This projection is performed in the last
+part of the model, the head. The head ﬁrst applies a max function along the sequence dimension that reduces the size
+from nseq+1 × demb to 1 × demb, followed by one MLP that reduces the size from 1 × demb to 1 × 1. The resulting
+single output value represents the molecular property of interest, i.e., the limiting activity coefﬁcient in our work.
+2.2
+Property data for training and validation
+While machine learning models have proven to be powerful tools capable of astonishing predictions, their training
+requires large amounts of data. Such large amounts of data are typically unavailable for binary property data. Some
+success has been achieved using unsupervised learning on SMILES translation tasks to pretrain the model [Honda
+et al., 2019]. In this work, we propose using synthetic data for the molecular property of interest for pretraining.
+Subsequently, we use experimental data for the ﬁne-tuning of the model. The deﬁnition of the training and validation
+sets for pretraining and ﬁne-tuning is shown in Figure 2 and explained in the following section.
+2.2.1
+Synthetic data for pretraining:
+For the pretraining of our model, we generate a large amount of synthetic data using the established thermodynamic
+model COSMO-RS [Klamt, 1995]. The advantage of COSMO-based models is that they can predict activity coefﬁcients
+for arbitrary molecules from the molecular structure and are not limited to speciﬁc functional groups such as UNIFAC
+5
+A SMILE is all you need
+A PREPRINT
+(Fredenslund et al. [1975]). Thus, training data can be generated from a more diverse set of molecules, increasing
+the machine learning model’s ability to extrapolate. Furthermore, an extensive database and infrastructure to sample
+COSMO-RS are available from our previous work [Scheffczyk et al., 2016].
+To generate the synthetic data, we use the COSMObase2020 database. This database contains around 10 000 molecules
+resulting in more than 100 million possible binary combinations for solutes and solvents. Calculating activity coefﬁcients
+for all combinations is computationally intractable. Thus, for each of the 10 000 solutes, 500 random solvents are
+sampled at a temperature of T = 298.15 K, resulting in around 5 million solvent/solute combinations. Furthermore,
+100 of the 500 random solvents per solute are sampled at ﬁve random temperatures between 273.15 K and 598.15 K to
+provide temperature-dependent data. In total, around 10 million data points are sampled for pretraining, referred to as
+the COSMO dataset. We use the TZVDP-FINE parametrization and a maximum of 3 conformers for calculating the
+limiting activity coefﬁcient of each data point.
+To validate the performance of our machine learning model during the pretraining, the COSMO dataset is split into
+three validation sets. For this purpose, 5 % of the solvents and solutes are initially removed from the training set (see
+Figure 2). Crucially, preliminary tests showed that water cannot be entirely removed from the training set to ensure an
+accurate prediction for this notable molecule. Removing solvents and solutes from the training set enables the creation
+of two validation sets: ﬁrst, a validation set containing the cross-section of the excluded solvent and solutes, where
+the training data contains neither the solvent nor the solute. This validation set tests the extrapolation accuracy of the
+model for entirely unknown solute/solvent combinations and is referred to as Valext. Second, a validation set is created
+where either solvent or solute is contained in the training set, but not both. This validation set tests the extrapolation
+capability of the model for one unknown molecule while the other one is known. Since the validation set tests the edge
+of known structures, we call it Valedge. Lastly, an additional 5 % of the remaining solute-solvent combinations are
+randomly removed from the training set. If a solute-solvent combination exists for more than one temperature, the
+combination is removed for all temperatures. The resulting third validation set, so-called Valint, tests the interpolation
+capabilities of the model when solvent and solute are known in other combinations but not in precisely this combination.
+This validation set is most comparable to the matrix completion approaches discussed earlier, where both mixture
+components have to be known.
+2.2.2
+Experimental data for ﬁne-tuning:
+In the second step, the model pretrained on the COSMO dataset is ﬁne-tuned to experimental data. To increase the
+reproducibility and accessibility of our model, we solely use publicly available data on limiting activity coefﬁcients.
+Furthermore, using open-source experimental data enables an open benchmark to compare other methods.
+To our knowledge, the largest publicly available dataset on limiting activity coefﬁcients was published recently by
+Brouwer et al. [2021]. This dataset contains 77 173 limiting activity coefﬁcients for various solute/solvent combinations
+and temperatures gathered from the literature. However, from the 77 173 data points, around 52 000 data points use
+ionic liquids or deep eutectic solvents as solvents and are thus excluded. Additionally, we excluded impure substances
+such as sunﬂower oil, solvents with speciﬁc phase orientations (nematic phase, isotropic phase), and uranium complexes.
+For 10 solvents/solutes, no SMILES code could be identiﬁed. Furthermore, some errors in the data by Brouwer et al.
+[2021] were corrected, such as wrong exponents, ln γ∞instead of γ∞, misclassiﬁcation, or data entered in the wrong
+row. A list of all changes and an updated data table can be found in the Supporting Information S2. Overall, 20 870
+suitable data points are identiﬁed and used for the ﬁne-tuning of our model. The resulting data set for the ﬁne-tuning
+contains 349 solvents and 373 solutes in 6416 unique combinations in a temperature range from 250 K to 555.6 K. The
+distribution of the data in ln γ∞and T is shown in the Supporting Information S3. In the following, the dataset is
+referred to as the Brouwer dataset.
+To test the performance of the ﬁne-tuning, again, three validation sets are deﬁned as for the pretraining. Due to the
+much smaller amount of data available from experiments, n-fold cross-validation is used to determine the accuracy
+of the network. Due to the small sample size of a single validation set, this approach would be expected to have a
+high variance (Figure 2). To construct the training and validation sets, all solute/solvent combinations without water
+are split into 1000 subsets, each constructing one Valext,i. The solute/solvent combinations not part of Valext,i are
+assigned either to the edge validation set Valedge,i, or the training set Traini depending on whether one or none of the
+two components are part of the Valext,i. Subsequently, 5 % of the training set Traini is randomly sampled to yield
+the validation set Valint,i used to test the interpolation capability. Finally, all data points are reassessed to determine
+whether they have to be moved to another validation set due to the removal of Valint,i from Traini.
+Solvent-solute combinations with water are excluded from Valext,i for two main reasons: First, the unique nature of
+water makes it challenging to extrapolate water properties when only organic compounds are known within the training
+set. Second, we believe that applications are rare where the limiting activity coefﬁcient of the unknown and unmeasured
+molecule water must be predicted. While water is excluded from the validation set Valext, the validation set Valedge
+6
+A SMILE is all you need
+A PREPRINT
+still contains combinations with water as a known solvent and an unknown organic solute, which we envisage as likely
+use-cases. Results for the validation set Valint and Valedge, including only combinations with water, are available in the
+Supporting Information S6.
+Due to the varying amount of data points for each solute/solvent combination, the size of the training sets varies. The
+sizes range between 15 000-19 270 for Train, 6-69 for Valext, 640-5 000 for Valedge, and 640-1 200 for Valint.
+2.3
+Data augmentation
+We increase the variety of the data provided to the model by generating up to 9 equivalent SMILES for each input
+molecule using the tool of Bjerrum [2017]. During training, one of the resulting 10 SMILES is randomly selected to
+construct the input sequence. During validation, the initially assigned SMILES are used.
+2.4
+Training and hyperparameter tuning
+Identifying good hyperparameters is vital for the performance of machine learning models. We select hyperparameters
+by conducting a manual scan on the COSMO dataset, considering embedding size, number of heads, number of
+attention layers, dropout, batch size, and learning rate. The loss function is ﬁxed to mean-squared-error (MSE) loss.
+The Adam optimizer and cosine annealing with linear warmup is used as a learning rate schedule with a warmup time
+of 5 epochs. For the hyperparameter tuning, training was stopped after 20 epochs, while the ﬁnal pretraining ran for 50
+epochs. The model is trained in mixed precision with the pytorch autocast function to reduce training time. A detailed
+hyperparameter table is available in S4.
+3
+Results: Predicting limiting activity coefﬁcients
+Our machine learning model STP is trained on synthetic and experimental data to predict limiting activity coefﬁcients,
+as described in Section 2.2. In this section, we ﬁrst introduce the results of the pretraining to synthetic data (Section 3.1).
+Then, we discuss the ﬁnal results based on ﬁne-tuning to experimental data (Section 3.2).
+3.1
+Pretraining
+The pretraining of the model on the COSMO dataset takes 34 h on an RTX 2080 Ti. The resulting model predictions of
+the three validation sets are shown in a heatmap in Figure 3. For interpolation (Valint), the pretrained model achieves
+high accuracy with a mean-squared-error of MSE = 0.01 and a mean-absolute-error of MAE = 0.06. For edge
+extrapolation (Valedge), the pretrained model has an MSE of 0.13 and MAE of 0.15, and for extrapolation (Valext), an
+MSE of 0.2 and an MAE of 0.18. The progression of validation and training loss during the pretraining is available in
+the Supporting Information S5.
+Overall, the resulting error of our pretrained model towards the COSMO-RS data is smaller than the error of COSMO-
+RS towards experimental data, as reported by Brouwer and Schuur [2019]. The result highlights the high interpolation
+and extrapolation capabilities of our pretrained model for predicting temperature-dependent limiting activity coefﬁcients.
+(a) Valint
+(b) Valedge
+(c) Valext
+Figure 3: Heatmap of predicted limiting activity coefﬁcients ln γ∞
+pred. vs the validation data ln γ∞
+COSMO for the pretrained
+model in the three validation datasets Valext, Valedge, and Valint. Mean squared error (MSA) and mean average error
+(MAE) are shown in the top left corner of every diagram.
+7
+A SMILE is all you need
+A PREPRINT
+Furthermore, the machine learning model is very fast, predicting around 3000 limiting activity coefﬁcients per second
+on an RTX 2080 Ti without requiring precalculation of sigma surfaces. This high speed should remove property
+prediction as a bottleneck and allow for the exploration of larger spaces when searching for new components.
+3.2
+Fine-Tuning
+The ﬁne-tuning was performed on an RTX 2080 Ti and took 6 min for an individual dataset and 100 h for all 1 000
+datasets. The high speed of ﬁne-tuning one dataset enables ﬁne-tuning with single datasets even without a GPU.
+Fine-tuning on a CPU is expected to be around 200 times slower, thus taking about 20 h to ﬁne-tune one dataset.
+To analyze the performance of the ﬁne-tuned SPT model, the Brouwer dataset is ﬁrst predicted using the pretrained
+model (Figure 4a). The pretrained model achieves an MSE of 0.32 and MAE of 0.39, which is comparable to the
+accuracy of COSMO-RS for the same dataset (MSE 0.36, MAE 0.38).
+The results of the n-fold cross-validation of the ﬁne-tuned SPT are shown in Figure 4. For interpolation (Valint),
+ﬁne-tuned SPT archives an MSE of 0.06 and an MAE of 0.13 (Figure 4b) and for edge extrapolation (Valedge), an MSE
+of 0.08 and an MAE of 0.16 (Figure 4c). Thus, the prediction of the ﬁne-tuned SPT model for interpolation (Valint) and
+edge extrapolation (Valedge) is close to experimental accuracy of between 0.1 and 0.2 [Damay et al., 2021]. However,
+this high accuracy is only achieved if at least one of the mixture components is included in the training set. Still, for
+the extrapolation (Valext), the MSE and MAE are only slightly higher with 0.12 and 0.20, respectively (Figure 4d).
+Notably, even in Valext, SPT is outperforming COSMO-RS (MSESPT 0.12 vs. MSECOSMO-RS 0.36) (see Section 4).
+(a) Pretrained
+(b) Valint
+(c) Valedge
+(d) Valext
+Figure 4: Predicted vs. experimental limiting activity coefﬁcients from the pretrained model (a), and for the ﬁne-tuned
+models, Valint (b),Valedge (c) and Valext (d). For the ﬁne-tuned model, multiple instances of the same molecule can
+occur in different iterations of Valint,i and Valedge,i. For this case the mean of all predictions is shown.
+8
+A SMILE is all you need
+A PREPRINT
+(a) Brouwer dataset
+(b) Medina dataset
+Figure 5: Cumulative distribution of the prediction error for COSMO-RS, UNIFAC, SPText, SPTedge, SPTint,
+Medinaext, Medinaedge, and Medinaint using a common subset of the (a) Brower or (b) Medina dataset. For Valedge
+and Valint the mean of the n-fold cross-validation is used. Data for Damay et al. [2021] is approximated from their
+publication and was evaluated on a different dataset.
+The highest errors are mainly obtained for mixture compounds containing nitrogen and silicon. However, only a few
+data points are contained in the training data with molecules containing silicon. Thus, the prediction might improve with
+more training data. Overall, the ﬁne-tuning improves the already high accuracy of the pretrained model for all validation
+sets, leading to a highly accurate prediction of temperature-dependent limiting activity coefﬁcients. Some artifacts seen
+in Figure 4 might also be the result of faulty measurements, as they come from few publications. More curated training
+and validation data thus might still improve prediction. The results highlight the advantages of combining synthetic and
+experimental data for predicting thermodynamic properties using deep learning.
+4
+Comparison to other models
+To assess the performance of the SPT model discussed in Section3, we benchmark our model against competing
+models from the literature. We ﬁrst compare our model on temperature-dependent data with the predictive physical
+models COSMO-RS, UNIFAC, and the recent machine learning approach based on matrix completion by Damay et al.
+[2021] (Section 4.1). A comparison to COSMO-SAC implementations is available in the Supporting Information S7.
+Subsequently, we compare the inter-and extrapolation capabilities of SPT to the graph neural network by Sanchez
+Medina et al. [2022] on an isothermal dataset by Sanchez Medina et al. [2022] (Section 4.2). Following Damay et al.
+[2021], we use the percentage of data points with |∆ln γ∞| < 0.3 as our primary quality measure for the comparison.
+The percentage of data with |∆ln γ∞| < 0.3 as well as the mean average error (MAE) and mean squared error (MSE)
+are summarized in Table 1.
+4.1
+Comparison on Brouwer dataset
+For the comparison on the Brouwer dataset, we calculate all solute/solvent combinations of the Brouwer dataset available
+in COSMO-RS using the COSMO-RS database 2020 with TZVDP-Fine parametrization and up to 3 conformers. For
+UNIFAC, we used the UNIFACDortmund implementation by Bell and Contributers [2016-2022] with 2019 parameters
+and UNIFAC groups by Müller [2019]. For a consistent comparison, the results show only the 9625 combinations
+available in all compared sets, i.e., COSMO-RS database, UNIFAC, and Valint, Valedge, and Valext (Figure 5a). For
+Valint and Valedge the mean of the n-fold validation is used for each mixture.
+The physical models, UNIFAC and COMSO-RS, have very similar performance, with UNIFAC surpassing COSMO-RS
+slightly with 63.9% of data below an error of 0.3 compared to 60.5% for COSMO-RS on the common dataset. COSMO-
+SAC-based models perform substantially worse than COSMO-RS and UNIFAC (38% for COSMO-SAC2002, and 50%
+for COSMO-SACdsp see S7). SPT achieves higher accuracy than COSMO-RS and UNIFAC, even for extrapolation
+Valext: Valext predicts 85.8% of all data points with |∆ln γ∞| < 0.3 for the compared mixtures. The validation sets
+Valint and Valedge achieve even higher accuracies with |∆ln γ∞| < 0.3 for 94.0% and 92.5 % of all combinations,
+9
+A SMILE is all you need
+A PREPRINT
+respectively. While our ML model relies on the COSMO models to generate initial data for pretraining, the ﬁne-tuning
+step on experimental data allows it to surpass the accuracy of the original COSMO models.
+In a further analysis, we compare SPT to the machine learning-based model from Damay et al. [2021]. The authors
+use matrix completion and train the model to predict limiting activity coefﬁcients from the commercial database DDB.
+The resulting model yields higher accuracy than the reference model UNIFAC for data taken from the DDB. The
+authors report that 76.6% of all data points are within |∆ln γ∞| < 0.3 when using leave-one-out validation. For
+qualitative comparison, the results of Damay et al. (Figure 10 of Damay et al. [2021]) are shown in Figure 6. This
+result is most comparable to our validation set Valint (94.0 % with |∆ln γ∞| < 0.3) since matrix completion only
+allows interpolation when both molecules are contained within the training. However, since the authors used another
+non-public dataset for training (DDB), these results are not directly comparable to our results. Comparing UNIFAC to
+both datasets, Damay et al. report a higher accuracy of UNIFAC on the DDB dataset than we obtain for UNIFAC on the
+Brouwer dataset (71% with |∆ln γ∞| < 0.3 for UNIFAC on DDB vs. 63% for Brouwer). This result can indicate that
+the data in the DDB is of better quality. Thus, SPT’s performance may improve in performance when ﬁne-tuned on the
+DDB data.
+In contrast to matrix completion, SPT allows for extrapolating unseen and partly unseen solute/solvent combinations.
+The (edge) extrapolation capacity of our model indicates a high accuracy even if compared to the interpolation accuracy
+of the matrix completion model proposed by Damay et al. [2021] with 85.8% and 92.5% of all data points with
+|∆ln γ∞| < 0.3, respectively. While evaluation took place on different datasets and thus results are not directly
+comparable, these results still strongly suggest that SPT can achieve higher accuracies in predicting limiting activity
+coefﬁcients than matrix completion, though coming at a higher computational effort.
+4.2
+Comparison on Medina dataset
+Sanchez Medina et al. [2022] proposed a graph neural network for predicting limiting activity coefﬁcients at 298.15 K.
+An extension for temperature dependency is proposed in the outlook but not yet available in the model. The authors
+tested the model using random splits, resulting in sets most comparable to our Valint set. Thus, the extrapolation
+capabilities of the model proposed by Sanchez Medina et al. [2022] are unknown.
+For a consistent comparison of the SPT model and the Medina model, we split the dataset from Sanchez Medina
+et al. [2022] (Medina dataset) into 200 training and validation sets according to our validation strategy discussed in
+Section 2.2.2. Subsequently, we train the Medina model and our model on the resulting 200 training sets (SI S7). Due
+to the lack of a test set to stop training and adjust the learning rate, we use the performance on Valext to set the learning
+rate and select the epoch with the lowest mean validation MSE out of the 200 training epochs across the 200 datasets
+for each validation set (Valext = 117, Valedge = 135, Valint = 163). For SPT, we use the performance at the ﬁnal epoch
+(50) as previously. As in Section 4.1, for Valint and Valedge, the mean of the n-fold validation is calculated and used for
+each unique mixture. For the Medina model training failed on the sets 87, 115, 149 and 182 for unknown reasons, these
+sets are excluded.
+Table 1: Mean average error (MAE), mean square error (MSE), and the percentage of data with |∆ln γ∞| < 0.3 of the
+assessed models COSMO-RS, UNIFAC, Damay et al. [2021], Sanchez Medina et al. [2022], and SPT on the common
+Brouwer and Medina datasets. For performance on all data points see SI9. Generally all models perform slightly worse
+when considering all datapoints with UNIFAC performing signiﬁcantly worse. The model of Damay et al. [2021] does
+not include MAE and MSE as they are not disclosed in the original publication, and the model is not available for
+reproduction.
+Dataset
+Brouwer
+Medina
+Error
+MAE
+MSE
+|∆ln γ∞| < 0.3
+MAE
+MSE
+|∆ln γ∞| < 0.3
+COSMO-RS
+0.36
+0.29
+60.6%
+0.31
+0.23
+64.5%
+UNIFAC
+0.35
+0.45
+63.9%
+0.28
+0.33
+74.9%
+Damay et al. (on DDB)
+-
+-
+(76.6%)
+Medinaext
+0.47
+0.52
+51.1%
+Medinaedge
+0.28
+0.20
+67.7%
+Medinaint
+0.19
+0.10
+82.8%
+SPText
+0.17
+0.09
+85.8%
+0.25
+0.17
+74.7%
+SPTedge
+0.13
+0.06
+92.5%
+0.16
+0.07
+86.1%
+SPTint
+0.11
+0.05
+94.0%
+0.13
+0.05
+92.5%
+10
+A SMILE is all you need
+A PREPRINT
+The MSE and MAE of the Medina model on Valint as calculated by us (MSE: 0.10, MAE: 0.19) reproduces the MSE
+and MAE reported by Sanchez Medina et al. [2022] using random splitting (MSE: 0.10, MAE: 0.18) (Table 1). This
+result indicates that random splitting results in a test set that is similar to our Valint set and random splitting is thus not
+suitable to assess the extrapolation capabilities of models.
+Figure 5b shows the prediction error of COSMO-RS, UNIFACDortmund, the Medina model, and the SPT model
+ﬁne-tuned on the Medina dataset. The Medina dataset is reduced from 2810 mixtures to the 2469 mixtures that all
+models can calculate.
+SPT generally outperforms the Medina model on all validation sets. For Valint, 92.5% of the data points are with
+|∆ln γ∞| < 0.3 for SPT compared to 82.8% for the Medina model. For Valedge, 86.1% and 67.7%, and for Valext,
+74.9% and 51.1% of data data points are with |∆ln γ∞| < 0.3 for SPT and the Medina model, respectively. The
+MAE of SPT is about half of the MAE of the Medina model for each validation set. Particularly, the vast difference
+in performance for (edge) extrapolation highlights the effective performance of SPT when predicting new molecules.
+As for the Brouwer dataset (Section 4.1), SPT outperforms COSMO-RS and UNIFAC on the Medina dataset even
+for extrapolation. Similarly, the Medina model outperforms COSMO-RS and UNIFAC for interpolation tasks, but
+performs similar to COSMO-RS and worse than UNIFAC on edge extrapolation and is surpassed for extrapolation
+by both COSMO-RS and UNIFAC. Please note that it is very likely that UNIFAC parameters were ﬁtted to mixtures
+contained in the Medina dataset, likely improving the UNIFAC performance for this dataset.
+The results highlight the advantage of our pretraining on synthetic data to exploit scarce experimental data and extend
+the extrapolative abilities of our model. The obtained data-driven model shows a good understanding of molecular
+properties. Overall, SPT performs slightly worse on the Medina dataset than on the Brouwer dataset, likely due to the
+smaller total amount of training data (2 810 vs. 20 870). Therefore, we analyze the data scaling of our SPT model in
+more detail in Section 5.
+Additionally to the increased accuracy, our SPT model requires 45 s to ﬁne-tune for 50 epochs on the Medina dataset,
+while the Medina model requires around 4 min for 50 epochs on an RTX 2080 Ti, even though the Medina model has
+much fewer parameters (21 000 vs. 6.5 million). The shorter training time can be vital if no GPU is available. However,
+the training time of the Medina model would likely be improved with the use of mixed-precision training, and SPT
+requires lengthy pretraining before ﬁne-tuning.
+5
+Data scaling of the model
+In Section 3, the SPT model was trained using on average 17 370 data points from the Brouwer dataset. Machine
+learning models are well known for increasing their performance with larger amounts of training data. Conversely, for
+many thermodynamic properties, less experimental data is available than for limiting activity coefﬁcients. Thus, this
+section gives insight into SPT’s data scaling to estimate model improvements with larger datasets and the expected
+model performance when less experimental data is available for ﬁne-tuning.
+To determine the scaling of the ﬁne-tuning of the SPT model, we create 200 training datasets, each containing ntrain
+random unique solute/solvent combinations from the Brouwer dataset for ntrain between 2 and 5000 solute/solvent
+combinations excluding water. The remaining solute/solvent combinations in the Brouwer dataset are then sorted
+into the validation sets Valext, Valedge, and Valint. For large numbers ntrain, only a few solute/solvent combinations
+remain in Valext, and Valedge, since common molecules are likely to be included in the training dataset and thus
+necessarily excluded from the validation sets Valext, and Valedge. For example, for 5000 training mixtures, only 17
+unique solute/solvent combinations remain in the validation set Valext,5000 across all 200 training datasets. Moreover,
+many of the 200 training datasets do not have a single solute/solvent combination in the validation set Valext. This
+small number of solute/solvent combinations for validation set Valext leads to high variance. Thus, we only consider
+validation sets Valext and Valedge where more than 17 500 of the 18 348 solute/solvent combinations are still present.
+The cutoff point is ntrain = 80 for Valext and ntrain = 500 for Valedge. For Valint the reverse is the case. Here, small
+ntrain lead to unreliable results and thus, no ntrain below 50 is considered.
+The MAE of Valext and Valedge decreases linearly with the size of the training dataset in the log-log space (Figure 6).
+The MAE of Valint decreases with a steeper slope, indicating that interpolation might be easier to learn. Furthermore,
+there is some indication the slope is increasing for even larger training sets. For the investigated training sizes, no
+saturation is visible in any validation set, indicating that the accuracy of the machine learning model still improves
+for increasing amounts of experimental data for ﬁne-tuning. Following this prediction, between 10 000 and 20 000
+solute/solvent combinations would be needed for training to reach an average MAE of lower than 0.15 for Valext ,
+which is within experimental accuracy. The amount of required data would thus be smaller than the 31 000 unique
+11
+A SMILE is all you need
+A PREPRINT
+Figure 6: Scaling behavior of SPT’s average MAE for the data sets Valext, Valedge and Valint as function of available
+experimental data for ﬁne-tuning. The solid line indicates the performance of the pretrained model without ﬁne-tuning
+solute/solvent combinations available in the commercial database DDB, indicating that high-quality prediction of
+limiting activity coefﬁcients is in reach.
+Even small amounts of experimental data used for ﬁne-tuning lead to substantial improvements in the validation set
+Valedge. SPT should thus require only a few experimental data points for ﬁne-tuning for accurate predictions around
+speciﬁc data points. The high performance of SPT, even for limited experimental data available, originates from the
+pretraining to synthetic data, which enables learning the underlying grammar of the molecular representation and
+the physics provided by the predictive thermodynamic model used to generate the synthetic data. The capability of
+our model to accurately predict similar mixtures with only a few experimental data points could be used to guide
+experiments by measuring and predicting in tandem, narrowing down a target region.
+6
+Conclusions
+One of the main roadblocks to the widespread application of deep learning in chemical engineering is the availability of
+training data. Particularly, for predicting thermodynamic mixture properties, often only a limited amount of experimental
+data is available. This work tackles the challenge of scarce data availability for thermodynamic property prediction
+based on deep learning by combining synthetic data with experimental data. For this purpose, we introduce the
+SPT model, which we pretrain to synthetic data generated using COSMO-RS and subsequently ﬁne-tune the model
+using experimental data. Thereby, we achieve a highly accurate prediction of temperature-dependent limiting activity
+coefﬁcients solely from SMILES codes.
+The SPT machine learning model surpasses the accuracy of conventional predictive thermodynamic models such
+as COSMO-SAC, COSMO-RS, and UNIFAC and recently proposed machine learning approaches based on matrix
+completion and graph neural networks.
+Combining synthetic data with scarce experimental data opens new possibilities for the training of deep learning models
+for thermodynamic property prediction. Even small amounts of experimental data points already lead to signiﬁcant
+improvements in the prediction quality of SPT. Furthermore, the main computational effort is in the pretraining of the
+model to synthetic data, while the ﬁne-tuning is computationally efﬁcient.
+The efﬁcient ﬁne-tuning opens up possibilities to combine deep learning with automated experiments, where a model is
+continuously reﬁned with experimental data while providing predictions of new promising candidates to measure. Such
+workﬂows could generate machine learning models that are highly accurate in speciﬁc domains.
+7
+Available data
+• https://github.com/Bene94/SMILES2PropertiesTransformer
+• Datasets and trained models www.polybox.ethz.ch/
+12
+A SMILE is all you need
+A PREPRINT
+References
+J.
+Alammar.
+The
+Illustrated
+Transformer,
+2018.
+URL
+https://jalammar.github.io/
+illustrated-transformer/.
+A. S. Alshehri and F. You. Machine learning for multiscale modeling in computational molecular design. Current
+Opinion in Chemical Engineering, 36:100752, 2022. ISSN 22113398. doi:10.1016/j.coche.2021.100752.
+A. S. Alshehri, A. K. Tula, F. You, and R. Gani. Next generation pure component property estimation models: With and
+without machine learning techniques. AIChE Journal, 2021. ISSN 0001-1541. doi:10.1002/aic.17469.
+C. Bell and Contributers. Thermo: Chemical properties component of Chemical Engineering Design Library (ChEDL),
+2016-2022. URL https://github.com/CalebBell/thermo.
+E. J. Bjerrum. SMILES Enumeration as Data Augmentation for Neural Network Modeling of Molecules, 2017. URL
+https://arxiv.org/pdf/1703.07076.
+T. Brouwer and B. Schuur.
+Model Performances Evaluated for Inﬁnite Dilution Activity Coefﬁcients Predic-
+tion at 298.15 K. Industrial & Engineering Chemistry Research, 58(20):8903–8914, 2019. ISSN 0888-5885.
+doi:10.1021/acs.iecr.9b00727.
+T. Brouwer, S. R. Kersten, G. Bargeman, and B. Schuur. trends in solvent impact on inﬁnite dilution activity coefﬁcients
+of solutes reviewed and visualized using an algorithm to support selection of solvents for greener ﬂuid separations.
+Separation and Puriﬁcation Technology, 272:118727, 2021. ISSN 13835866. doi:10.1016/j.seppur.2021.118727.
+T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell,
+S. Agarwal, A. Herbert-Voss, G. Krueger, T. Henighan, R. Child, A. Ramesh, D. M. Ziegler, J. Wu, C. Winter,
+C. Hesse, M. Chen, E. Sigler, M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner, S. McCandlish, A. Radford,
+I. Sutskever, and D. Amodei. Language Models are Few-Shot Learners, 2020. URL http://arxiv.org/pdf/
+2005.14165v4.
+CAS, 2022. URL https://commonchemistry.cas.org/.
+G. Chen, Z. Song, and Z. Qi. Transformer-convolutional neural network for surface charge density proﬁle prediction:
+Enabling high-throughput solvent screening with COSMO-SAC. Chemical Engineering Science, 246:117002, 2021a.
+ISSN 00092509. doi:10.1016/j.ces.2021.117002.
+G. Chen, Z. Song, Z. Qi, and K. Sundmacher. Neural recommender system for the activity coefﬁcient prediction
+and UNIFAC model extension of ionic liquid–solute systems. AIChE Journal, 67(4), 2021b. ISSN 0001-1541.
+doi:10.1002/aic.17171.
+J. Damay, F. Jirasek, M. Kloft, M. Bortz, and H. Hasse. Predicting Activity Coefﬁcients at Inﬁnite Dilution for Varying
+Temperatures by Matrix Completion. Industrial & Engineering Chemistry Research, 60(40):14564–14578, 2021.
+ISSN 0888-5885. doi:10.1021/acs.iecr.1c02039.
+M. R. Dobbelaere, P. P. Plehiers, R. van de Vijver, C. V. Stevens, and K. M. van Geem. Machine Learning in Chemical
+Engineering: Strengths, Weaknesses, Opportunities, and Threats. Engineering, 7(9):1201–1211, 2021. ISSN
+20958099. doi:10.1016/j.eng.2021.03.019.
+Dortmund Datenbank, 2022. URL http://www.ddbst.com/.
+A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer,
+G. Heigold, S. Gelly, J. Uszkoreit, and N. Houlsby. An Image is Worth 16x16 Words: Transformers for Image
+Recognition at Scale, 2020. URL http://arxiv.org/pdf/2010.11929v2.
+A. Fredenslund, R. L. Jones, and J. M. Prausnitz. Group-contribution estimation of activity coefﬁcients in nonideal
+liquid mixtures. AIChE Journal, 21(6):1086–1099, 1975. ISSN 0001-1541. doi:10.1002/aic.690210607.
+M. Haghighatlari and J. Hachmann. Advances of machine learning in molecular modeling and simulation. Current
+Opinion in Chemical Engineering, 23:51–57, 2019. ISSN 22113398. doi:10.1016/j.coche.2019.02.009.
+S. Honda, S. Shi, and H. R. Ueda. SMILES Transformer: Pre-trained Molecular Fingerprint for Low Data Drug
+Discovery, 2019. URL http://arxiv.org/pdf/1911.04738v1.
+F. Jirasek, R. A. S. Alves, J. Damay, R. A. Vandermeulen, R. Bamler, M. Bortz, S. Mandt, M. Kloft, and H. Hasse.
+Machine Learning in Thermodynamics: Prediction of Activity Coefﬁcients by Matrix Completion. The journal of
+physical chemistry letters, 11(3):981–985, 2020. doi:10.1021/acs.jpclett.9b03657.
+A. Karpathy. minGPT, 2021. URL https://github.com/karpathy/minGPT/blob/master/LICENSE.
+H. Kim, J. Na, and W. B. Lee. Generative Chemical Transformer: Neural Machine Learning of Molecular Geometric
+Structures from Chemical Language via Attention. Journal of chemical information and modeling, 61(12):5804–5814,
+2021. doi:10.1021/acs.jcim.1c01289.
+13
+A SMILE is all you need
+A PREPRINT
+A. Klamt.
+Conductor-like Screening Model for Real Solvents: A New Approach to the Quantitative Calcula-
+tion of Solvation Phenomena. The Journal of Physical Chemistry, 99(7):2224–2235, 1995. ISSN 0022-3654.
+doi:10.1021/j100007a062.
+T. Laﬁtte, A. Apostolakou, C. Avendaño, A. Galindo, C. S. Adjiman, E. A. Müller, and G. Jackson. Accurate statistical
+associating ﬂuid theory for chain molecules formed from Mie segments. The Journal of chemical physics, 139(15):
+154504, 2013. doi:10.1063/1.4819786.
+S. Lim and Y. O. Lee. Predicting Chemical Properties using Self-Attention Multi-task Learning based on SMILES
+Representation. In 2020 25th International Conference on Pattern Recognition (ICPR), pages 3146–3153. IEEE,
+2021. ISBN 978-1-7281-8808-9. doi:10.1109/ICPR48806.2021.9412555.
+S.-T. Lin and S. I. Sandler. A Priori Phase Equilibrium Prediction from a Segment Contribution Solvation Model.
+Industrial & Engineering Chemistry Research, 41(5):899–913, 2002. ISSN 0888-5885. doi:10.1021/ie001047w.
+S. Müller. Flexible heuristic algorithm for automatic molecule fragmentation: application to the UNIFAC group
+contribution model. Journal of cheminformatics, 11(1):57, 2019. ISSN 1758-2946. doi:10.1186/s13321-019-0382-3.
+S. Nebig and J. Gmehling. Measurements of different thermodynamic properties of systems containing ionic liquids
+and correlation of these properties using modiﬁed UNIFAC (Dortmund). Fluid Phase Equilibria, 294(1-2):206–212,
+2010. ISSN 03783812. doi:10.1016/j.ﬂuid.2010.02.010.
+N. Parmar, A. Vaswani, J. Uszkoreit, Ł. Kaiser, N. Shazeer, A. Ku, and D. Tran.
+Image Transformer.
+https://arxiv.org/pdf/1802.05751, 2018. URL https://arxiv.org/pdf/1802.05751.
+Pytorch, 2021. URL https://pytorch.org/docs/stable/generated/torch.nn.Transformer.html.
+Y. Rong, Y. Bian, T. Xu, W. Xie, Y. Wei, W. Huang, and J. Huang. Self-Supervised Graph Transformer on Large-Scale
+Molecular Data. http://arxiv.org/pdf/2007.02835v2, 2020. URL http://arxiv.org/pdf/2007.02835v2.
+E. I. Sanchez Medina, S. Linke, M. Stoll, and K. Sundmacher. Graph neural networks for the prediction of inﬁnite
+dilution activity coefﬁcients. Digital Discovery, 2022. doi:10.1039/D1DD00037C.
+J. Scheffczyk, C. Redepenning, C. M. Jens, B. Winter, K. Leonhard, W. Marquardt, and A. Bardow. Massive, automated
+solvent screening for minimum energy demand in hybrid extraction–distillation using COSMO-RS. Chemical
+Engineering Research and Design, 115:433–442, 2016. ISSN 02638762. doi:10.1016/j.cherd.2016.09.029.
+A. M. Schweidtmann, E. Esche, A. Fischer, M. Kloft, J.-U. Repke, S. Sager, and A. Mitsos. Machine Learning in
+Chemical Engineering: A Perspective. Chemie Ingenieur Technik, 93(12):2029–2039, 2021. ISSN 0009-286X.
+doi:10.1002/cite.202100083.
+M. A. Skinnider, F. Wang, D. Pasin, R. Greiner, L. J. Foster, P. W. Dalsgaard, and D. S. Wishart. A deep generative
+model enables automated structure elucidation of novel psychoactive substances. Nature Machine Intelligence, 3(11):
+973–984, 2021. doi:10.1038/s42256-021-00407-x.
+I. V. Tetko, P. Karpov, R. van Deursen, and G. Godin. State-of-the-art augmented NLP transformer models for direct
+and single-step retrosynthesis. Nature communications, 11(1):5575, 2020. doi:10.1038/s41467-020-19266-y.
+A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, b. u. Kaiser, and I. Polosukhin. Attention
+is All you Need. In I. Guyon, U. V. Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett,
+editors, Advances in Neural Information Processing Systems, volume 30. Curran Associates, Inc, 2017. URL https:
+//proceedings.neurips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf.
+S. Wang, Y. Guo, Y. Wang, H. Sun, and J. Huang. SMILES-BERT. In X. Shi, M. Buck, J. Ma, and P. Veltri, editors,
+Proceedings of the 10th ACM International Conference on Bioinformatics, Computational Biology and Health Infor-
+matics, pages 429–436, New York, NY, USA, 2019. ACM. ISBN 9781450366663. doi:10.1145/3307339.3342186.
+D. Weininger. SMILES, a chemical language and information system. 1. Introduction to methodology and encoding rules.
+Journal of chemical information and modeling, 28(1):31–36, 1988. ISSN 1549-9596. doi:10.1021/ci00057a005.
+R. Xiong, Y. Yang, Di He, K. Zheng, S. Zheng, C. Xing, H. Zhang, Y. Lan, L. Wang, and T.-Y. Liu. On Layer
+Normalization in the Transformer Architecture. http://arxiv.org/pdf/2002.04745v2, 2020. URL http://arxiv.
+org/pdf/2002.04745v2.
+14

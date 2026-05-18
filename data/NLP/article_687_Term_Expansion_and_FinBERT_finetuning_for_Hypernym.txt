@@ -1,0 +1,686 @@
+Title: Term Expansion and FinBERT fine-tuning for Hypernym and Synonym Ranking of Financial Terms
+Source URL: http://arxiv.org/abs/2107.13764v1
+--------------------------------------------------
+
+Term Expansion and FinBERT ﬁne-tuning for Hypernym and Synonym Ranking
+of Financial Terms
+Ankush Chopra∗† , Sohom Ghosh†
+Fidelity Investments, AI CoE, Bengaluru, India
+{ankush01729, sohom1ghosh}@gmail.com
+Abstract
+Hypernym and synonym matching are one of the
+mainstream Natural Language Processing (NLP)
+tasks. In this paper, we present systems that at-
+tempt to solve this problem.
+We designed these
+systems to participate in the FinSim-3, a shared
+task of FinNLP workshop at IJCAI-2021.
+The
+shared task is focused on solving this problem for
+the ﬁnancial domain. We experimented with var-
+ious transformer based pre-trained embeddings by
+ﬁne-tuning these for either classiﬁcation or phrase
+similarity tasks. We also augmented the provided
+dataset with abbreviations derived from prospectus
+provided by the organizers and deﬁnitions of the
+ﬁnancial terms from DBpedia [Auer et al., 2007],
+Investopedia, and the Financial Industry Business
+Ontology (FIBO). Our best performing system uses
+both FinBERT [Araci, 2019] and data augmenta-
+tion from the afore-mentioned sources.
+We ob-
+served that term expansion using data augmentation
+in conjunction with semantic similarity is beneﬁcial
+for this task and could be useful for the other tasks
+that deal with short phrases. Our best performing
+model (Accuracy: 0.917, Rank: 1.156) was devel-
+oped by ﬁne-tuning SentenceBERT [Reimers et al.,
+2019] (with FinBERT at the backend) over an ex-
+tended labelled set created using the hierarchy of
+labels present in FIBO.
+1
+Introduction
+Ontologies are rich sources of information that provide deep
+information about the underlying concepts and entities. This
+information is described for a speciﬁc domain. It contains the
+clearly deﬁned relationships, and it is organized in a deﬁned
+structure mostly as a hierarchy. These properties make on-
+tologies a great source for getting a deeper understanding of
+the relationship and properties of resources of the domain in
+consideration.
+Public knowledge graphs and ontologies like DBpedia and
+Yago have been shown to work on various applications like
+∗Contact Author
+†Equal Contribution
+the ones described in [Kobilarov et al., 2009] and [Hahm et
+al., 2014]. This has motivated and paved ways for the creation
+of domain focused ontologies like FIBO1.
+Effective techniques that enable identifying lexical similar-
+ity between the terms or concepts increase the effectiveness
+of the ontologies. These methods not only help in building
+new ontologies faster or augment the existing ones, but also
+it helps in the effective querying and searching of concepts.
+FinSim [Maarouf et al., 2020; Mansar et al., 2021] compe-
+titions are being held to promote the development of effective
+similarity measures. In the third edition of the competition
+FinSim-32 (being held in conjunction with the 30th Interna-
+tional Joint Conference on Artiﬁcial Intelligence (IJCAI-21)),
+the participants are challenged to develop methods and sys-
+tems to rank hypernym and synonyms to ﬁnancial terms by
+mapping them to one of the 17 high-level ﬁnancial concepts
+present in FIBO.
+In this paper, we present the systems developed by our
+team Lipi for hypernym and synonym ranking. We experi-
+mented with basic featurization methods like TF-IDF and ad-
+vanced methods like pre-trained embedding models. Our top
+3 systems use pre-trained FinBERT [Araci, 2019] embedding
+model that was ﬁne-tuned on the data speciﬁc to ﬁnancial do-
+main . We also augmented the training data by utilizing the
+knowledge from DBpedia, Investopedia, FIBO and text cor-
+pus of prospectus shared with us. We describe the works re-
+lated to our solution in the next section. Section 3 contains
+the formal problem statement, followed by data description
+in section 4. We describe our top three systems in section 5.
+Section 6 contains the details of the experimentation that we
+performed and the results obtained from some of them. We
+draw our conclusions in section 7 while giving a glimpse of
+things that we would like to try in the future.
+2
+Related Works
+Hypernym-hyponym extraction and learning text similarity
+using semantic representations have been very challenging
+areas of research for the NLP community. SemEval-2018
+Task 9 [Camacho-Collados et al., 2018] was such an instance.
+1https://spec.edmcouncil.org/ﬁbo/
+2https://sites.google.com/nlg.csie.ntu.edu.tw/ﬁnnlp2021/shared-
+task-ﬁnsim (accessed on 8th July 2021)
+arXiv:2107.13764v1  [cs.CL]  29 Jul 2021
+Team CRIM [Bernier-Colborne and Barri`ere, 2018] per-
+formed the best in this shared task. They combined a super-
+vised word embedding based approach with an unsupervised
+pattern discovery based approach. The FinSim shared tasks
+[Maarouf et al., 2020; Mansar et al., 2021] deal with adopt-
+ing these challenges speciﬁc to the Financial Domain. Team
+IIT-K [Keswani et al., 2020] won FinSim-1 using a combi-
+nation of context-free static embedding Word2Vec [Mikolov
+et al., 2013] and contextualized dynamic embedding BERT
+[Devlin et al., 2019]. Anand et al. [Anand et al., 2020] from
+the team FINSIM20 explored the use of cosine similarity be-
+tween terms and labels encoded using Universal Sentence En-
+coder [Cer et al., 2018]. They also tried to extract hypernyms
+automatically using graph based approaches. Team PolyU-
+CBS [Chersoni and Huang, 2021] won FinSim-2 shared
+task using Logistic Regression trained over word embedding
+and probabilities derived from BERT [Devlin et al., 2019]
+model. They also experimented with GPT-2 [Radford et al.,
+2019]. Team L3i-LBPAM [Nguyen et al., 2021] compris-
+ing Nguyen et al. performed better than the baseline by us-
+ing Sentence BERT [Reimers et al., 2019] to calculate co-
+sine similarity between terms and hypernyms. [Saini, 2020;
+Pei and Zhang, 2021] and [Jurgens and Pilehvar, 2016] dis-
+cussed various techniques to enrich the data which was avail-
+able for training. In this edition of FinSim, the number of
+training samples and labels (ﬁnancial concepts) were more
+than the previous two editions.
+3
+Problem Statement
+Given a set F consisting of n tuples of ﬁnancial terms
+and
+their
+hypernyms/top-level
+concepts/labels
+i.e.
+F
+=
+{(t1, h1), (t2, h2), ...(tn, hn)} where hi represents
+the hypernym corresponding to the ith term ti and hiϵ set of
+labels mentioned in Table 1. For every unseen ﬁnancial term,
+our task is to generate a ranked list ˆyi consisting of these 17
+hypernyms in order of decreasing semantic similarity.
+Evaluation Metrics The expected output is a raked list of
+predicted labels for every scored instance. The proposed sys-
+tems are evaluated based on Accuracy and Mean Rank met-
+rices as per the shared task rules. Evaluation script was pro-
+vided by organizers, where accuracy and mean rank were de-
+ﬁned as:
+Accuracy = 1
+n
+Pn
+i=1 I(yi = ˆyi[1])
+MeanRank = 1
+n
+Pn
+i=1( ˆyi.index(yi))
+where ˆyi is the ranked list (with index starting from 1) of pre-
+dicted labels corresponding to the expected label yi. I is an
+identity matrix.
+4
+Data
+4.1
+Data Description
+The training dataset shared for this task has a total of
+1050 single and multi-word terms tagged to 17 different
+classes/labels out of which 1040 term-label pairs are unique.
+More than 91% of the terms have 6 words or less and the
+longest term has 22 words. There were 10 duplicate entries,
+and 3 terms were assigned 2 different labels. Along with this,
+Label
+Count
+Equity Index
+280
+Regulatory Agency
+205
+Credit Index
+125
+Central Securities Depository
+107
+Debt pricing and yields
+58
+Bonds
+55
+Swap
+36
+Stock Corporation
+25
+Option
+24
+Funds
+22
+Future
+19
+Credit Events
+18
+MMIs
+17
+Stocks
+17
+Parametric schedules
+15
+Forward
+9
+Securities restrictions
+8
+Total
+1040
+Table 1: Label distribution in the training set
+a corpus of prospectuses in English that had 211 documents
+was provided. Some of the terms mentioned in the training
+data were present in the corpus. Table 1 shows the distribu-
+tion of these labels in the training set.
+4.2
+Data Augmentation
+Since the majority of the terms had only a few tokens, we
+decided to expand the terms wherever possible using various
+sources.
+This approach had also been adopted by [Saini,
+2020] and [Pei and Zhang, 2021] while participating in
+FinSim-1 and FinSim-2 respectively.
+Acronym expansion: As mentioned by Keswani et al.
+[Keswani et al., 2020], the presence of acronyms created a
+major issue in maintaining consistency. We used the abbre-
+viation extractor available in spaCy3[Honnibal et al., 2020]
+package on the corpus of the prospectus to extract all the
+acronyms and their expansions. Upon manual inspection of
+a sample output, we identiﬁed that not all the extracted items
+were valid acronyms and their expansions. We cleaned the
+extracted list by dropping the records where:
+• expansion had equal or less length than the acronym.
+• expansion had parenthesis
+• extracted acronym was a valid English word such as
+”fund” or ”Germany”.
+• the expansion had less than or equal to 5 characters.
+We managed to extract 635 acronyms from the prospectus
+corpus after applying the above exclusions.
+We used this
+data to expand the matching terms in the given train set and
+test sets.
+3https://spacy.io/
+Deﬁnitions from DBpedia: We used the DBpedia search
+API4 to extract the description of the terms present in the train
+and test sets. We present such an example in Figure 1. In ad-
+dition to the description, the label was also retained from the
+result payload to identify the right description for the input
+terms. We tried token overlap-based similarity of input terms
+with both matching labels and descriptions. We decided to
+use the label to term match for description matching after go-
+ing through a randomly drawn sample. We cleaned both input
+terms and labels from DBpedia results by converting them to
+lower case, replacing punctuations by space, removing repet-
+itive spaces, and singularizing the text. We calculated the
+token overlap ratios for cleaned term and DBpedia labels us-
+ing these formulas: Ratio1 = length(s1 ∩s2)/length(s1),
+Ratio2 = length(s2)/length(s1) where s1 and s2 represents
+sets of tokenized cleaned terms and tokenized cleaned DBpe-
+dia labels respectively. We empirically decided to use all the
+instances with Ratio1 = 1 and Ratio2 <= 1.25 for match-
+ing a DBpedia label (and hence description) to the input term.
+Deﬁnitions from Investopedia and FIBO: Inspired by
+[Saini, 2020], we obtained deﬁnitions of the terms present
+in Investopedia’s data dictionary5 by crawling it. We down-
+loaded a glossary of ﬁnancial terms from the website of
+FIBO. We cleaned all the terms from the train and test set and
+also the terms present in Investopedia’s data dictionary using
+the steps described in the above DBpedia section. We then as-
+signed the Investopedia or FIBO deﬁnition to the terms from
+the train and test sets where cleaned terms from train and test
+data matched to cleaned Investopedia terms perfectly.
+The test set which was provided to us had 326 terms. We
+augmented the original train and test set with the records
+where we could either ﬁnd deﬁnition or expansion using the
+above sources. The train set size increased to 1836 records
+and the test set size increased to 607 after the data augmen-
+tation. We present an example of data augmentation for the
+term “callable bond” in Table 2. Table 3 states the number
+of instances we used from each of the sources to augment the
+data we had.
+5
+System Description
+We tried to solve this problem as the term classiﬁcation and
+term similarity problems. Two of our 3 submissions are mod-
+elled as the term classiﬁcation problem, whereas the third sys-
+tem is designed to be a phrase/sentence similarity problem be-
+tween terms (or expanded terms from the augmented dataset)
+and the deﬁnitions of 17 class labels that were extracted from
+FIBO / Internet. All the systems rely on semantic similarity
+and use FinBERT model to generate the term or token embed-
+ding representations. We divided the given data into training
+and validation sets having 832 and 208 terms respectively.
+5.1
+System - 1 (S1)
+This is the simplest of our proposed systems, where we did
+not use the augmented dataset and used only the original set
+4https://lookup.dbpedia.org/api/search
+5https://www.investopedia.com/ﬁnancial-term-dictionary-
+4769738
+that was shared by organizers.
+We loaded FinBERT pre-
+trained model and ﬁne-tuned it by trying to classify the repre-
+sentation of [CLS] token into one of the 17 labels mentioned
+previously. Since the original data did not have longer terms,
+we kept the maximum length to 32, and train and validation
+batch sizes of 64. We used Adam optimizer with a learning
+rate of 0.00002. We ran the model for 40 epochs and picked
+the model saved after 18th epoch based on the performance on
+the validation set. Finally, we ranked the predictions based on
+the predicted probability of each class.
+5.2
+System - 2 (S2)
+This system is similar to System-1 with the only difference
+that data being the augmented set and not the original dataset.
+Since the augmented dataset had the descriptions of the terms,
+the inputs were considerably longer. Hence, we increased the
+maximum length to 256 while keeping all the other hyper-
+parameters the same. After, training the model for 40 epochs
+we selected the model saved after the 17th epoch as the best
+model based on validation set performance.
+5.3
+System -3 (S3)
+We explored the FIBO ontology to understand the hierarchy
+[Stepiˇsnik Perdih et al., 2021] of the 17 labels as depicted
+in Figure 2. We used the augmented data described in sec-
+tion 4.2 to create a labelled dataset having similarity scores.
+For every term deﬁnition (T) to label deﬁnition (L) mapping
+which existed in the extended training set, we assigned a sim-
+ilarity score of 1.0 to the (T,L) pair and picked up 10 train-
+ing instances randomly ensuring none of their label deﬁnition
+was same as L. For each of the label deﬁnitions (LL) present
+in this sample, we extracted its root node and ﬁrst child node.
+We did the same for the original label deﬁnition (L). Then, we
+compared these nodes. If the root node and ﬁrst child node of
+L were different from that of LL then we assigned a similar-
+ity score of 0 to the (T, LL) pair. If the root nodes were the
+same, we assigned a similarity score of ’k’ when the ﬁrst child
+nodes differed and a similarity score of ’2k’ when they were
+the same (where 0 < k < 1). We empirically ﬁgured out that
+k=0.4 works the best. As expected, the number of instances
+with a similarity score equal to 0 increased substantially. We
+under-sampled such instances and the new training set had
+30% instances with similarity score 1.0, 12% instances with
+similarity score ’k’, 28% instances with similarity score ’2k’
+and 30% instances with similarity score 0. After that, we ﬁne-
+tuned a FinBERT [Araci, 2019] model using Sentence BERT
+[Reimers et al., 2019] framework with this newly generated
+labelled data for 25 epochs with a batch size of 20. Our ob-
+jective was to minimize the multiple negatives ranking loss
+and online contrastive loss. We used a margin of 0.5 and co-
+sine distance as a distance metric while training this model.
+Finally, we converted all of the 17 labels’ deﬁnitions and term
+deﬁnitions from the validation set to vectors using this ﬁne-
+tuned model. For every such term deﬁnition, we performed
+a semantic search over the label vectors and ranked them in
+decreasing order of cosine similarity.
+System 2 and 3 take advantage of term expansion during both
+model training and scoring phases, which causes certain ob-
+servations to appear more than once (reference: Table 3). We
+Figure 1: Sample output from DBpedia search API
+Expanded Term/Term Deﬁnition
+Label
+Source
+Callable bond
+Bonds
+original and
+acronym expansion
+bond that includes a stipulation allowing the issuer
+the right to repurchase and retire the bond at the call price after the call protection period
+Bonds
+FIBO
+A callable bond (also called redeemable bond) is a type of bond (debt security) that allows
+the issuer of the bond to retain the privilege of redeeming the bond at some point before
+the bond reaches its date of maturity.
+Bonds
+DBpedia
+Table 2: Result of Data Augmentation of the term ”Callable bond”
+Data Source
+Count
+Original modelling data
+1040
+DBpedia
+257
+FIBO
+236
+Investopedia
+85
+Acronym expansion
+218
+Table 3: Details of various data sources
+derive the ﬁnal prediction by averaging the output probabili-
+ties for all the 17 classes for all the occurrences of the term.
+6
+Experimentation and Results
+We had 1040 observations after removing the duplicates. We
+did an 80:20 split to create a training and validation set from
+this. We augmented the given modelling set by incorporating
+deﬁnitions from DBpedia, FIBO and Investopedia. We used
+the list of acronyms extracted from the prospectus corpus to
+create a copy with acronym expansion. This helped us to in-
+crease the original data to 1836 records (mentioned in Table
+1). It should be noted that we could not ﬁnd the expansions
+for all the terms given in the modelling set. Train and valida-
+tion set sizes for the original modelling set and expanded data
+were (832 & 208) and (1470 & 366) respectively.
+We established a baseline by running the scripts provided
+by the organizers. Then, we considered original modelling
+data and ﬁne-tuned base BERT-cased model [Devlin et al.,
+2019] to predict the class label by taking the representa-
+tion of [CLS] token while passing it through few layers of
+a feed-forward network. This performed better than base-
+line. We then tried the same BERT-base model on the ex-
+panded dataset, which gave us further performance improve-
+ment. Since the only major change between these runs was
+the data, the improvement can be attributed to the expanded
+data.
+We experimented with a few of the other pre-trained mod-
+els that are available on the Huggingface model repository
+[Wolf et al., 2020]. We observed clear improvement when
+we used the FinBERT model which was trained on data spe-
+ciﬁc to the ﬁnancial domain. The model performance succes-
+sively increased when we used a combination of data expan-
+sion with FinBERT. Furthermore, we tried to ﬁne-tune Fin-
+BERT using Sentence Transformers [Reimers et al., 2019] to
+capture semantic textual similarity. For this, we used several
+combinations of term and term deﬁnitions with label and la-
+bel deﬁnitions.
+All the hyperparameters for the ﬁnal 3 models have been
+already mentioned in the system description. After rigorous
+experimentation, these hyperparameters were selected empir-
+ically based on validation set performance. The results are
+presented in Table 4. Since the number of submissions was
+restricted to 3 for each team, we do not have the performance
+numbers of the BERT models in the test set. Analysing the
+results we see that SentenceBERT trained with FinBERT at
+the backed as mentioned in section-5.3 performed the best.
+7
+Conclusion and Future Works
+In this work, we attempted to solve the hypernym and syn-
+onym discovery hosted at FinSim-3. This challenge aimed
+to enable the better use of ontologies like FIBO using hy-
+pernyms and synonyms, and we used these ontologies them-
+selves to develop our systems which perform signiﬁcantly
+better than the provided baseline systems. This proves the
+present use of these ontologies. The presented solution is
+recursive in a sense as it uses knowledge from ontologies
+to further increase the effectiveness and use of the same.
+Figure 2: Label Hierarchy from FIBO. Bold (leaf nodes) denotes the labels.
+Validation set
+Test set
+Model
+Data
+Rank
+Acc.
+Rank
+Acc.
+Base-1
+Org.
+2.158
+0.498
+1.941
+0.564
+Base-2
+Org.
+1.201
+0.876
+1.75
+0.669
+BERT
+Org.
+1.177
+0.899
+-
+-
+BERT
+Ext.
+1.153
+0.928
+-
+-
+FinBERT(S1)
+Org.
+1.117
+0.928
+1.257
+0.886
+FinBERT(S2)
+Ext.
+1.110
+0.942
+1.220
+0.895
+SBERT(S3)
+Ext.
+1.086
+0.947
+1.156
+0.917
+Table 4: Results on validation and test set. Org. represents original
+and Ext. represents extended. Base refers to baseline.
+Apart from data augmentation, our solution relies upon se-
+mantic similarity learnt from pre-trained embedding models
+that were learnt on the relevant domain. We observed the
+clear beneﬁts of domain speciﬁc pretraining during the ex-
+perimentation.
+In future, we would like to explore Knowledge Graphs (as
+described in [Portisch et al., 2021]) to further improve the
+improve performance of the models. We also want to ex-
+plore other variants of FinBERT [Araci, 2019] and ﬁne-tune
+them using the Masked Language Modeling technique (as
+mentioned by the winner of FinSim-2 [Chersoni and Huang,
+2021]) and Next Sentence Prediction objective. Moreover,
+this research can be extended by extracting sentences present
+in the prospectus (similar to [Goel et al., 2021]) to create
+more positive and negative samples.
+References
+[Anand et al., 2020] Vivek Anand, Yash Agrawal, Aarti Pol,
+and Vasudeva Varma. FINSIM20 at the FinSim task: Mak-
+ing sense of text in ﬁnancial domain. In Proceedings of
+the Second Workshop on Financial Technology and Natu-
+ral Language Processing, pages 104–107, Kyoto, Japan, 5
+January 2020.
+[Araci, 2019] Dogu Araci.
+Finbert:
+Financial sentiment
+analysis with pre-trained language models, 2019.
+[Auer et al., 2007] S¨oren Auer, Christian Bizer, Georgi Ko-
+bilarov, Jens Lehmann, Richard Cyganiak, and Zachary
+Ives. Dbpedia: A nucleus for a web of open data, 2007.
+[Bernier-Colborne and Barri`ere, 2018] Gabriel
+Bernier-
+Colborne and Caroline Barri`ere. CRIM at SemEval-2018
+task 9: A hybrid approach to hypernym discovery. In Pro-
+ceedings of The 12th International Workshop on Semantic
+Evaluation, pages 725–731, New Orleans, Louisiana,
+June 2018. Association for Computational Linguistics.
+[Camacho-Collados et al., 2018] Jose
+Camacho-Collados,
+Claudio Delli Bovi, Luis Espinosa-Anke, Sergio Oramas,
+Tommaso Pasini, Enrico Santus, Vered Shwartz, Roberto
+Navigli, and Horacio Saggion.
+SemEval-2018 task 9:
+Hypernym discovery. In Proceedings of The 12th Interna-
+tional Workshop on Semantic Evaluation, pages 712–724,
+New Orleans, Louisiana, June 2018. Association for
+Computational Linguistics.
+[Cer et al., 2018] Daniel Cer, Yinfei Yang, Sheng yi Kong,
+Nan Hua, Nicole Limtiaco, Rhomni St. John, Noah Con-
+stant, Mario Guajardo-Cespedes, Steve Yuan, Chris Tar,
+Yun-Hsuan Sung, Brian Strope, and Ray Kurzweil. Uni-
+versal sentence encoder, 2018.
+[Chersoni and Huang, 2021] Emmanuele Chersoni and Chu-
+Ren Huang. PolyU-CBS at the FinSim-2 Task: Combin-
+ing Distributional, String-Based and Transformers-Based
+Features for Hypernymy Detection in the Financial Do-
+main, page 316–319. Association for Computing Machin-
+ery, New York, NY, USA, 2021.
+[Devlin et al., 2019] Jacob Devlin, Ming-Wei Chang, Ken-
+ton Lee, and Kristina Toutanova. BERT: Pre-training of
+deep bidirectional transformers for language understand-
+ing. In Proceedings of the 2019 Conference of the North
+American Chapter of the Association for Computational
+Linguistics: Human Language Technologies, Volume 1
+(Long and Short Papers), pages 4171–4186, Minneapo-
+lis, Minnesota, June 2019. Association for Computational
+Linguistics.
+[Goel et al., 2021] Tushar Goel,
+Vipul Chauhan,
+Ishan
+Verma, Tirthankar Dasgupta, and Lipika Dey. TCS WITM
+2021 @FinSim-2: Transformer Based Models for Auto-
+matic Classiﬁcation of Financial Terms, page 311–315.
+Association for Computing Machinery, New York, NY,
+USA, 2021.
+[Hahm et al., 2014] Younggyun
+Hahm,
+Jungyeul
+Park,
+Kyungtae Lim, Youngsik Kim, Dosam Hwang, and
+Key-Sun Choi.
+Named entity corpus construction us-
+ing wikipedia and dbpedia ontology.
+In LREC, pages
+2565–2569, 2014.
+[Honnibal et al., 2020] Matthew Honnibal, Ines Montani,
+Soﬁe Van Landeghem, and Adriane Boyd.
+spaCy:
+Industrial-strength
+Natural
+Language
+Processing
+in
+Python, 2020.
+[Jurgens and Pilehvar, 2016] David Jurgens and Moham-
+mad Taher Pilehvar.
+SemEval-2016 task 14: Semantic
+taxonomy enrichment. In Proceedings of the 10th Interna-
+tional Workshop on Semantic Evaluation (SemEval-2016),
+pages 1092–1102, San Diego, California, June 2016. As-
+sociation for Computational Linguistics.
+[Keswani et al., 2020] Vishal Keswani, Sakshi Singh, and
+Ashutosh Modi. IITK at the FinSim task: Hypernym de-
+tection in ﬁnancial domain via context-free and contextu-
+alized word embeddings. In Proceedings of the Second
+Workshop on Financial Technology and Natural Language
+Processing, pages 87–92, Kyoto, Japan, 5 January 2020.
+[Kobilarov et al., 2009] Georgi Kobilarov, Tom Scott, Yves
+Raimond,
+Silver
+Oliver,
+Chris
+Sizemore,
+Michael
+Smethurst, Christian Bizer, and Robert Lee.
+Media
+meets semantic web – how the bbc uses dbpedia and
+linked data to make connections. In Lora Aroyo, Paolo
+Traverso, Fabio Ciravegna, Philipp Cimiano, Tom Heath,
+Eero Hyv¨onen, Riichiro Mizoguchi, Eyal Oren, Marta
+Sabou, and Elena Simperl, editors, The Semantic Web: Re-
+search and Applications, pages 723–737, Berlin, Heidel-
+berg, 2009. Springer Berlin Heidelberg.
+[Maarouf et al., 2020] Ismail El Maarouf, Youness Mansar,
+Virginie Mouilleron, and Dialekti Valsamou-Stanislawski.
+The FinSim 2020 shared task: Learning semantic repre-
+sentations for the ﬁnancial domain. In Proceedings of the
+Second Workshop on Financial Technology and Natural
+Language Processing, pages 81–86, Kyoto, Japan, 5 Jan-
+uary 2020.
+[Mansar et al., 2021] Youness Mansar, Juyeon Kang, and Is-
+mail El Maarouf. The FinSim-2 2021 Shared Task: Learn-
+ing Semantic Similarities for the Financial Domain, page
+288–292.
+Association for Computing Machinery, New
+York, NY, USA, 2021.
+[Mikolov et al., 2013] Tomas Mikolov, Kai Chen, Greg Cor-
+rado, and Jeffrey Dean. Efﬁcient estimation of word rep-
+resentations in vector space, 2013.
+[Nguyen et al., 2021] Nhu Khoa Nguyen, Emanuela Boros,
+Gael Lejeune, Antoine Doucet, and Thierry Delahaut. L3i
+LBPAM at the FinSim-2 Task: Learning Financial Seman-
+tic Similarities with Siamese Transformers, page 302–306.
+Association for Computing Machinery, New York, NY,
+USA, 2021.
+[Pei and Zhang, 2021] Yulong Pei and Qian Zhang. Goat at
+the ﬁnsim-2 task: Learning word representations of ﬁnan-
+cial data with customized corpus.
+In Companion Pro-
+ceedings of the Web Conference 2021, WWW ’21, page
+307–310, New York, NY, USA, 2021. Association for
+Computing Machinery.
+[Portisch et al., 2021] Jan Portisch, Michael Hladik, and
+Heiko Paulheim. FinMatcher at FinSim-2: Hypernym De-
+tection in the Financial Services Domain Using Knowl-
+edge Graphs, page 293–297. Association for Computing
+Machinery, New York, NY, USA, 2021.
+[Radford et al., 2019] Alec Radford, Jeff Wu, Rewon Child,
+David Luan, Dario Amodei, and Ilya Sutskever. Language
+models are unsupervised multitask learners, 2019.
+[Reimers et al., 2019] Nils Reimers, Iryna Gurevych, Nils
+Reimers, Iryna Gurevych, Nandan Thakur, Nils Reimers,
+Johannes Daxenberger, and Iryna Gurevych.
+Sentence-
+bert: Sentence embeddings using siamese bert-networks.
+In Proceedings of the 2019 Conference on Empirical
+Methods in Natural Language Processing. Association for
+Computational Linguistics, 2019.
+[Saini, 2020] Anuj Saini.
+Anuj at the FinSim task:
+Anuj@FINSIM¡VLearning semantic representation of ﬁ-
+nancial domain with investopedia. In Proceedings of the
+Second Workshop on Financial Technology and Natural
+Language Processing, pages 93–97, Kyoto, Japan, 5 Jan-
+uary 2020.
+[Stepiˇsnik Perdih et al., 2021] Timen
+Stepiˇsnik
+Perdih,
+Senja Pollak, and Blaˇz ˇSkrlj. JSI at the FinSim-2 Task:
+Ontology-Augmented Financial Concept Classiﬁcation,
+page 298–301.
+Association for Computing Machinery,
+New York, NY, USA, 2021.
+[Wolf et al., 2020] Thomas Wolf, Lysandre Debut, Victor
+Sanh, Julien Chaumond, Clement Delangue, Anthony
+Moi, Pierric Cistac, Tim Rault, R´emi Louf, Morgan
+Funtowicz, Joe Davison, Sam Shleifer, Patrick von
+Platen, Clara Ma, Yacine Jernite, Julien Plu, Canwen
+Xu, Teven Le Scao, Sylvain Gugger, Mariama Drame,
+Quentin Lhoest, and Alexander M. Rush. Huggingface’s
+transformers: State-of-the-art natural language processing,
+2020.

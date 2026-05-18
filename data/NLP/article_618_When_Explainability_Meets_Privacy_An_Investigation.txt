@@ -1,0 +1,2189 @@
+Title: When Explainability Meets Privacy: An Investigation at the Intersection of Post-hoc Explainability and Differential Privacy in the Context of Natural Language Processing
+Source URL: http://arxiv.org/abs/2508.10482v2
+--------------------------------------------------
+
+When Explainability Meets Privacy:
+An Investigation at the Intersection of Post-hoc Explainability and Differential
+Privacy in the Context of Natural Language Processing
+Mahdi Dhaini, Stephen Meisenbacher, Ege Erdogan, Florian Matthes, Gjergji Kasneci
+Technical University of Munich
+School of Computation, Information and Technology
+Department of Computer Science
+Munich, Germany
+{mahdi.dhaini, stephen.meisenbacher, ege.erdogan, matthes, gjergji.kasneci}@tum.de
+Abstract
+In the study of trustworthy Natural Language Processing
+(NLP), a number of important research fields have emerged,
+including that of explainability and privacy. While research
+interest in both explainable and privacy-preserving NLP has
+increased considerably in recent years, there remains a lack
+of investigation at the intersection of the two. This leaves a
+considerable gap in understanding of whether achieving both
+explainability and privacy is possible, or whether the two are
+at odds with each other. In this work, we conduct an empir-
+ical investigation into the privacy-explainability trade-off in
+the context of NLP, guided by the popular overarching meth-
+ods of Differential Privacy (DP) and Post-hoc Explainability.
+Our findings include a view into the intricate relationship be-
+tween privacy and explainability, which is formed by a num-
+ber of factors, including the nature of the downstream task
+and choice of the text privatization and explainability method.
+In this, we highlight the potential for privacy and explainabil-
+ity to co-exist, and we summarize our findings in a collection
+of practical recommendations for future work at this impor-
+tant intersection.
+Code — https://github.com/dmah10/xpnlp
+1
+Introduction
+Recent advances in Natural Language Processing (NLP)
+have seen bountiful and widespread improvements in the
+way natural language can be understood and generated. Such
+progress, hallmarked by the rapid developments enabled by
+Large Language Models (LLMs) and associated techniques,
+has powered novel applications in a variety of domains in-
+cluding education (Wen et al. 2024), healthcare (Wang et al.
+2025), and finance (Lee et al. 2025), as well as empowered
+non-technical users to explore the capabilities of Artificial
+Intelligence (Ng et al. 2021). These benefits, however, do not
+come for free, and various subfields of NLP currently work
+at the intersection of NLP and a number of human-centered
+topics, such as explainability (Danilevsky et al. 2020), pri-
+vacy (Sousa and Kern 2023), bias (Navigli, Conia, and Ross
+2023), fairness (Chang, Prabhakaran, and Ordonez 2019),
+and sustainability (Van Wynsberghe 2021), among others.
+Accepted to AAAI/ACM Conference on AI, Ethics, and Society
+(AIES 2025)
+Despite the recent democratization of LLM use, a persis-
+tent challenge in the deployment of any language models
+relates to that of explainability, which generally refers to the
+ability to interpret and communicate the decisions provided
+by a model. Explainability becomes paramount to the safe
+deployment of models, particularly in ensuring that model
+inputs can (reasonably) be traced or explained. Beyond this,
+explainability is not only a desired characteristic of a lan-
+guage model, but also a mandate (mainly for high-risk AI
+systems) under the recent EU AI Act regulation (Council
+of European Union 2024). One particularly useful candidate
+for fulfilling this mandate comes in the form of post-hoc ex-
+plainability (Madsen et al. 2022; Danilevsky et al. 2020),
+which comprises methods that serve to provide insights into
+traditionally “black-box” models.
+In a similar vein, the stark increase in LLM usage, particu-
+larly where users must interact with models hosted on exter-
+nal servers, i.e., in the cloud, has contributed to rising con-
+cerns of privacy (Pan et al. 2020; Wu, Duan, and Ni 2023;
+Gupta et al. 2023; Yan et al. 2025). Calls for privacy protec-
+tion have been driven by increasingly strict data protection
+regulations (such as the GDPR); at the same time, privacy
+has been addressed in a plethora of research on privacy-
+preserving NLP (Yin and Habernal 2022), ranging from
+text privatization to private model training (Sousa and Kern
+2023). Privacy-preserving techniques aim to mask both di-
+rect and indirect identifiers hidden within textual data, while
+also preserving utility for downstream tasks and applications
+(Mattern et al. 2022; Weggenmann et al. 2022). One popu-
+lar framework is Differential Privacy (DP) (Dwork 2006),
+which lends plausible deniability to text inputs by ensur-
+ing some level of indistinguishability between any two texts,
+usually achieved via the injection of random noise into text
+representations (Klymenko et al. 2022). This “noisification”
+can take place on many levels, such on the word level, or
+alternatively, via document-level rewriting.
+Many recent works in Differentially Private Natural Lan-
+guage Processing (DP-NLP) focus on balancing the privacy-
+utility trade-off as a key indicator for the effectiveness of
+a privatization method (Mattern et al. 2022; Utpala et al.
+2023). Other works explored the trade-offs in other impor-
+tant aspects, such as text coherence (Weggenmann et al.
+2022) or user acceptability (Meisenbacher et al. 2025). On
+arXiv:2508.10482v2  [cs.CL]  15 Aug 2025
+the other hand, Explainable NLP (XNLP) has increasingly
+focused on the intersection of explainability with some as-
+pects of trustworthy NLP, particularly fairness. This research
+has taken two primary directions: utilizing explainability as
+a tool for detecting bias in models (T.y.s.s. et al. 2024; Galle-
+gos et al. 2024) and evaluating the fairness of explainability
+methods themselves (Dhaini et al. 2025). However, specifi-
+cally in the NLP domain, no works to the best of our knowl-
+edge consider the intersection of privacy and explainability
+in terms of privacy-explainability trade-off, namely, how the
+application of privatization methods affects the function of
+explainability methods. We argue that this consideration is
+a crucial one, particularly with the simultaneous legal man-
+date for both explainability and privacy.
+In this work, we are the first to investigate the interplay
+between privacy and explainability in the context of natural
+language. As a case study, we select two popular subfields:
+post-hoc feature attribution methods and differentially pri-
+vate text rewriting. In this, we explore the shift in explain-
+ability that can be observed when rewriting texts via DP,
+at various privacy levels and with fundamentally different
+rewriting mechanisms. We also consider the effect of down-
+stream task specifics, such as model choice, model size, and
+fine-tuning task, particularly when varying the importance
+of privacy over explainability, and vice versa. To guide these
+experiments, we define one overarching research question:
+What is the impact of differentially private text rewrit-
+ing on the post-hoc explainability of fine-tuned lan-
+guage models, and how can one quantify the privacy-
+explainability trade-off?
+We learn that while a clear trade-off can typically be ob-
+served between privacy and explainability, there do exist
+configurations in which the two work synergistically. In this,
+we find that the factors of the downstream dataset and task,
+as well as the selected DP method and its privacy budget, are
+important in the quantification of the privacy-explainability
+trade-off. This leads us to create a collection of recommen-
+dations for both researchers and practitioners who wish to
+continue work at this important intersection.
+Concretely, our work makes the following contributions:
+1. We are the first to conduct an empirical investigation at
+the intersection of privacy and explainability, particularly
+in the context of natural language. We make our experi-
+mental code available for reproducibility.
+2. We provide insights into the complex interplay between
+post-hoc explainability and differentially private text
+rewriting, serving as a foundation for broader investiga-
+tions at this intersection.
+3. We analyze our results to propose recommendations on
+best practices for important design choices, particularly
+when faced with the need for explainability and privacy.
+2
+Background and Related Work
+2.1
+Post-hoc explainability methods
+Model-agnostic
+feature-attribution
+post-hoc
+techniques
+have gained prominence due to their broad applicability
+(Jacovi 2023). These methodologies seek to determine the
+relative contribution of individual tokens to model predic-
+tions for specific inputs, employing either gradient-based
+approaches that leverage model derivatives with respect to
+inputs (Sundararajan et al. 2017; Simonyan, Vedaldi, and
+Zisserman 2013), or perturbation-based techniques (Ribeiro,
+Singh, and Guestrin 2016; Lundberg and Lee 2017).
+The expanding significance of explainable NLP research
+is demonstrated through the expansion of comprehensive
+surveys addressing NLP explainability (Wallace, Gardner,
+and Singh 2020; Zhao et al. 2024; Madsen et al. 2022; Zini
+and Awad 2022). Moreover, given the deployment of NLP
+systems in critical applications including education (Wu
+et al. 2024), healthcare (Johri et al. 2025) and legal domains
+(Valvoda and Cotterell 2024) where interpretability require-
+ments are essential, specialized surveys have emerged fo-
+cusing on explainability within particular NLP applications,
+such as fact verification (Kotonya and Toni 2020), and
+specific methodological approaches in NLP explainability
+(Mosca et al. 2022). These comprehensive reviews under-
+score the extensive utilization of post-hoc methodologies
+across NLP applications.
+Additionally, feature-attribution post-hoc explanation
+techniques serve as primary methods within explainability
+platforms and computational frameworks documented in re-
+cent literature (Arras, Osman, and Samek 2022; Li et al.
+2023; Attanasio et al. 2023; Sarti et al. 2023). These com-
+prehensive frameworks characteristically integrate multiple
+post-hoc explanation algorithms while accommodating var-
+ious data modalities Machine Learning (ML) architectures,
+including pre-trained Language Models (PLMs).
+2.2
+Differential Privacy in NLP
+The notion of Differential Privacy was first proposed in the
+context of relational databases (Dwork 2006), where the pri-
+mary goal was to protect the participation of an individual
+in the dataset. More specifically, privacy preservation oc-
+curs in the sense that information about such an individual
+cannot be accurately inferred within some bound. This is
+formalized via the following inequality, for any databases
+D1 and D2 differing in exactly one element, any ε > 0,
+any computation or function M, and all S ⊆Range(M):
+P r[M(D1)∈S]
+P r[M(D2)∈S] ≤eε. Intuitively, DP ensures that there exists
+some level of indistinguishability between any two neigh-
+boring databases (differing in one element), thus protecting
+the individual. This privacy level is governed by the ε pa-
+rameter, also known as the privacy budget.
+This form of DP is known as ε-DP, and the notion above
+refers to global DP. Another notion, which we focus on
+in this work, is that of local DP (LDP) (Kasiviswanathan
+et al. 2008). In the local setting, we assume that the cen-
+tral curator, i.e., the one who is to possess the complete
+dataset, is not trusted. As a solution, DP is ensured at the
+user level; however, since the entirety of the dataset is not
+yet known, LDP imposes a much stricter indistinguishabil-
+ity requirement, i.e., between any potential neighbor. This
+differs from the global notion, since neighboring databases
+only refer to those resulting from the dataset D. Formally,
+for finite space P and V, and for all x, x′ ∈P and all y ∈V:
+P r[M(x)=y]
+P r[M(x′)=y] ≤eε Hence, an observed output cannot be at-
+tributed to a specific input with a high probability. While
+this notion is clearly stricter, it allows for a quantification of
+a privacy guarantee on the local, single datapoint level with-
+out the need for an aggregated dataset.
+The translation of DP into the realm of NLP initially
+brought about numerous research challenges (Klymenko
+et al. 2022), chief among them the reasoning of who the in-
+dividual is when considering textual data, and how to quan-
+tify neighboring “datasets”. Despite these challenges, a great
+deal of recent works have proposed innovative methods for
+the integration of DP into the NLP pipeline (Hu et al. 2024),
+ranging for text anonymization and obfuscation to DP train-
+ing of language models. Particularly considering text pri-
+vatization, many recent methods interpret the task from the
+rewriting perspective, where a sensitive input text is rewrit-
+ten under DP guarantees to produce a private output text.
+Such methods operate at various lexical levels, including the
+word level (Feyisetan et al. 2020; Carvalho et al. 2023), the
+token-level during language model generation (Utpala et al.
+2023; Meisenbacher et al. 2024), and on full texts (Igam-
+berdiev and Habernal 2023). Considering the differences in
+how these mechanisms operate, it becomes important to con-
+sider the nature of the DP guarantee when performing com-
+parative analyses (Vu et al. 2024).
+Recent works in DP-NLP highlight persistent challenges,
+such as the generation of coherent and correct outputs (Mat-
+tern et al. 2022), ensuring comparability (Igamberdiev et al.
+2022), and quantifying the benefit DP brings over non-DP
+methods (Meisenbacher and Matthes 2024). However, to the
+best of our knowledge, no existing works question the effect
+of DP methods on the explainability of texts, or more specif-
+ically, of models trained on privatized texts. We see this to
+be a considerable gap, particularly for DP text privatization
+in important domains, such as the medical domain, where
+explainability is also important in conjunction with privacy.
+2.3
+Privacy meets Explainability
+Privacy in Explainable ML.
+The privacy implications of
+explainable ML have received attention in recent years but
+remain underexplored. Most of the work on the intersec-
+tion of explainability and privacy in ML focuses on the in-
+herent privacy risks in explanations. These works include
+studies that investigate how model explanations reveal sen-
+sitive information from the training data and how this can
+be exploited using membership inference attacks. For in-
+stance, Shokri et al. (2021) demonstrated that variance in
+backpropagation-based explanations can reveal whether a
+data point was used during training, exposing membership
+information. Duddu and Boutet (2022) extended these con-
+cerns by inferring sensitive attributes like gender and race
+directly from model explanations, while Liu et al. (2024)
+shows how explanations can amplify membership inference
+risks by exploiting differences in model robustness under
+attribution-guided perturbations. Similarly, Luo et al. (2022)
+showed that private input features can be reconstructed using
+Shapley-value explanations. Other works include highlight-
+ing how explanations can enhance model inversion attacks
+when used as auxiliary inputs (Zhao et al. 2021), and in-
+troducing a membership inference attack for counterfactuals
+relying on distances between original inputs and their coun-
+terfactual counterparts (Pawelczyk et al. 2023).
+Shokri et al. (2021) investigated the privacy risks of
+gradient-based explanation methods—Gradient (Simonyan
+et al. 2013) and Integrated Gradients (Sundararajan et al.
+2017)—across four tabular and two image datasets. They
+showed that these methods can leak information about train-
+ing examples, increasing vulnerability to membership infer-
+ence attacks that use full feature attributions as inputs to an
+attack model. In contrast, perturbation-based methods such
+as LIME and SmoothGrad (Smilkov et al. 2017) were found
+to be more resistant, likely due to their reliance on input per-
+turbations rather than gradients, which may capture subtle
+distinctions between training and non-training points. Liu
+et al. (2024) further examined membership inference risks
+for multiple post-hoc explainers in the context of image data.
+Defenses and countermeasures.
+to protect again infer-
+ence attacks, some works in the literature used approaches
+that alter the training process such as DP-SGD (Liu et al.
+2024) or approaches that perturb confidence scores of the
+target models output for each input by adding noise and then
+convert the perturbed confidence scores into adversarial ex-
+amples for the attack models, such as MemGuard (Jia et al.
+2019). However such approaches either prove to be ineffec-
+tive against inference attacks (such as MemGuard) (Liu et al.
+2024) or decrease the inference attack performance in the
+expense of severe degradation of the model utility as well
+as explanation quality such as DP-SGD and thus presenting
+a large trade-off between defense capability and utility and
+explainability performance (Liu et al. 2024).
+Privacy in Explainable NLP.
+Prior work has primarily
+examined the privacy risks of model explanations in the con-
+text of tabular and image-based datasets. However, the inter-
+section of privacy and explainability in NLP remains largely
+unexplored. In contrast to these studies, our work focuses
+specifically on textual datasets and NLP applications. Rather
+than analyzing privacy leakage from explanations, we em-
+pirically investigate whether data-level DP can be applied
+to achieve reasonable privacy guarantees while maintaining
+acceptable trade-offs in model utility and explanation qual-
+ity. To the best of our knowledge, this is the first study to
+systematically evaluate the trade-off between data-level DP
+and the quality of post-hoc feature attribution explanations
+(in terms of their faithfulness) in NLP models.
+3
+Experimental Setup
+3.1
+Datasets
+To guide our experiments, we select three datasets, which
+vary in size and domain. These datasets are introduced in
+the following, alongside their associated downstream tasks.
+SST-2.
+The Stanford Sentiment Treebank dataset (SST-2)
+(Socher et al. 2013) comprises short texts originating from
+movie reviews, and it was popularized due to its inclusion
+in the GLUE benchmark (Wang et al. 2018). Each text is
+labeled according to its sentiment, i.e., either positive or
+negative, creating a two-class binary classification task. We
+use the complete training split of the dataset, composed of
+67,349 records, with an average word length of 9.41.
+AG News.
+The AG News corpus contains over one million
+news articles from the over 2000 news sources. We utilize
+the subset as prepared by Zhang, Zhao, and LeCun (2015),
+which contains 120k news articles from four news domains:
+world, sports, business, and sci/tech. We take a 50% random
+sample (seed=42) for a final dataset of 60000 news articles,
+with an average word length of 43.90.
+Trustpilot Reviews.
+The Trustpilot corpus is a large-scale
+collection of user reviews. The corpus prepared by Hovy, Jo-
+hannsen, and Søgaard (2015) tags each review with the stars
+provided (1-5), which we simplify to negative reviews (1-
+2 stars) and positive reviews (5 stars). We specifically only
+take reviews from the US split of the dataset (en-US), and
+use a 10% random sample. This results in a dataset of 29,490
+reviews, with an average word length of 59.75.
+3.2
+DP Methods
+We select three local DP text rewriting methods for our ex-
+periments, which are introduced in the following.
+TEM.
+TEM (Carvalho et al. 2023) is a word-level DP
+mechanism which leverages a generalized notion called met-
+ric DP. This generalization is useful for metric spaces, such
+as with word embeddings, wherein the indistinguishability
+requirement between words is scaled by their distance in
+the space. TEM improves upon previous approaches by em-
+ploying a truncated exponential mechanism, allowing for
+higher utility word replacements. To privatize a complete
+text, each component word is privatized one-by-one. Fol-
+lowing the original work, we choose the privacy budgets of
+ε ∈{1, 2, 3}, which refer to the budgets per word.
+DP-Prompt.
+Leveraging the generative capabilities of
+LLMs, Utpala et al. (2023) introduce DP-PROMPT, a
+method for producing private outputs texts with local DP
+guarantees by modeling privatization as a paraphrasing
+task. Internally, the DP-PROMPT mechanism operates by
+applying DP at each token generation, specifically by using
+the temperature parameter as an equivalent DP mechanism
+to the Exponential Mechanism (McSherry and Talwar 2007).
+Following the original work, we test three temperature val-
+ues, T ∈{1.75, 1.5, 1.25}. This translates to the per-token
+ε values of ε ∈{118, 137, 165}, using the implementation
+provided by Meisenbacher et al. (2024), which employs a
+FLAN-T5-BASE model (Chung et al. 2022) as the underly-
+ing privatization model.
+DP-BART.
+DP-BART is a document-level LDP text
+rewriting mechanism proposed by Igamberdiev and Haber-
+nal (2023). It leverages a pretrained BART model (Lewis
+et al. 2020), applying calibrated Gaussian noise in the latent
+representation space, where the decoder then decodes the
+noisy encoded vector to generate a private text. In doing so,
+DP-BART rewrites texts with a single document guarantee,
+albeit usually requiring higher privacy budgets for meaning-
+ful output. As such we choose ε ∈{500, 1000, 1500}, and
+we use the original DP-BART-CLV variant.
+Privatization Procedure.
+For DP-BART, we use the
+mechanism on the primary text column of each of our chosen
+datasets. This is repeated for each of the three privacy bud-
+gets, creating three private counterparts to the original data.
+Using DP-PROMPT likewise produces full texts as a result
+of the generative process. Finally, TEM is run sequentially
+on all component words of an input text, which are tokenized
+using the NLTK.WORD TOKENIZE function. The list of out-
+puts from the mechanism are then reconstructed into a sin-
+gle string via simple concatenation. In total, we thus produce
+nine private variants of the original datasets, for a total of 30
+datasets (3 original baselines + 27 private counterparts).
+A note on privatization and comparability.
+We caution
+that in the selection of privacy budgets for each DP mecha-
+nism, and for the resulting datasets based on these decisions,
+we do not ensure any comparability between the three se-
+lected methods. Due to the different manners in which DP
+is ensured across these three methods, as well as the intri-
+cacies involved with comparing different DP notions (e.g.,
+MDP vs DP), we out-scope such comparisons. Instead, we
+focus on analyzing the downstream effects on DP rewriting
+within each method (i.e., across privacy budgets).
+We also note that the choice of privacy budgets (ε val-
+ues) are motivated by the choices taken by the authors of the
+original works. We do not work to normalize these values,
+i.e., by normalizing the logit values used in DP-PROMPT.
+While this would be a useful step in reporting more usable
+and reasonable privacy budgets, we endeavor to test the DP
+methods as presented originally. As such, we do not report
+on or analyze the relative strength of underlying DP guaran-
+tee, as this is an active area of DP-NLP research.
+3.3
+Models
+We utilize a number of pretrained encoder-only language
+models, which varying in architecture and model size. In
+this, we empirically measure the effect of fine-tuning on DP
+rewritten datasets, namely, the downstream effect of this pro-
+cess on the explainability of these models (measured by our
+chosen metrics). Table 1 presents the information and details
+of the pretrained models used in our experiments to fine-tune
+on our three chosen classification datasets.
+Name
+Type
+# of Parameters
+BERT-BASE-CASED
+Encoder-only
+∼110M
+BERT-LARGE-CASED
+Encoder-only
+∼335M
+ROBERTA-BASE
+Encoder-only
+∼125M
+ROBERTA-LARGE
+Encoder-only
+∼355M
+DEBERTA-BASE
+Encoder-only
+∼139M
+Table 1: Details of the experimental models.
+3.4
+Explainability Methods
+We include four post-hoc feature attribution methods in our
+experiments: Gradient involves computing the gradient of
+the output with respect to the input features; Integrated
+Gradient instead integrates the gradients over a path from a
+baseline input to the explained input; SHAP (Lundberg and
+Lee 2017) approximates the Shapley value of each feature,
+a concept from cooperative game theory that measures the
+“contribution” of each feature by considering different coali-
+tions of features and how much each feature contributes to
+the outcome; LIME (Ribeiro, Singh, and Guestrin 2016) at-
+tempts to replicate the model’s behavior locally around the
+explained input with a linear model that is easy to explain.
+3.5
+Evaluating Explanations
+We evaluate the post-hoc explanations using two different
+methods each of measuring the comprehensiveness and
+sufficiency of explanations. Both metrics effectively attempt
+to quantify the faithfulness of explanations, i.e. how accu-
+rately they reflect the underlying decision process of a model
+(Jacovi and Goldberg 2020). Faithfulness is one of the most
+important desideratum for explanations (Danilevsky et al.
+2020; Lyu et al. 2024) as high faithfulness indicates that the
+explanation accurately reflects the model’s decision-making
+process for a given prediction.
+In their simplest forms, comprehensiveness metrics mea-
+sure the change in output probabilities for the true class
+when the top-k tokens with respect to the feature attribution
+scores are removed from the input, and sufficiency metrics
+measure the change when only the top-k tokens are given
+as input to the model. We then compute the AOPC by av-
+eraging the values by k is varied. We denote these metrics
+AOPC-Comprehensiveness and AOPC-Sufficiency.
+Hard-removing
+the
+tokens
+might
+lead
+to
+out-of-
+distribution inputs for the model, which could adversely af-
+fect model performance during the evaluation of the expla-
+nations (Zhao et al. 2022; Chrysostomou and Aletras 2022).
+To address this potential problem, we also include Soft Suf-
+ficiency and Soft Comprehensiveness metrics (Zhao and
+Aletras 2023) in our evaluations. For the soft versions of
+these metrics, rather than removing a token entirely, a frac-
+tion of each token’s embeddings is masked based on that
+token’s importance score, i.e. the masked token is computed
+as x′ = x ⊙e where ei ∼Bernoulli(q) with q being the
+importance score if the token is kept (sufficiency) and one
+minus the score if it is removed (comprehensiveness).
+3.6
+Composite Score
+Understanding that the trade-off between privacy and
+explainability is not always equally weighted, we de-
+sign a metric that allows one to shift the importance
+of either utility or explainability, while still viewing
+both in the same light. We compute a composite score
+for each model m and weight α
+∈
+{0.25, 0.5, 0.75}
+as CS(m, α)
+=
+α c
+F1(m) + (1 −α) bE(m), where
+bE(m) = 1
+4
+  bCs(m)+(1−bSs(m))+ bCa(m)+(1−bSa(m))
+
+,
+and bx denotes min–max normalization of x, subscripts s
+and a indicate “soft” vs. “AOPC,” C is comprehensiveness,
+and S is sufficiency (inverted via 1 −bS so that larger values
+are always better).
+CS(m, α) = α ˆ
+F 1 + (1 −α) ˆ
+E
+ˆ
+E = 1
+4
+  ˆ
+Cs + (1 −ˆSs) + ˆ
+Ca + (1 −ˆSa)
+
+The composite score ranges from 0 to 1, where higher
+values (closer to 1) indicate near 1 means better overall per-
+formance (based on the selected α value). We intentionally
+define the score in this normalized form to enable a straight-
+forward and consistent comparison across our experiments.
+Additionally, with this score, one can vary α based on the
+relative weight between utility and explainability. For exam-
+ple, an α of 0.25 would imply that the explainability faithful-
+ness metrics are considerably more important, as opposed to
+a value of 0.75 where the utility score (F1) takes precedence.
+4
+Results and Analysis
+Our results are presented across several tables and figures.
+Tables 2, 3, and 4 report composite scores (meanstd) for
+α = 0.25, 0.5, and 0.75, respectively. Scores are averaged
+over five PLMs (BERT-BASE, BERT-LARGE, ROBERTA-
+BASE, ROBERTA-LARGE, and DEBERTA-BASE), and the
+Avg row represents the mean and pooled standard devia-
+tion across the four explainers (Gradient, IG, LIME, and
+SHAP) for each (dataset, DP-ε) pair. In each row, the high-
+est composite score is underlined. Columns are grouped
+by DP method (None, DPB, DPP, and TEM) and color-
+coded for comparison: grey for no DP, cyan for DPB, orange
+for DPP, and green for TEM. Color intensity reflects score
+magnitude, with darker shades indicating higher values. For
+instance, in Table 2, the most saturated cell in the TEM
+columns highlights the top-scoring explainer–DP-ε combi-
+nation (e.g., TEM3 with SHAP) for a given dataset and α
+value (e.g., AG News, α = 0.25). This distinction in col-
+oring is used to reflect the fact that DP methods are not di-
+rectly comparable due to differences in mechanisms and as-
+sumptions (see Section 3.2). These tables support analysis
+of trends across explainers and privacy configurations.
+To better visualize the results from Tables 2, 3, and 4
+for each of the three datasets, we present corresponding
+plots in Figures 1a, 1b, and 1c. Each figure corresponds to
+one dataset, and each data point represents the composite
+score of a (DP-ε, explainer, α) triplet, averaged over the five
+PLMs. In these plots, different shapes indicate different ex-
+plainers, while colors denote the α values (0.25, 0.5, 0.75)
+where explainers are acronymed as follows: (G:Gradient,
+IG:Integrated Gradient, L:LIME, S:SHAP).
+In Table 5, we present composite score values, but we con-
+solidate the composite score values averaged over the four
+explainers (instead of per explainer as done previously) for
+each (dataset, α, DP-ε) triplet thus allowing us to compare
+and evaluate how each DP-ε combination affect the com-
+posite scores over all the explainers allowing us to detect the
+“sweet spots” for each α value/scenario in each dataset.
+In Table 6, we investigate the effect of model size on the
+trade-off between privacy, utility, and explainability; in par-
+ticular, whether this trade-off differs between smaller and
+larger models. To this end, we average results over the four
+explainers, but instead of aggregating across all five models,
+we group the results by model size. The base group includes
+BERT-BASE and ROBERTA-BASE, while the large group
+includes their corresponding larger variants.
+Dataset
+Expl
+None
+DPB500
+DPB1000
+DPB1500
+DPP118
+DPP137
+DPP165
+TEM1
+TEM2
+TEM3
+AG News
+G
+0.7050.19
+0.2860.14
+0.6550.01
+0.7050.01
+0.7580.01
+0.7710.02
+0.7690.02
+0.3330.22
+0.5980.17
+0.7770.03
+IG
+0.6000.13
+0.2450.11
+0.5260.02
+0.5770.01
+0.6100.01
+0.6200.02
+0.6170.02
+0.2720.14
+0.4620.11
+0.6320.02
+LIME
+0.7800.24
+0.3380.19
+0.7180.02
+0.7600.02
+0.8140.02
+0.8370.01
+0.8230.02
+0.3910.27
+0.7020.19
+0.8820.02
+SHAP
+0.7650.23
+0.3330.19
+0.7180.01
+0.7510.01
+0.8180.02
+0.8320.03
+0.8230.03
+0.3780.26
+0.6790.19
+0.8530.03
+Avg
+0.7130.20
+0.3010.16
+0.6540.01
+0.6980.01
+0.7500.01
+0.7650.02
+0.7580.02
+0.3440.22
+0.6100.17
+0.7860.03
+SST2
+G
+0.5150.18
+0.2400.05
+0.3580.14
+0.4410.13
+0.4890.16
+0.4770.15
+0.4750.16
+0.2390.06
+0.2770.09
+0.3960.18
+IG
+0.4100.13
+0.2030.04
+0.2870.10
+0.3580.10
+0.3900.12
+0.3750.11
+0.3820.11
+0.2170.05
+0.2460.07
+0.3250.13
+LIME
+0.5730.22
+0.2140.08
+0.3750.18
+0.4830.17
+0.5370.20
+0.5210.19
+0.5200.19
+0.2370.11
+0.2860.15
+0.4300.25
+SHAP
+0.5670.22
+0.2150.07
+0.3740.19
+0.4840.17
+0.5350.20
+0.5230.19
+0.5180.18
+0.2350.11
+0.2850.16
+0.4230.25
+Avg
+0.5160.19
+0.2180.06
+0.3490.15
+0.4420.14
+0.4880.17
+0.4740.16
+0.4740.16
+0.2320.08
+0.2740.12
+0.3940.20
+Trustpilot
+G
+0.5060.17
+0.4210.11
+0.4890.17
+0.5310.12
+0.4910.14
+0.4870.08
+0.4830.06
+0.3210.14
+0.3180.10
+0.5040.16
+IG
+0.4880.16
+0.4200.10
+0.4770.17
+0.5130.12
+0.4580.13
+0.4560.07
+0.4510.05
+0.3200.14
+0.3110.10
+0.4800.15
+LIME
+0.5580.20
+0.4510.12
+0.5210.18
+0.5660.13
+0.5390.17
+0.5420.10
+0.5370.06
+0.3430.19
+0.3560.15
+0.5550.19
+SHAP
+0.5510.19
+0.4430.12
+0.5170.18
+0.5580.13
+0.5340.17
+0.5300.09
+0.5340.07
+0.3250.19
+0.3400.14
+0.5510.19
+Avg
+0.5260.18
+0.4340.11
+0.5010.18
+0.5420.13
+0.5060.15
+0.5040.09
+0.5010.06
+0.3270.16
+0.3310.12
+0.5230.17
+Table 2: Composite Scores (meanstd) with α = 0.25 averaged over the five PLMs. Avg refers to the mean and pooled standard
+deviation over the four explainers.
+Dataset
+Expl
+None
+DPB500
+DPB1000
+DPB1500
+DPP118
+DPP137
+DPP165
+TEM1
+TEM2
+TEM3
+AG News
+G
+0.7660.13
+0.2970.19
+0.7100.01
+0.7600.01
+0.8110.00
+0.8200.01
+0.8180.01
+0.3430.26
+0.6230.19
+0.8280.02
+IG
+0.6960.09
+0.2700.17
+0.6240.01
+0.6740.01
+0.7120.01
+0.7190.02
+0.7170.01
+0.3010.21
+0.5330.15
+0.7310.02
+LIME
+0.8160.16
+0.3320.23
+0.7530.01
+0.7970.01
+0.8480.01
+0.8640.01
+0.8540.01
+0.3810.29
+0.6930.20
+0.8980.02
+SHAP
+0.8060.15
+0.3290.22
+0.7520.01
+0.7910.01
+0.8510.01
+0.8610.02
+0.8540.02
+0.3720.29
+0.6780.20
+0.8780.02
+Avg
+0.7710.13
+0.3070.20
+0.7100.01
+0.7560.01
+0.8060.01
+0.8160.01
+0.8110.01
+0.3490.26
+0.6320.19
+0.8340.02
+SST2
+G
+0.5920.21
+0.2940.09
+0.4390.19
+0.5410.17
+0.5910.20
+0.5830.20
+0.5800.20
+0.2930.10
+0.3420.13
+0.4790.23
+IG
+0.5220.19
+0.2690.08
+0.3910.16
+0.4860.15
+0.5250.17
+0.5150.16
+0.5180.17
+0.2780.09
+0.3220.12
+0.4320.19
+LIME
+0.6300.24
+0.2770.10
+0.4500.21
+0.5690.20
+0.6230.23
+0.6130.22
+0.6100.22
+0.2920.13
+0.3490.17
+0.5010.27
+SHAP
+0.6270.24
+0.2770.10
+0.4490.22
+0.5700.20
+0.6220.23
+0.6140.22
+0.6090.22
+0.2900.13
+0.3470.18
+0.4970.28
+Avg
+0.5930.22
+0.2790.09
+0.4320.20
+0.5420.18
+0.5900.21
+0.5810.20
+0.5790.20
+0.2880.11
+0.3400.15
+0.4770.24
+Trustpilot
+G
+0.5790.20
+0.5010.11
+0.6000.18
+0.6710.08
+0.6040.17
+0.6280.06
+0.6340.04
+0.4070.14
+0.4190.13
+0.6260.19
+IG
+0.5670.19
+0.5000.11
+0.5920.18
+0.6590.08
+0.5810.16
+0.6080.05
+0.6130.04
+0.4060.14
+0.4150.13
+0.6100.18
+LIME
+0.6140.21
+0.5210.12
+0.6210.19
+0.6950.09
+0.6360.19
+0.6650.07
+0.6700.04
+0.4220.18
+0.4450.16
+0.6600.21
+SHAP
+0.6100.21
+0.5150.12
+0.6190.19
+0.6890.09
+0.6320.19
+0.6570.07
+0.6680.05
+0.4090.17
+0.4330.15
+0.6580.21
+Avg
+0.5930.20
+0.5090.12
+0.6080.18
+0.6790.09
+0.6130.18
+0.6400.06
+0.6460.04
+0.4110.16
+0.4280.14
+0.6390.19
+Table 3: Composite Scores (meanstd) for α = 0.5 averaged over five PLMs. Avg refers to the mean and pooled standard deviation
+over the four explainers.
+Dataset
+Expl
+None
+DPB500
+DPB1000
+DPB1500
+DPP118
+DPP137
+DPP165
+TEM1
+TEM2
+TEM3
+AG News
+G
+0.8270.09
+0.3080.24
+0.7660.00
+0.8150.00
+0.8630.00
+0.8690.01
+0.8680.01
+0.3520.30
+0.6490.21
+0.8780.01
+IG
+0.7920.08
+0.2950.23
+0.7230.01
+0.7720.01
+0.8140.00
+0.8180.01
+0.8170.00
+0.3310.28
+0.6040.19
+0.8300.01
+LIME
+0.8520.10
+0.3260.26
+0.7870.01
+0.8340.01
+0.8820.01
+0.8910.01
+0.8860.01
+0.3710.32
+0.6840.22
+0.9130.01
+SHAP
+0.8470.09
+0.3240.26
+0.7870.00
+0.8300.01
+0.8830.01
+0.8890.01
+0.8860.01
+0.3670.32
+0.6760.21
+0.9040.01
+Avg
+0.8300.09
+0.3130.25
+0.7660.01
+0.8130.01
+0.8610.01
+0.8670.01
+0.8640.01
+0.3550.30
+0.6530.21
+0.8810.01
+SST2
+G
+0.6690.25
+0.3470.12
+0.5200.23
+0.6410.21
+0.6930.24
+0.6890.24
+0.6850.24
+0.3470.14
+0.4080.17
+0.5620.28
+IG
+0.6340.24
+0.3350.12
+0.4960.22
+0.6130.20
+0.6600.23
+0.6560.22
+0.6540.22
+0.3390.13
+0.3970.16
+0.5380.26
+LIME
+0.6880.26
+0.3390.13
+0.5250.25
+0.6550.22
+0.7090.25
+0.7040.25
+0.7000.25
+0.3460.15
+0.4110.19
+0.5730.30
+SHAP
+0.6860.26
+0.3390.13
+0.5250.25
+0.6550.22
+0.7080.25
+0.7050.25
+0.6990.25
+0.3450.15
+0.4100.19
+0.5710.30
+Avg
+0.6690.25
+0.3400.12
+0.5170.24
+0.6410.21
+0.6930.24
+0.6890.24
+0.6850.24
+0.3440.14
+0.4070.18
+0.5610.28
+Trustpilot
+G
+0.6530.24
+0.5810.12
+0.7110.20
+0.8120.04
+0.7160.20
+0.7700.04
+0.7860.03
+0.4920.15
+0.5200.16
+0.7480.22
+IG
+0.6470.23
+0.5800.12
+0.7070.19
+0.8060.04
+0.7050.19
+0.7590.04
+0.7750.03
+0.4920.15
+0.5180.16
+0.7400.21
+LIME
+0.6700.24
+0.5910.13
+0.7220.20
+0.8240.05
+0.7320.21
+0.7880.05
+0.8040.03
+0.5000.17
+0.5330.18
+0.7650.23
+SHAP
+0.6680.24
+0.5880.13
+0.7210.20
+0.8210.05
+0.7310.21
+0.7840.04
+0.8030.03
+0.4940.16
+0.5270.17
+0.7640.22
+Avg
+0.6600.24
+0.5850.12
+0.7150.20
+0.8160.04
+0.7210.20
+0.7750.04
+0.7920.03
+0.4950.16
+0.5250.17
+0.7540.22
+Table 4: Composite Scores (meanstd) for α = 0.75 averaged over five PLMs. Avg refers to the mean and pooled standard
+deviation over the four explainers.
+4.1
+Composite Scores for Each Explainer Across
+DP-Methods and Datasets
+Tables 2, 3, and 4 facilitates checking, per each α values
+and dataset, and for each explainer, the DP-ε method that
+provide the highest composite score, as well as for each DP-
+method, the ε values that leads to the highest score for a spe-
+cific DP method. In addition, we look at the plots in Figure
+1 and based on our results from the composite score plots
+presented there for SST2, AG News, and Trustpilot, evalu-
+ated across different DP mechanisms (ε), four explainability
+methods, and utility–explanation trade-offs (α = 25%, 50%,
+Dataset
+Expl
+α
+None
+DPB500
+DPB1000
+DPB1500
+DPP118
+DPP137
+DPP165
+TEM1
+TEM2
+TEM3
+AG News
+Avg
+0.25
+0.7130.20
+0.3010.16
+0.6540.01
+0.6980.01
+0.7500.01
+0.7650.02
+0.7580.02
+0.3440.22
+0.6100.17
+0.7860.03
+Avg
+0.50
+0.7710.13
+0.3070.20
+0.7100.01
+0.7560.01
+0.8060.01
+0.8160.01
+0.8110.01
+0.3490.26
+0.6320.19
+0.8340.02
+Avg
+0.75
+0.8300.09
+0.3130.25
+0.7660.01
+0.8130.01
+0.8610.01
+0.8670.01
+0.8640.01
+0.3550.30
+0.6530.21
+0.8810.01
+SST2
+Avg
+0.25
+0.5160.19
+0.2180.06
+0.3490.15
+0.4420.14
+0.4880.17
+0.4740.16
+0.4740.16
+0.2320.08
+0.2740.12
+0.3940.20
+Avg
+0.50
+0.5930.22
+0.2790.09
+0.4320.20
+0.5420.18
+0.5900.21
+0.5810.20
+0.5790.20
+0.2880.11
+0.3400.15
+0.4770.24
+Avg
+0.75
+0.6690.25
+0.3400.12
+0.5170.24
+0.6410.21
+0.6930.24
+0.6890.24
+0.6850.24
+0.3440.14
+0.4070.18
+0.5610.28
+Trustpilot
+Avg
+0.25
+0.5260.18
+0.4340.11
+0.5010.18
+0.5420.13
+0.5060.15
+0.5040.09
+0.5010.06
+0.3270.16
+0.3310.12
+0.5230.17
+Avg
+0.50
+0.5930.20
+0.5090.12
+0.6080.18
+0.6790.09
+0.6130.18
+0.6400.06
+0.6460.04
+0.4110.16
+0.4280.14
+0.6390.19
+Avg
+0.75
+0.6600.24
+0.5850.12
+0.7150.20
+0.8160.04
+0.7210.20
+0.7750.04
+0.7920.03
+0.4950.16
+0.5250.17
+0.7540.22
+Table 5: Consolidated Composite Scores (meanstd) for three α values, showing the average over four explainers.
+(a) SST2
+(b) AG News
+(c) Trustpilot
+Figure 1: Composite Score by DP-ε, explainer, α, dataset
+over 5 models.
+75%), we can report the following:
+General Observations.
+Higher α values, which place
+greater emphasis on model utility, consistently result in
+higher composite scores across all datasets and DP config-
+urations. Among the explainers, LIME and SHAP gener-
+ally outperform Gradient and IG in the composite scores,
+particularly under strong privacy constraints. As expected,
+composite scores decline significantly in stricter DP settings
+(e.g., DPB500, TEM1), reflecting the trade-off between pri-
+α
+Dataset
+Base
+Large
+∆(Large–Base)
+0.25
+AG News
+0.6900.15
+0.5660.25
+−0.125
+SST2
+0.4610.13
+0.2730.10
+−0.188
+Trustpilot
+0.4990.11
+0.3800.09
+−0.119
+0.50
+AG News
+0.7360.14
+0.6040.29
+−0.132
+SST2
+0.5680.13
+0.3310.12
+−0.237
+Trustpilot
+0.6210.11
+0.4790.12
+−0.142
+0.75
+AG News
+0.7820.13
+0.6430.33
+−0.140
+SST2
+0.6760.14
+0.3900.14
+−0.286
+Trustpilot
+0.7430.12
+0.5780.16
+−0.165
+Table 6: Comparison of average composite scores (meanstd)
+between base and large models, averaged across DP-ϵ values
+for each dataset and α.
+vacy and both utility and explanation quality.
+SST2 appears to be highly sensitive to DP noise, exhibit-
+ing considerable performance degradation under low pri-
+vacy budgets. G and IG are especially affected in these set-
+tings, whereas LIME and SHAP demonstrate more stable
+performance, even under moderate DP configurations such
+as DPB1000 and DP-PROMPT. Among the TEM methods,
+TEM3 shows partial recovery in performance, especially
+when greater weight is given to utility (α high).
+On the other hand, AG News displays stronger resilience
+to the effects of DP noise compared to SST2. LIME and
+SHAP maintain superior performance across most DP lev-
+els, with IG improving noticeably as ε increases. In partic-
+ular, IG becomes competitive in configurations such as DP-
+PROMPT and TEM3. The TEM3 variant performs especially
+well at (α = 75%), indicating a favorable trade-off between
+utility and explanation quality.
+Trustpilot demonstrates intermediate sensitivity to DP
+noise, falling between SST2 and AG News. Composite
+scores improve progressively with increasing ε, and LIME
+remains the most effective explainer across the majority of
+settings. DP-BART and DP-PROMPT mechanisms, partic-
+ularly with moderate to high privacy budgets, offer reliable
+performance in maintaining explanation quality.
+Cross-Dataset Trends.
+Across all datasets, LIME and
+SHAP consistently outperform IG and Gradient, which are
+more affected by strong DP. Gradient is the most negatively
+impacted explainer, particularly in low-ε regimes and on
+the SST2 dataset. Among the DP mechanisms, DP-BART-
+1500 and DP-PROMPT-165 offer favorable trade-offs be-
+tween privacy, utility, and explainability. While TEM1 and
+TEM2 generally result in considerable degradation, TEM3
+performs better, especially for AG News and Trustpilot.
+Privacy Tier
+α = 0.25
+α = 0.50
+α = 0.75
+Expl–Data
+Data(avg)
+Expl–Data
+Data(avg)
+Expl–Data
+Data(avg)
+None
+LIME–AG News
+0.780
+AG News
+0.713
+LIME–AG News
+0.816
+AG News
+0.771
+LIME–AG News
+0.852
+AG News
+0.830
+Small ε
+SHAP–AG News
+0.818
+Trustpilot
+0.434
+SHAP–AG News
+0.851
+Trustpilot
+0.509
+SHAP–AG News
+0.883
+Trustpilot
+0.585
+Medium ε
+LIME–AG News
+0.837
+AG News
+0.654
+LIME–AG News
+0.864
+AG News
+0.710
+LIME–AG News
+0.891
+AG News
+0.766
+Large ε
+LIME–AG News
+0.882
+AG News
+0.786
+LIME–AG News
+0.898
+AG News
+0.756
+LIME–AG News
+0.913
+AG News
+0.813
+Table 7: “Sweet spots” summary across privacy tiers and
+α values. Each row corresponds to a privacy tier (None =
+no DP; Small/Medium/Large ε = decreasing privacy). For
+each α, the left column shows the best Explainer–Dataset
+pair (from Tables 1–3), and the right column shows the
+best Dataset based on explainer-averaged scores (from Ta-
+ble 5). Epsilon levels group as: Small (DPB500, DPP118,
+TEM1), Medium (DPB1000, DPP137, TEM2), and Large
+(DPB1500, DPP165, TEM3).
+4.2
+Comparison Over All Explainers Across
+DP-Methods and Datasets
+Table 5 displays the average composite scores across the
+four explainers for each combination of dataset, α value, and
+DP method (DP-ε), averaged over the five employed PLMs.
+We draw the following results and insights.
+Effect of the Utility–Explanation Trade-Off (α).
+Across
+all datasets and DP setups, higher values of α (i.e., greater
+weight placed on utility) consistently yield higher compos-
+ite scores. This is especially visible in the blue curves (α
+= 0.75), which dominate across most configurations. This
+trend reflects the stabilizing role of utility in the composite
+score, particularly under privacy-induced degradation.
+Comparing DP Mechanisms.
+Among the DP strategies,
+DP-BART and DP-PROMPT (particularly at higher ε values
+such as 1500 and 165) achieve the highest average compos-
+ite scores, especially for AG News and Trustpilot. In con-
+trast, the TEM methods (T1 and T2) result in a substan-
+tial performance drop, most notably for SST2. As expected,
+DPB500 (strongest privacy budget) leads to the lowest per-
+formance across all datasets and α values, confirming the
+cost of tight privacy constraints.
+Dataset Sensitivity.
+SST2 consistently produces the low-
+est composite scores, reflecting its greater vulnerability
+to privacy-preserving perturbations. This could be due to
+shorter input lengths or more subtle semantic cues required
+for sentiment analysis. In contrast, AG News emerges as the
+most robust dataset, maintaining high composite scores even
+under moderate DP conditions. Trustpilot performs moder-
+ately well and demonstrates steady recovery with increasing
+ε, particularly under DP-BART and DP-PROMPT.
+Privacy–Performance Trade-Off.
+Overall, there is a
+clear upward trend in composite scores with increasing ε.
+This pattern is most pronounced in the DP-BART and DP-
+PROMPT curves, where performance improves steadily from
+ε = 500 to ε = 1500/165. This monotonic behavior con-
+firms the expected trade-off: as privacy constraints are re-
+laxed, utility and explanation quality are jointly improved.
+4.3
+Identifying Sweet Spots for
+Privacy-Utility-Explainability
+We construct Table 7 using the results form Tables 1,2,3 and
+4, where we identify and present the sweet spots based on
+the composite scores across privacy tiers and alpha values
+settings for two cases: explainer-dataset pairs (from Table
+1,2,3) and the datasets with the highest average scores over
+the four explainers (From Table 3). Based on these result in
+Table 7, we observe the following:
+Explainer–Dataset Consistency.
+Across all privacy tiers,
+LIME–AG News emerges as the top explainer–dataset pair
+in every case except the strictest privacy setting (ε small),
+where SHAP–AG News slightly outperforms it. This sug-
+gests that SHAP’s token-level importance is more robust un-
+der heavy DP noise, but LIME generally provides the most
+faithful and useful explanations once privacy is relaxed.
+Dataset-Level Robustness.
+When averaging across ex-
+plainers, AG News consistently wins for no DP, medium pri-
+vacy, and low privacy budgets. Under the tightest DP budget
+(small ε), however, Trustpilot takes the lead for all α values,
+indicating that explanations on Trustpilot degrade less, on
+average, under stringent privacy constraints.
+Effect of Increasing ε.
+As ε increases (privacy is relaxed),
+composite scores rise monotonically for both the best ex-
+plainer–dataset pair and the dataset-average. The largest re-
+covery occurs between small and medium ε, especially for
+SHAP on AG News, highlighting that a moderate privacy
+budget recovers most of the lost explanation signal.
+Utility-Explainability Trade-Off (α) Trends.
+Increasing
+α from 0.25 (explanation-focused) to 0.50 (balanced) to
+0.75 (utility-focused) uniformly boosts all composite scores,
+since more weight is placed on classification F1. Notably,
+the ranking of sweet spots remains stable: LIME–AG News
+dominates once ε ≥medium values, and Trustpilot remains
+the dataset of choice under the smallest ε.
+Although high composite scores are expected with large
+ε values, it is noteworthy that even with medium and
+small ε (i.e., stricter privacy), some explainers still achieve
+strong performance. These results are promising, demon-
+strating that explainability can be achieved under tighter pri-
+vacy constraints. For example, SHAP achieves this across
+all three α values representing different utility–explanation
+trade-offs. This indicates that for certain combinations of
+dataset, explainer, and DP method, it is possible to attain
+high privacy while still maintaining strong utility and ex-
+planation quality, depending on the specific objective (i.e.,
+lower or higher α).
+4.4
+Comparison Across Model Size
+In Table 6, we investigate the effect of model size on the
+trade-off between privacy, utility, and explainability; in par-
+ticular, whether this trade-off differs between smaller and
+larger models. To this end, we average results over the four
+explainers, but instead of aggregating across all five mod-
+els (as in the previous tables), we group the results by model
+size. The base group includes BERT-BASE and ROBERTA-
+BASE, while the large group includes their corresponding
+larger variants. We exclude DeBERTa from this analysis, as
+we don’t employ DeBERTa-large in our experiments. We
+consider this comparison between base and large variants
+of BERT and RoBERTa sufficient for a preliminary assess-
+ment of model size effects. Table 6 presents a comparison of
+(average across explainers) composite scores (meanstd) be-
+tween base and large models, averaged across DP-ϵ values
+for each dataset and α. We learn the following:
+Base Models Outperform Large Models.
+Across all
+datasets and α values, base models consistently outperform
+large models in terms of composite score. This is evident
+from the uniformly negative ∆(Large – Base) values, rang-
+ing from −0.119 to −0.286. The results suggest that increas-
+ing model size under DP leads to a decline in the quality of
+the resulting predictions and explanations.
+Dataset Sensitivity.
+The SST2 dataset shows the largest
+negative impact of model size. For instance, the gap reaches
+∆= −0.286 at α = 0.75. In contrast, the performance drop
+for AG News and Trustpilot remains more moderate (around
+−0.12 to −0.16). This indicates that SST2 may be more sen-
+sitive to privacy-induced noise, possibly due to shorter in-
+puts or the nature of sentiment-based classification.
+Effect of α (Utility–Explanation Trade-Off).
+The nega-
+tive performance gap between large and base models gener-
+ally widens as α increases (i.e., as more emphasis is placed
+on utility over explanation quality). This trend is particularly
+strong for SST2, where the difference grows from −0.188
+(α = 0.25) to −0.286 (α = 0.75). This suggests that utility
+suffers more under large models when trained with DP.
+Stability and Variability.
+The standard deviations are
+generally higher for large models, especially under α =
+0.75. This points to greater instability and inconsistency in
+the performance of large models under DP, in addition to
+their lower mean scores.
+5
+Discussion
+We reflect on the main findings of our experiments, giving
+way to a collection of practical recommendations, as well as
+future points to consider.
+Does dataset matter in the privacy-explainability trade-
+off?
+An initial review of the experimental results sug-
+gests that the nature of the dataset may contribute to dif-
+ferent outcomes in terms of privacy versus explainability.
+One possible explanation for AG News outperforming SST2
+and Trustpilot in terms of composite scores under multi-
+ple DP methods is that its topic-classification nature re-
+sults in inputs that contain multiple contextually aligned
+keywords, which are often robust to DP-induced perturba-
+tions whereas SST2’s short sentiment sentences and Trust-
+pilot’s informal user reviews may lose critical cues more
+easily. Additionally, PLMs achieve a higher baseline F1 on
+AG News, which could further buffer performance degra-
+dation under privacy constraints. Finally, the concentration
+of attribution weights on a few salient words in AG News
+may yield more faithful explanations compared to the more
+diffuse attributions required for sentiment or user-generated
+text. While these factors require further investigation, they
+offer a plausible account of AG News resilience in compos-
+ite utility–explainability metrics with strict privacy budgets.
+Despite the absolute differences exhibited by the AG
+News results in comparison to our other two datasets, one
+promising trend emerges. When looking at the composite
+score curves for any dataset in Figure 1 one can observe
+that a similar line is followed regardless of dataset, for any
+DP method or explainer. While these curves are not strictly
+uniform across datasets, the similar trends indicate a cru-
+cial point for future investigations, namely to determine the
+extent to which dataset matters in the combined study of pri-
+vacy, utility, and explainability. Nevertheless, one must also
+keep in mind the differing performances of the various ex-
+plainers we employ, which also seem to be impacted by the
+nature of dataset, and accordingly, the downstream task.
+When privacy meets explainability.
+Harmonizing all of
+the experimental results, we converge on one important dis-
+cussion point, which relates back to the initial research ques-
+tion we posed in this work: how does DP impact explain-
+ability? Diving deeper, we also reflect on the question of
+whether DP and explainability can co-exist, or if there possi-
+bly remains friction between these two important mandates.
+A helpful starting point lies in the comparison of baseline
+results (i.e., those achieved without any DP) and those post-
+privatization. While in the majority of cases, the application
+of DP leads to decreases in explainability, this is not always
+the case. Indeed, in some scenarios for all three employed
+DP methods, some results outperform the non-private base-
+lines, and this occurs at least once among all (DP method, ε)
+combinations for each explainer. Furthermore, this result is
+most pronounced in the setting where explainability is most
+preferred (α = 0.75), suggesting that when utility loss is less
+important, the effects of DP gain a more positive light. In
+this, we uncover that in some scenarios, DP actually serves
+to improve explainability, a very promising prospect.
+Beyond these results, we also wish to answer our re-
+search question from the angle of which DP methods have
+which impacts on downstream explainability. This must be
+approached carefully, as noted previously, since we cannot
+draw conclusions between DP mechanisms operating on dif-
+ferent lexical levels and with different privacy guarantees.
+However, important trends do appear within mechanisms,
+such as the relative stability of the DP-PROMPT results as
+opposed to the much steeper fluctuations from TEM or DP-
+BART. We also conjecture that the choice of DP method
+also is tightly intertwined with the nature of the classifica-
+tion task, where generative methods (DP-PROMPT and DP-
+BART) generally lead to more favorable results in our two
+binary classification tasks, whereas TEM consistently out-
+performs in the four-class AG News task. These results point
+to the importance of DP method choice, which can be heav-
+ily reliant on the downstream task at hand. This is made es-
+pecially evident in Table 5, where all DP methods achieve
+the best consolidated score in at least one configuration.
+Recommendations for Practitioners.
+Based on our find-
+ings, we compile a collection of recommendations for practi-
+tioners at the intersection of data privacy and explainability.
+Based on our “sweet spot” analysis, for explanation qual-
+ity (low α), practitioners can use SHAP at the strictest pri-
+vacy setting, otherwise default to LIME under moderate or
+low privacy. For utility (high α), LIME is the sweet spot
+across all but the strictest privacy settings.
+Based on the analysis of Figure 1, where we compare
+scores of each of the four explainers, for applications re-
+quiring both strong privacy and explanation quality, LIME
+or SHAP combined with DPBart-1500 or DPPrompt-165 is
+advisable. In the case of SST2, aggressive privacy strategies
+such as TEM1 and TEM2 should be avoided, and moderate-
+DP setups using LIME are preferable. For AG News, LIME
+in combination with DPPrompt-165 or TEM3 performs ro-
+bustly across all α values. Trustpilot demonstrates broad ro-
+bustness and is a suitable candidate for real-world deploy-
+ment in privacy-sensitive NLP scenarios.
+When averaging across the four explainers, our results
+show that using DPBart-1500 or DPPrompt-165 is recom-
+mended to achieve the best trade-off between privacy, util-
+ity, and explanation quality. TEM1 and TEM2 should be
+avoided when explanation faithfulness is a priority, espe-
+cially for sensitive datasets such as SST2. For utility-focused
+applications (high α), AG News paired with moderate-DP
+settings performs reliably well. In general, higher ε values
+are preferable when maintaining interpretability is critical.
+Based on the model size effect (base vs large model) anal-
+ysis, for privacy-preserving NLP tasks that require both high
+utility and faithful explanations, base models are consis-
+tently more reliable and effective than large models. This
+is especially true when utility is prioritized (high α) or for
+sensitive datasets such as SST2.
+These recommendations based on our experiments can be
+generalized into the following set of guidelines that are im-
+portant to consider in the research or practice of explainable
+privacy with natural language data:
+1. Decide on the importance of privacy vs. utility: an im-
+portant starting point is the setting of α, as this may be
+considerably different across various use cases.
+2. Consider the nature of downstream task: our results
+indicate that dataset (and task) are important factors in
+the juxtaposition of privacy and explainability. This be-
+comes especially important in the following point.
+3. Choose your privatization method wisely: our ini-
+tial findings suggest that for more complex tasks (e.g.,
+multi-class classification), non-generative methods such
+as TEM may be more suitable. However, for more “col-
+loquial” datasets, such as those stemming from user re-
+views, DP methods based on generative models may be
+more suitable to preserving both utility and explainabil-
+ity. While this guideline requires further validation, we
+emphasize the important interplay between choice of pri-
+vatization method and nature of downstream task.
+4. Choose the smallest pretrained model acceptable for
+the given use case: we learn that across our results, com-
+posite scores decrease as model size increases, showing
+how smaller models, if acceptable for a given use case,
+may be preferable in finding a balance between privacy,
+utility, and explainability.
+5. Measure on a variety of explainers: we find that despite
+individual difference between explainers across all tested
+configurations, using averages and composite scores lead
+to clear emergent trends and interpretable differences be-
+tween privacy levels (ε values) and datasets/tasks. We
+therefore recommend the usage of multiple explainers,
+tied together by a composite score, for a robust overview
+of performance differences between setups.
+6
+Conclusion
+We conduct an investigation at the intersection of privacy
+and explainability, guided by the overarching methods of
+differentially private text rewriting and post-hoc explain-
+ability. In a series of experiments, we quantify the privacy-
+explainability trade-off, which lends interesting insights re-
+garding the potential synergies between the two important
+topics. We are the first to conduct such an investigation in
+the context of natural language data, providing the founda-
+tions for further explorations into this interdisciplinary topic.
+Future work.
+We envision a number of paths for future
+work based on our investigation, namely:
+• Further investigating “sweet spots”, particularly via the
+integration of more robust proxies for privacy (i.e., be-
+yond ε values). This could include for example the inclu-
+sion of membership inference testing, as performed by
+Shokri et al. (2021).
+• Extending our findings with experiments on additional
+datasets, Explainability and DP methods, and ε ranges.
+• Investigating the trade-offs with respect to non post-hoc
+explainability methods, as well as considering more re-
+cent frameworks for measuring faithfulness of explana-
+tions, such as that proposed by Zheng et al. (2025).
+• Including human evaluation (i.e, perceptions) into the
+calculation of composite score, namely to improve this
+score beyond automatic metrics.
+Limitations.
+Our study has several limitations. It relies
+solely on quantitative evaluation, without qualitative or hu-
+man assessments. We focus narrowly on post-hoc explain-
+ability and DP text rewriting methods, which do not fully
+capture either field. Our selection of DP methods overlooks
+nuanced differences in mechanism design and their varying
+theoretical guarantees. These constraints highlight the need
+for broader studies to deepen understanding of the explain-
+ability–privacy intersection in NLP.
+Acknowledgments
+We thank the anonymous reviewers for their constructive
+feedback. This research has been supported by the German
+Federal Ministry of Education and Research (BMBF) grant
+01IS23069 Software Campus 3.0 (TU M¨unchen).
+References
+Arras, L.; Osman, A.; and Samek, W. 2022. CLEVR-XAI: A
+benchmark dataset for the ground truth evaluation of neural
+network explanations. Information Fusion, 81: 14–40.
+Attanasio, G.; Pastor, E.; Di Bonaventura, C.; and Nozza,
+D. 2023. ferret: a Framework for Benchmarking Explainers
+on Transformers. In Proceedings of the 17th Conference of
+the European Chapter of the Association for Computational
+Linguistics: System Demonstrations. Association for Com-
+putational Linguistics.
+Carvalho, R. S.; Vasiloudis, T.; Feyisetan, O.; and Wang, K.
+2023. TEM: High utility metric differential privacy on text.
+In Proceedings of the 2023 SIAM International Conference
+on Data Mining (SDM), 883–890. SIAM.
+Chang, K.-W.; Prabhakaran, V.; and Ordonez, V. 2019. Bias
+and Fairness in Natural Language Processing. In Baldwin,
+T.; and Carpuat, M., eds., Proceedings of the 2019 Confer-
+ence on Empirical Methods in Natural Language Process-
+ing and the 9th International Joint Conference on Natu-
+ral Language Processing (EMNLP-IJCNLP): Tutorial Ab-
+stracts. Hong Kong, China: Association for Computational
+Linguistics.
+Chrysostomou, G.; and Aletras, N. 2022.
+An Empirical
+Study on Explanations in Out-of-Domain Settings. In Mure-
+san, S.; Nakov, P.; and Villavicencio, A., eds., Proceedings
+of the 60th Annual Meeting of the Association for Compu-
+tational Linguistics (Volume 1: Long Papers), 6920–6938.
+Dublin, Ireland: Association for Computational Linguistics.
+Chung, H. W.; Hou, L.; Longpre, S.; Zoph, B.; Tay, Y.; Fe-
+dus, W.; Li, E.; Wang, X.; Dehghani, M.; Brahma, S.; Web-
+son, A.; Gu, S. S.; Dai, Z.; Suzgun, M.; Chen, X.; Chowdh-
+ery, A.; Narang, S.; Mishra, G.; Yu, A.; Zhao, V.; Huang, Y.;
+Dai, A.; Yu, H.; Petrov, S.; Chi, E. H.; Dean, J.; Devlin, J.;
+Roberts, A.; Zhou, D.; Le, Q. V.; and Wei, J. 2022. Scaling
+Instruction-Finetuned Language Models.
+Council of European Union. 2024. Council regulation (EU)
+no 2024/1689.
+https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=
+CELEX:32024R1689.
+Danilevsky, M.; Qian, K.; Aharonov, R.; Katsis, Y.; Kawas,
+B.; and Sen, P. 2020.
+A Survey of the State of Explain-
+able AI for Natural Language Processing. In Wong, K.-F.;
+Knight, K.; and Wu, H., eds., Proceedings of the 1st Confer-
+ence of the Asia-Pacific Chapter of the Association for Com-
+putational Linguistics and the 10th International Joint Con-
+ference on Natural Language Processing, 447–459. Suzhou,
+China: Association for Computational Linguistics.
+Dhaini, M.; et al. 2025.
+Gender Bias in Explainability:
+Investigating Performance Disparity in Post-hoc Methods.
+In Proceedings of the 2025 ACM Conference on Fairness,
+Accountability, and Transparency, FAccT ’25, 3006–3029.
+New York, NY, USA: Association for Computing Machin-
+ery. ISBN 9798400714825.
+Duddu, V.; and Boutet, A. 2022.
+Inferring Sensitive At-
+tributes from Model Explanations.
+In Proceedings of
+the 31st ACM International Conference on Information &
+Knowledge Management, CIKM ’22, 416–425. New York,
+NY, USA: Association for Computing Machinery.
+ISBN
+9781450392365.
+Dwork, C. 2006. Differential privacy. In International col-
+loquium on automata, languages, and programming, 1–12.
+Springer.
+Feyisetan, O.; Balle, B.; Drake, T.; and Diethe, T. 2020.
+Privacy- and Utility-Preserving Textual Analysis via Cali-
+brated Multivariate Perturbations. In Proceedings of the 13th
+International Conference on Web Search and Data Mining,
+WSDM ’20, 178–186. New York, NY, USA: Association for
+Computing Machinery. ISBN 9781450368223.
+Gallegos, I. O.; Rossi, R. A.; Barrow, J.; Tanjim, M. M.;
+Kim, S.; Dernoncourt, F.; Yu, T.; Zhang, R.; and Ahmed,
+N. K. 2024. Bias and fairness in large language models: A
+survey. Computational Linguistics, 1–79.
+Gupta, M.; Akiri, C.; Aryal, K.; Parker, E.; and Praharaj, L.
+2023. From ChatGPT to ThreatGPT: Impact of Generative
+AI in Cybersecurity and Privacy. IEEE Access, 11: 80218–
+80245.
+Hovy, D.; Johannsen, A.; and Søgaard, A. 2015. User Re-
+view Sites as a Resource for Large-Scale Sociolinguistic
+Studies. In Proceedings of the 24th International Confer-
+ence on World Wide Web, WWW ’15, 452–461. Republic
+and Canton of Geneva, CHE: International World Wide Web
+Conferences Steering Committee. ISBN 9781450334693.
+Hu, L.; Habernal, I.; Shen, L.; and Wang, D. 2024. Differ-
+entially Private Natural Language Models: Recent Advances
+and Future Directions. In Graham, Y.; and Purver, M., eds.,
+Findings of the Association for Computational Linguistics:
+EACL 2024, 478–499. St. Julian’s, Malta: Association for
+Computational Linguistics.
+Igamberdiev, T.; and Habernal, I. 2023. DP-BART for Pri-
+vatized Text Rewriting under Local Differential Privacy.
+In Rogers, A.; Boyd-Graber, J.; and Okazaki, N., eds.,
+Findings of the Association for Computational Linguistics:
+ACL 2023, 13914–13934. Toronto, Canada: Association for
+Computational Linguistics.
+Igamberdiev, T.; et al. 2022. DP-Rewrite: Towards Repro-
+ducibility and Transparency in Differentially Private Text
+Rewriting. In Calzolari, N.; Huang, C.-R.; Kim, H.; Puste-
+jovsky, J.; Wanner, L.; Choi, K.-S.; Ryu, P.-M.; Chen, H.-
+H.; Donatelli, L.; Ji, H.; Kurohashi, S.; Paggio, P.; Xue,
+N.; Kim, S.; Hahm, Y.; He, Z.; Lee, T. K.; Santus, E.;
+Bond, F.; and Na, S.-H., eds., Proceedings of the 29th Inter-
+national Conference on Computational Linguistics, 2927–
+2933. Gyeongju, Republic of Korea: International Commit-
+tee on Computational Linguistics.
+Jacovi, A. 2023. Trends in Explainable AI (XAI) Literature.
+arXiv:2301.05433.
+Jacovi, A.; and Goldberg, Y. 2020. Towards Faithfully Inter-
+pretable NLP Systems: How Should We Define and Evalu-
+ate Faithfulness? In Jurafsky, D.; Chai, J.; Schluter, N.; and
+Tetreault, J., eds., Proceedings of the 58th Annual Meeting of
+the Association for Computational Linguistics, 4198–4205.
+Online: Association for Computational Linguistics.
+Jia, J.; Salem, A.; Backes, M.; Zhang, Y.; and Gong, N. Z.
+2019. MemGuard: Defending against Black-Box Member-
+ship Inference Attacks via Adversarial Examples. In Pro-
+ceedings of the 2019 ACM SIGSAC Conference on Com-
+puter and Communications Security, CCS ’19, 259–274.
+New York, NY, USA: Association for Computing Machin-
+ery. ISBN 9781450367479.
+Johri, S.; Jeong, J.; Tran, B. A.; Schlessinger, D. I.;
+Wongvibulsin, S.; Barnes, L. A.; Zhou, H.-Y.; Cai, Z. R.;
+Van Allen, E. M.; Kim, D.; et al. 2025. An evaluation frame-
+work for clinical use of large language models in patient in-
+teraction tasks. Nature Medicine, 1–10.
+Kasiviswanathan, S. P.; Lee, H. K.; Nissim, K.; Raskhod-
+nikova, S.; and Smith, A. 2008. What Can We Learn Pri-
+vately? In 2008 49th Annual IEEE Symposium on Founda-
+tions of Computer Science, 531–540.
+Klymenko, O.; et al. 2022. Differential Privacy in Natural
+Language Processing: The Story So Far. In Feyisetan, O.;
+Ghanavati, S.; Thaine, P.; Habernal, I.; and Mireshghallah,
+F., eds., Proceedings of the Fourth Workshop on Privacy in
+Natural Language Processing, 1–11. Seattle, United States:
+Association for Computational Linguistics.
+Kotonya, N.; and Toni, F. 2020.
+Explainable Automated
+Fact-Checking: A Survey. In Scott, D.; Bel, N.; and Zong,
+C., eds., Proceedings of the 28th International Conference
+on Computational Linguistics, 5430–5443. Barcelona, Spain
+(Online): International Committee on Computational Lin-
+guistics.
+Lee, J.; et al. 2025. Large Language Models in Finance (Fin-
+LLMs). Neural Computing and Applications.
+Lewis, M.; Liu, Y.; Goyal, N.; Ghazvininejad, M.; Mo-
+hamed, A.; Levy, O.; Stoyanov, V.; and Zettlemoyer, L.
+2020. BART: Denoising Sequence-to-Sequence Pre-training
+for Natural Language Generation, Translation, and Compre-
+hension. In Jurafsky, D.; Chai, J.; Schluter, N.; and Tetreault,
+J., eds., Proceedings of the 58th Annual Meeting of the Asso-
+ciation for Computational Linguistics, 7871–7880. Online:
+Association for Computational Linguistics.
+Li, X.; Du, M.; Chen, J.; Chai, Y.; Lakkaraju, H.; and Xiong,
+H. 2023. M4: A Unified XAI Benchmark for Faithfulness
+Evaluation of Feature Attribution Methods across Metrics,
+Modalities and Models. In Oh, A.; Naumann, T.; Globerson,
+A.; Saenko, K.; Hardt, M.; and Levine, S., eds., Advances in
+Neural Information Processing Systems, volume 36, 1630–
+1643. Curran Associates, Inc.
+Liu, H.; Wu, Y.; Yu, Z.; and Zhang, N. 2024. Please Tell Me
+More: Privacy Impact of Explainability through the Lens of
+Membership Inference Attack. In 2024 IEEE Symposium on
+Security and Privacy (SP), 4791–4809.
+Lundberg, S. M.; and Lee, S.-I. 2017. A unified approach
+to interpreting model predictions. Advances in neural infor-
+mation processing systems, 30.
+Luo, X.; et al. 2022. Feature Inference Attack on Shapley
+Values. In Proceedings of the 2022 ACM SIGSAC Confer-
+ence on Computer and Communications Security, CCS ’22,
+2233–2247. New York, NY, USA: Association for Comput-
+ing Machinery. ISBN 9781450394505.
+Lyu, Q.; et al. 2024. Towards Faithful Model Explanation in
+NLP: A Survey. Computational Linguistics, 50(2): 657–723.
+Madsen, A.; et al. 2022. Post-hoc Interpretability for Neural
+NLP: A Survey. ACM Comput. Surv., 55(8).
+Mattern, J.; et al. 2022.
+The Limits of Word Level Dif-
+ferential Privacy.
+In Carpuat, M.; de Marneffe, M.-C.;
+and Meza Ruiz, I. V., eds., Findings of the Association for
+Computational Linguistics: NAACL 2022, 867–881. Seattle,
+United States: Association for Computational Linguistics.
+McSherry, F.; and Talwar, K. 2007. Mechanism Design via
+Differential Privacy. In 48th Annual IEEE Symposium on
+Foundations of Computer Science (FOCS’07), 94–103.
+Meisenbacher, S.; Chevli, M.; Vladika, J.; and Matthes, F.
+2024. DP-MLM: Differentially Private Text Rewriting Us-
+ing Masked Language Models. In Ku, L.-W.; Martins, A.;
+and Srikumar, V., eds., Findings of the Association for Com-
+putational Linguistics: ACL 2024, 9314–9328. Bangkok,
+Thailand: Association for Computational Linguistics.
+Meisenbacher, S.; Klymenko, A.; Karpp, A.; and Matthes, F.
+2025. Investigating User Perspectives on Differentially Pri-
+vate Text Privatization. In Habernal, I.; Ghanavati, S.; Jain,
+V.; Igamberdiev, T.; and Wilson, S., eds., Proceedings of the
+Sixth Workshop on Privacy in Natural Language Processing,
+86–105. Albuquerque, New Mexico: Association for Com-
+putational Linguistics. ISBN 979-8-89176-246-6.
+Meisenbacher, S.; and Matthes, F. 2024. Thinking Outside
+of the Differential Privacy Box: A Case Study in Text Pri-
+vatization with Language Model Prompting. In Al-Onaizan,
+Y.; Bansal, M.; and Chen, Y.-N., eds., Proceedings of the
+2024 Conference on Empirical Methods in Natural Lan-
+guage Processing, 5656–5665. Miami, Florida, USA: As-
+sociation for Computational Linguistics.
+Mosca, E.; Szigeti, F.; Tragianni, S.; Gallagher, D.; and
+Groh, G. 2022. SHAP-Based Explanation Methods: A Re-
+view for NLP Interpretability. In Calzolari, N.; Huang, C.-
+R.; Kim, H.; Pustejovsky, J.; Wanner, L.; Choi, K.-S.; Ryu,
+P.-M.; Chen, H.-H.; Donatelli, L.; Ji, H.; Kurohashi, S.; Pag-
+gio, P.; Xue, N.; Kim, S.; Hahm, Y.; He, Z.; Lee, T. K.;
+Santus, E.; Bond, F.; and Na, S.-H., eds., Proceedings of
+the 29th International Conference on Computational Lin-
+guistics, 4593–4603. Gyeongju, Republic of Korea: Inter-
+national Committee on Computational Linguistics.
+Navigli, R.; Conia, S.; and Ross, B. 2023. Biases in Large
+Language Models: Origins, Inventory, and Discussion. J.
+Data and Information Quality, 15(2).
+Ng, D. T. K.; Leung, J. K. L.; Chu, S. K. W.; and Qiao,
+M. S. 2021. Conceptualizing AI literacy: An exploratory
+review. Computers and Education: Artificial Intelligence, 2:
+100041.
+Pan, X.; Zhang, M.; Ji, S.; and Yang, M. 2020. Privacy Risks
+of General-Purpose Language Models. In 2020 IEEE Sym-
+posium on Security and Privacy (SP), 1314–1331.
+Pawelczyk, M.; et al. 2023. On the Privacy Risks of Algo-
+rithmic Recourse. In Ruiz, F.; Dy, J.; and van de Meent,
+J.-W., eds., Proceedings of The 26th International Confer-
+ence on Artificial Intelligence and Statistics, volume 206
+of Proceedings of Machine Learning Research, 9680–9696.
+PMLR.
+Ribeiro, M. T.; Singh, S.; and Guestrin, C. 2016. ” Why
+should i trust you?” Explaining the predictions of any clas-
+sifier. In Proceedings of the 22nd ACM SIGKDD interna-
+tional conference on knowledge discovery and data mining,
+1135–1144.
+Sarti, G.; Feldhus, N.; Sickert, L.; and van der Wal, O. 2023.
+Inseq: An Interpretability Toolkit for Sequence Generation
+Models. In Bollegala, D.; Huang, R.; and Ritter, A., eds.,
+Proceedings of the 61st Annual Meeting of the Association
+for Computational Linguistics (Volume 3: System Demon-
+strations), 421–435. Toronto, Canada: Association for Com-
+putational Linguistics.
+Shokri, R.; et al. 2021. On the Privacy Risks of Model Ex-
+planations.
+In Proceedings of the 2021 AAAI/ACM Con-
+ference on AI, Ethics, and Society, AIES ’21, 231–241.
+New York, NY, USA: Association for Computing Machin-
+ery. ISBN 9781450384735.
+Simonyan, K.; Vedaldi, A.; and Zisserman, A. 2013.
+Deep inside convolutional networks: Visualising image
+classification models and saliency maps.
+arXiv preprint
+arXiv:1312.6034.
+Simonyan, K.; et al. 2013. Deep inside convolutional net-
+works: Visualising image classification models and saliency
+maps. arXiv preprint arXiv:1312.6034.
+Smilkov, D.; Thorat, N.; Kim, B.; Vi´egas, F. B.; and Wat-
+tenberg, M. 2017. SmoothGrad: removing noise by adding
+noise. CoRR, abs/1706.03825.
+Socher, R.; Perelygin, A.; Wu, J.; Chuang, J.; Manning,
+C. D.; Ng, A.; and Potts, C. 2013. Recursive Deep Models
+for Semantic Compositionality Over a Sentiment Treebank.
+In Proceedings of the 2013 Conference on Empirical Meth-
+ods in Natural Language Processing, 1631–1642. Seattle,
+Washington, USA: Association for Computational Linguis-
+tics.
+Sousa, S.; and Kern, R. 2023. How to keep text private?
+A systematic review of deep learning methods for privacy-
+preserving natural language processing.
+Artificial Intelli-
+gence Review, 56(2): 1427–1492.
+Sundararajan, M.; et al. 2017. Axiomatic attribution for deep
+networks. In International conference on machine learning,
+3319–3328. PMLR.
+T.y.s.s., S.; Baumgartner, N.; St¨urmer, M.; Grabmair, M.;
+and Niklaus, J. 2024. Towards Explainability and Fairness in
+Swiss Judgement Prediction: Benchmarking on a Multilin-
+gual Dataset. In Calzolari, N.; Kan, M.-Y.; Hoste, V.; Lenci,
+A.; Sakti, S.; and Xue, N., eds., Proceedings of the 2024
+Joint International Conference on Computational Linguis-
+tics, Language Resources and Evaluation (LREC-COLING
+2024), 16500–16513. Torino, Italia: ELRA and ICCL.
+Utpala, S.; et al. 2023. Locally Differentially Private Docu-
+ment Generation Using Zero Shot Prompting. In Bouamor,
+H.; Pino, J.; and Bali, K., eds., Findings of the Association
+for Computational Linguistics: EMNLP 2023, 8442–8457.
+Singapore: Association for Computational Linguistics.
+Valvoda, J.; and Cotterell, R. 2024. Towards Explainability
+in Legal Outcome Prediction Models. In Duh, K.; Gomez,
+H.; and Bethard, S., eds., Proceedings of the 2024 Confer-
+ence of the North American Chapter of the Association for
+Computational Linguistics: Human Language Technologies
+(Volume 1: Long Papers), 7269–7289. Mexico City, Mexico:
+Association for Computational Linguistics.
+Van Wynsberghe, A. 2021. Sustainable AI: AI for sustain-
+ability and the sustainability of AI. AI and Ethics, 1(3): 213–
+218.
+Vu, D. N. L.; et al. 2024. Granularity is crucial when ap-
+plying differential privacy to text: An investigation for neu-
+ral machine translation. In Al-Onaizan, Y.; Bansal, M.; and
+Chen, Y.-N., eds., Findings of the Association for Computa-
+tional Linguistics: EMNLP 2024, 507–527. Miami, Florida,
+USA: Association for Computational Linguistics.
+Wallace, E.; Gardner, M.; and Singh, S. 2020.
+Interpret-
+ing Predictions of NLP Models. In Villavicencio, A.; and
+Van Durme, B., eds., Proceedings of the 2020 Conference
+on Empirical Methods in Natural Language Processing: Tu-
+torial Abstracts, 20–23. Online: Association for Computa-
+tional Linguistics.
+Wang, A.; Singh, A.; Michael, J.; Hill, F.; Levy, O.; and
+Bowman, S. 2018. GLUE: A Multi-Task Benchmark and
+Analysis Platform for Natural Language Understanding. In
+Linzen, T.; Chrupała, G.; and Alishahi, A., eds., Proceedings
+of the 2018 EMNLP Workshop BlackboxNLP: Analyzing and
+Interpreting Neural Networks for NLP, 353–355. Brussels,
+Belgium: Association for Computational Linguistics.
+Wang, Z.; Li, H.; Huang, D.; Kim, H.-S.; Shin, C.-W.; and
+Rahmani, A. M. 2025. HealthQ: Unveiling questioning ca-
+pabilities of LLM chains in healthcare conversations. Smart
+Health, 36: 100570.
+Weggenmann, B.; Rublack, V.; Andrejczuk, M.; Mattern, J.;
+and Kerschbaum, F. 2022. DP-VAE: Human-Readable Text
+Anonymization for Online Reviews with Differentially Pri-
+vate Variational Autoencoders. In Proceedings of the ACM
+Web Conference 2022, WWW ’22, 721–731. New York,
+NY, USA: Association for Computing Machinery.
+ISBN
+9781450390965.
+Wen, Q.; Liang, J.; Sierra, C.; Luckin, R.; Tong, R.; Liu, Z.;
+Cui, P.; and Tang, J. 2024. AI for Education (AI4EDU):
+Advancing Personalized Education with LLM and Adaptive
+Learning. In Proceedings of the 30th ACM SIGKDD Confer-
+ence on Knowledge Discovery and Data Mining, KDD ’24,
+6743–6744. New York, NY, USA: Association for Comput-
+ing Machinery. ISBN 9798400704901.
+Wu, H.; Li, S.; Gao, Y.; Weng, J.; and Ding, G. 2024. Natural
+language processing in educational research: The evolution
+of research topics. Education and Information Technologies,
+29(17): 23271–23297.
+Wu, X.; Duan, R.; and Ni, J. 2023. Unveiling security, pri-
+vacy, and ethical concerns of chatgpt. Journal of Information
+and Intelligence.
+Yan, B.; Li, K.; Xu, M.; Dong, Y.; Zhang, Y.; Ren, Z.; and
+Cheng, X. 2025. On protecting the data privacy of Large
+Language Models (LLMs) and LLM agents: A literature re-
+view. High-Confidence Computing, 5(2): 100300.
+Yin, Y.; and Habernal, I. 2022. Privacy-Preserving Mod-
+els for Legal Natural Language Processing. In Aletras, N.;
+Chalkidis, I.; Barrett, L.; Goant,˘a, C.; and Preot,iuc-Pietro,
+D., eds., Proceedings of the Natural Legal Language Pro-
+cessing Workshop 2022, 172–183. Abu Dhabi, United Arab
+Emirates (Hybrid): Association for Computational Linguis-
+tics.
+Zhang, X.; Zhao, J.; and LeCun, Y. 2015.
+Character-
+level Convolutional Networks for Text Classification.
+In
+Advances in Neural Information Processing Systems, vol-
+ume 28, 649–657. Curran Associates, Inc.
+Zhao, H.; Chen, H.; Yang, F.; Liu, N.; Deng, H.; Cai, H.;
+Wang, S.; Yin, D.; and Du, M. 2024.
+Explainability for
+Large Language Models: A Survey. ACM Trans. Intell. Syst.
+Technol., 15(2).
+Zhao, X.; Zhang, W.; Xiao, X.; and Lim, B. 2021. Exploiting
+Explanations for Model Inversion Attacks. In Proceedings
+of the IEEE/CVF International Conference on Computer Vi-
+sion (ICCV), 682–692.
+Zhao, Z.; and Aletras, N. 2023. Incorporating Attribution
+Importance for Improving Faithfulness Metrics. In Rogers,
+A.; Boyd-Graber, J.; and Okazaki, N., eds., Proceedings
+of the 61st Annual Meeting of the Association for Compu-
+tational Linguistics (Volume 1: Long Papers), 4732–4745.
+Toronto, Canada: Association for Computational Linguis-
+tics.
+Zhao, Z.; Chrysostomou, G.; Bontcheva, K.; and Aletras, N.
+2022. On the Impact of Temporal Concept Drift on Model
+Explanations. In Goldberg, Y.; Kozareva, Z.; and Zhang, Y.,
+eds., Findings of the Association for Computational Linguis-
+tics: EMNLP 2022, 4039–4054. Abu Dhabi, United Arab
+Emirates: Association for Computational Linguistics.
+Zheng, X.; Shirani, F.; Chen, Z.; Lin, C.; Cheng, W.; Guo,
+W.; and Luo, D. 2025.
+F-Fidelity: A Robust Framework
+for Faithfulness Evaluation of Explainable AI. In Proceed-
+ings of The Thirteenth International Conference on Learn-
+ing Representations (ICLR).
+Zini, J. E.; and Awad, M. 2022. On the Explainability of
+Natural Language Processing Deep Models. ACM Comput.
+Surv., 55(5).

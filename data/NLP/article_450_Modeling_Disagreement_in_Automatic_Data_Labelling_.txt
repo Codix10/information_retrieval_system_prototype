@@ -1,0 +1,649 @@
+Title: Modeling Disagreement in Automatic Data Labelling for Semi-Supervised Learning in Clinical Natural Language Processing
+Source URL: http://arxiv.org/abs/2205.14761v2
+--------------------------------------------------
+
+Modeling Disagreement in Automatic Data Labelling for Semi-Supervised
+Learning in Clinical Natural Language Processing
+Hongshu Liu1∗Nabeel Seedat2∗
+Julia Ive3
+1 Imperial College London
+2 University of Cambridge
+3 Queen Mary University of London
+hongshu.liu19@imperial.ac.uk, ns741@cam.ac.uk, j.ive@qmul.ac.uk
+Abstract
+Computational models providing accurate esti-
+mates of their uncertainty are crucial for risk
+management associated with decision making
+in healthcare contexts. This is especially true
+since many state-of-the-art systems are trained
+using the data which has been labelled auto-
+matically (self-supervised mode) and tend to
+overﬁt. In this work, we investigate the qual-
+ity of uncertainty estimates from a range of
+current state-of-the-art predictive models ap-
+plied to the problem of observation detection
+in radiology reports.
+This problem remains
+understudied for Natural Language Processing
+in the healthcare domain.
+We demonstrate
+that Gaussian Processes (GPs) provide supe-
+rior performance in quantifying the risks of 3
+uncertainty labels based on the negative log
+predictive probability (NLPP) evaluation met-
+ric and mean maximum predicted conﬁdence
+levels (MMPCL), whilst retaining strong pre-
+dictive performance.
+1
+Introduction
+While current machine learning and deep learning
+models have shown great success in a variety of au-
+tomated classiﬁcation tasks (Rajkomar et al., 2018;
+Yang et al., 2018), sensitive healthcare contexts,
+necessitate that these models quantify the risks of
+different diagnosis decisions, i.e. positive - the ill-
+ness is highly likely, uncertain - the illness is likely,
+with lower risks, negative - the illness is highly
+unlikely. The 3 uncertainty labels (also our class
+labels) allow each diagnosis decision to be made,
+by factoring in the degrees of uncertainty.
+This is especially relevant as human annotation
+is very costly and model training data is often la-
+belled by automatic labellers that use ontologies or
+are rule-based. For example, the UMLS (Uniﬁed
+Medical Language System) ontology (Bodenreider,
+2004) is almost predominantly used to match lin-
+guistics patterns in clinical text to medical concepts
+∗Equal contribution.
+(e.g. using the MetaMap tool (Aronson, 2006)).
+The corpora annotated in this fashion are used to
+learn neural detectors of medical concepts in the
+self-supervised setting (Zhang et al., 2021). Rule-
+based automatic labellers such as CheXpert (Irvin
+et al., 2019), which builds on NegBio (Peng et al.,
+2018) use rules predeﬁned by experts to extract
+clinical observations from the free text of radiology
+reports. Both use different rules, where CheXpert
+is more conservative, with more uncertain labels.
+Most clinical Natural Language Processing
+(NLP) models focus on optimizing predictive clas-
+siﬁcation performance on class labels with point
+estimates, but pay less attention to further quantify
+the risks and uncertainty of these labels. Bayesian
+methods offer as a solution, a principled approach
+to produce well-calibrated uncertainty estimates.
+Popular Bayesian approximations (e.g., model en-
+sembles, dropout techniques etc) have primarily
+been studied in the general NLP domain (Ova-
+dia et al., 2019) or for continuous healthcare data
+(Combalia et al., 2020; Leibig et al., 2017). More
+rarely, those studies are in Clinical Natural Lan-
+guage Processing (NLP) (Yang et al., 2019; Guo
+et al., 2021), which has a unique asymmetric risk
+where underestimates and overestimates of conﬁ-
+dence should be evaluated differently.
+In this work, we build a model using Gaussian
+Processes (GPs) (Williams and Rasmussen, 2006),
+a Bayesian non-parametric method to quantify the
+uncertainty and disagreements associated with au-
+tomatic data labels. Instead of learning distribu-
+tions over model parameters as in Bayesian Deep
+Learning (BDL), GP models are non-parametric
+and learn distributions over functions, thus allow-
+ing for better generalisation.
+We compare GP performance to two types of
+Bayesian approximations: frequentist ensembles
+using both Random Forests (RFs) (Breiman, 2001)
+and Deep Ensembles (ENS) (Lakshminarayanan
+et al., 2017), which are considered state-of-the-
+arXiv:2205.14761v2  [cs.LG]  7 Jun 2022
+art for uncertainty estimation in predictive settings
+(Lobacheva et al., 2020; Seedat and Kanan, 2019).
+We make use of the three automatic uncertainty
+labels (considered noisy labels), as provided by
+the CheXpert and Negbio labellers for diagnostics
+using radiology reports and make the following
+contributions:
+(1) We study the quality of uncertainty estimates
+of a new range of uncertainty-aware models, previ-
+ously understudied in clinical NLP;
+(2) We successfully apply Sparse Gaussian Pro-
+cesses (GPs) to the diagnosis detection task in ra-
+diology reports. To the best of our knowledge,
+this is the ﬁrst application in clinical NLP and we
+demonstrate that GPs provides superior uncertainty
+representations yet retain comparable predictive
+performance when compared to baselines Random
+Forests and Deep Ensembles;
+(3) We demonstrate the utility of uncertainty es-
+timates for the models trained with data labelled
+automatically (self-supervised) with disagreements
+(differences of opinions from rule-based CheXpert
+and Negbio labellers). GPs outperform the RF and
+ENS models: providing less certainty in the pre-
+dictions for the test cases where labels assigned by
+different labellers disagree. Correct identiﬁcation
+of such cases is crucial for reliable and trustworthy
+risk management, where any uncertain cases are
+referred for screening or to a human expert.
+2
+Methodology
+Gaussian Processes (GPs) offer a principled prob-
+abilistic modelling approach and provide uncer-
+tainty estimates without needing post-processing,
+hence motivating our modelling decision. The GP
+is deﬁned by GP(µ(x), K(x, x
+′, θ)), a mean func-
+tion and covariance function respectively. When
+the GP is realized on observed data it is given as:
+p(y|f) = Qn
+i=1 p(yi)|fi). where f is a vector of la-
+tent functions p(f|x, θ) = Qn
+i=1 N(fi; 0, Kj). Due
+to space limitations we refer to Williams and Ras-
+mussen (2006) for more details. In our work, we
+apply GPs to the classiﬁcation task of clinical ob-
+servation detection. The challenge with using GPs
+for classiﬁcation is that an approximation for the
+posterior is required.1 GPs also have a complexity
+of O(n3) (Williams and Rasmussen, 2006), due
+1Since the likelihood can no longer be assumed Gaussian
+due to the discrete labels, computing the posterior becomes
+computationally intractable and hence, requires methods such
+as Markov Chain Monte Carlo and Variational Inference to
+approximate the posterior.
+to the matrix inversion, making it computationally
+intensive for NLP tasks using large datasets and
+high dimensional embeddings.
+Hence, in dealing with the these challenges, we
+use Sparse GPs with Black-box variational infer-
+ence (Dezfouli and Bonilla, 2015) (minimize the
+log-evidence lower bound) and use the Reparame-
+terization Trick (Kingma and Welling, 2014) to
+approximate the GPs - in a more computation-
+ally feasible method, using a small set of latent
+inducing points. This approach is based on Titsias
+(2009). We also use automatic relevance determi-
+nation (ARD) (MacKay, 1996) to allow for more
+ﬂexibility in our kernel representation.
+3
+Experimental settings
+3.1
+Data
+We study free-text radiology reports in the MIMIC-
+CXR database v2.0.0 (Johnson et al., 2019). The
+dataset is labelled by both the CheXpert (primary
+label) and Negbio labellers. CheXpert is based on
+Negbio, but they follow different strategies in men-
+tion detection: Negbio uses MetaMap and CheX-
+pert curates concepts predeﬁned by clinical experts.
+We analyse the ‘Edema’ pathology- 65,833 re-
+ports with 3 uncertainty labels: positive, uncertain
+and negative as explained earlier. Edema was cho-
+sen due to the large data size, more inconsistent
+labels between the two labellers and more balanced
+split between classes. We partition the ‘Edema’
+examples into: (1) 63,482 consistent labels (∼96%
+dataset), where both CheXpert and Negbio labels
+agree (CONS: 26,455 - positive, 11,781 - uncertain,
+25,246 - negative) and (2) 2,351 inconsistent labels
+making up ∼4% of the total dataset, where CheX-
+pert and Negbio labels disagree (INCONS, 522:
+positive, 1,317 - uncertain, 512 - negative). Val-
+idation and Test sets preserve the described class
+proportions and contain 10% of the dataset each.
+In our setup, we use two variants of the
+inconsistent test sets (i.e.
+labellers disagree)
+to quantify the generalisation to different label-
+ing mechanisms namely: NegINCONSTest and
+CheXINCONSTest, taking as the ‘ground truth’,
+the automatic Negbio and CheXpert labels, respec-
+tively. CheXpert is considered the primary label,
+hence the Train and Validation sets only use CheX-
+pert labels, also containing both consistent and in-
+consistent data as mentioned above.
+Text pre-processing (tokenisation, lower-casing,
+white space and punctuation removal) is done us-
+ing Texthero. The average token length is ∼
+43.5 tokens. Each training example’s input data is
+represented by a 200 dimensional ﬁxed length vec-
+tor averaged over tokens. We use the biomedical
+Word2Vec-Pubmed word embeddings
+(Chiu
+et al., 2016) to represent tokens.
+Table 1: Results comparing GPs, RF and ENS based on
+accuracy and NLPP for both inconsistent (OOD) and
+consistent test sets. Bold highlights the best results.
+NegINCONSTest
+CheXINCONSTest
+CONSTest
+Acc↑
+NLPP↓
+Acc↑
+NLPP↓
+Acc↑
+NLPP↓
+GP
+0.294
+1.234
+0.519
+0.634
+0.816
+0.293
+RF
+0.271
+1.451
+0.579
+0.598
+0.795
+0.316
+ENS
+0.263
+1.281
+0.468
+0.691
+0.840
+0.269
+3.2
+Models
+Our Sparse GP model consists of 300 inducing
+points and a radial basis function (RBF) kernel
+making use of ARD to learn the length scales.
+The expected likelihood term in Lelbo is estimated
+using Monte Carlo sampling. The GP model is
+trained stochastically with RMSProp (learning rate
+= 0.003, epochs=2, batch size=500).
+The RF model (using Scikit-learn (Pe-
+dregosa et al., 2011)) has the following hyper-
+parameters based on random search over standard
+parameters: 300 trees and a max depth of 40. Iso-
+tonic regression is used to obtain well-calibrated
+predictive distributions (comparable to the GP).
+The Deep Ensemble (ENS) model based on
+(Lakshminarayanan et al., 2017) has: 5 randomly
+initialized models (MLP with 3-hidden layers
+with 200 hidden units/layer (with batch norm),
+Adam (learning rate = 3e-3), epochs=10)). Fol-
+lowing (Lakshminarayanan et al., 2017), we use ad-
+versarial training (fast gradient sign method (Good-
+fellow et al., 2015)), for better model robustness.
+3.3
+Evaluation metrics
+The models are evaluated based on predictive per-
+formance (accuracy) and we quantify the quality of
+the uncertainty representations using the negative
+log predictive probability NLPP = −log p(C =
+yn|xn). NLPP penalises both overconﬁdent pre-
+dictions that are incorrect predictions and under-
+conﬁdent predictions that are correct. We optimise
+for higher predictive performance and lower NLPP.
+Since we do not have ground truth labels for
+multiple human experts, we additionally assess
+the mean maximum predicted conﬁdence level
+(MMPCL) of a certain test set (see Table 2),
+MMPCL =
+1
+N
+PN
+n=1 maxj p(yn = Cj|xn),
+where N is total number of data points in the spe-
+ciﬁc test set and Cj is per class label.
+4
+Results
+We carry out two experiments:
+(1) We mea-
+sure the performance in uncertainty representa-
+tion and predictive performance of the model
+trained and validated on primary labels (CheXpert
+- CheXTrain and CheXVal, both contain con-
+sistent and inconsistent dataset) for the inconsis-
+tent Test data (disagreement- NegINCONSTest,
+CheXINCONSTest), as well as for the consis-
+tent Test data (agreement - CONSTest); (2) We
+conduct a group-wise performance analysis, partic-
+ularly assessing how different models deal with the
+asymmetric risk of false negatives.
+4.1
+Performance across labeller agreement
+Inconsistent Labels. Evaluating performance on
+inconsistent labels (CheXpert and Negbio disagree)
+highlights the use case of evaluation on out-of-
+distribution (OOD) labels (since the models are
+trained on CheXpert labels, but tested on Neg-
+bio labels - NegINCONSTest).
+Table 1 illus-
+trates the average predictive accuracy and aver-
+age NLPP for all the test sets (NegINCONSTest,
+CheXINCONSTest, CONSTest). Overall, all
+models exhibit a higher NLPP across on both in-
+consistent test sets compared to CONSTest. The
+high NLPP highlights the models are able to cor-
+rectly represent predictive uncertainty, when there
+was in fact disagreement in predictions.
+For experiments, comparing NegINCONSTest
+and CheXINCONSTest, we note that CheX-
+pert has more conservative labels compared
+to Negbio:
+i.e CheXINCONSTest
+contains
+63% of uncertain labels and 13% negative,
+whilst NegINCONSTest
+30% uncertain and
+63% negative.
+When the GP is evaluated on
+NegINCONSTest (labels are OOD) it outper-
+forms the RF, yet the RF outperforms the GP
+on CheXINCONSTest (labels are in-distribution
+to training labels - CheXpert).
+In the case
+of ENS, it outperforms GP when evaluated
+on CONSTest but performs worse on incon-
+sistent test sets (both CheXINCONSTest and
+NegINCONSTest). These results highlight the
+RF can be biased/overﬁt the “conservative” dis-
+tribution of the training data, whereas the GP
+provides more ‘neutral’ predictions, generalising
+better to OOD data (e.g.
+NegINCONSTest).
+The poor performance of ENS on inconsistent
+test data (CheXINCONSTest (in-distribution) ,
+NegINCONSTest (OOD)), highlights that ENS
+does not generalize to OOD data nor does it handle
+noisy labels well. The GPs generalization perfor-
+mance is highly desirable in medical settings and
+our results on GP generalization is corroborated
+by (Schulam and Saria, 2017). For further analysis
+based on calibration see Appendix A.
+Consistent Labels. As a control experiment and
+to account for the imbalanced data, we randomly
+sample the CONS test set (CONSTest) such that
+it has the same size as the other two inconsistent
+test sets. All models show lower NLPP compared
+to the inconsistent experiments as the cases within
+CONSTest tend to have high certainty/agreement.
+4.2
+Group-wise analysis for asymmetric risk
+A signiﬁcant asymmetric risk in the healthcare con-
+text lies in False Negatives (FN), i.e. missing a pos-
+itive diagnosis. Ideally, models should represent
+FNs with low predictive conﬁdence, whilst True
+Positives (TPs) should have high predictive conﬁ-
+dence. As shown in Table 2, we compare the MMP-
+CLs of FNs and TPs for the positive and uncertain
+labels for NegINCONSTest and CONSTest and
+ignore the negative labels.
+On CONSTest (labellers agree), the GP pro-
+vides lower MMPCL for FN predictions and higher
+MMPCL for TP predictions when compared to
+the RF across all test sets. Whilst, ENS has good
+performance for FN positive and TP uncertain,
+this is traded off for reduced performance for
+FN uncertain and TP positive. We note that since
+GP has better balanced performance across both
+classes (positive and uncertain) it is likely to gener-
+alise better/not overﬁt, thus dealing with asymmet-
+ric risk in a more appropriate and balanced manner.
+Similar patterns are observed for NegINCONS,
+with the GP better representing the asymmetric risk
+(for both positive and uncertain) when compared
+to both ENS and RF. However, the results are less
+conclusive due to the sparsity of FNs: we have only
+one FN data point with positive label for GP and
+RF. Further, the two data points are different, hence
+the result where the RF outperforms on this sub-
+set, cannot be considered as reliably representative.
+That said, the absence of TP uncertain labels for
+RF model mirrors the disagreements between the
+two labellers and highlights the inherent difﬁculty
+in predicting uncertain cases.
+Overall, the GP and ENS give similar perfor-
+mance for in-distribution test data CONSTest,
+however on the OOD test data NegINCONSTest,
+the GP gives better performance.
+Table 2: Results for GP, RF & ENS, wrt. MMPCL
+for FNs and TPs evaluated on NegINCONSTest and
+CONSTest. Bold highlights the best results: lower
+conﬁdence FN and higher conﬁdence TP is desirable.
+NegINCONSTest
+CONSTest
+Positive
+Uncertain
+Positive
+Uncertain
+FN
+GP
+0.565
+0.800
+0.647
+0.638
+RF
+0.408
+0.857
+0.657
+0.661
+ENS
+0.694
+0.876
+0.624
+0.640
+TP
+GP
+0.711
+0.605
+0.797
+0.752
+RF
+0.680
+0
+0.774
+0.730
+ENS
+0.670
+0.318
+0.780
+0.834
+5
+Conclusions
+We present a Sparse GP model for clinical NLP
+that is capable of quantifying the risks of different
+uncertainty labels. This model can be particularly
+advantageous in self-supervised learning scenarios
+with automatically labelled datasets. It predicts
+lower conﬁdence estimates for the test examples
+where different labelling heuristics tend to disagree.
+Also, overall our sparse GP provides more conser-
+vative predictions by showing lower conﬁdence in
+incorrect predictions. This is important in health-
+care contexts where potential harms from a model
+error can be very extensive as compared to singular
+errors of a doctor. This also implies that our model
+could be used to ﬂag clinical notes for further re-
+view (e.g. by a human expert).
+Whilst, this work is focused on uncertainty in
+labelling for medical tasks, we believe it highlights
+the utility of probabilistic models applied to “noisy”
+labels and that similar methods could provide util-
+ity for NLP based automated labelling tasks. Fur-
+thermore, we hope that this work will spur further
+research in this understudied area of automated la-
+belling in clinical NLP - where annotated data is
+limited and expensive.
+6
+Ethical Considerations
+This study has been conducted strictly observing
+relevant guidelines for usage of the MIMIC III
+data. Medical decision making has high-stakes
+consequences, hence to mitigate any potential risks
+we note that the presented models should be used
+only to assist human medical experts in their deci-
+sions. Before the deployment of these models, they
+should be to subject to systematic validation.
+References
+Alan R Aronson. 2006.
+Metamap: Mapping text to
+the umls metathesaurus. Bethesda, MD: NLM, NIH,
+DHHS, 1:26.
+Olivier Bodenreider. 2004.
+The uniﬁed medical lan-
+guage system (umls): integrating biomedical termi-
+nology. Nucleic acids research, 32:267–270.
+Leo Breiman. 2001. Random forests. 45(1):5–32.
+Billy Chiu, Gamal Crichton, Anna Korhonen, and
+Sampo Pyysalo. 2016. How to train good word em-
+beddings for biomedical nlp. In Proceedings of the
+15th workshop on biomedical natural language pro-
+cessing.
+M. Combalia, F. Hueto, S. Puig, J. Malvehy, and V. Vi-
+laplana. 2020. Uncertainty estimation in deep neu-
+ral networks for dermoscopic image classiﬁcation.
+In 2020 IEEE/CVF Conference on Computer Vision
+and Pattern Recognition Workshops (CVPRW).
+Amir Dezfouli and Edwin V Bonilla. 2015. Scalable in-
+ference for gaussian process models with black-box
+likelihoods. In Advances in Neural Information Pro-
+cessing Systems 28, pages 1414–1422.
+Ian J Goodfellow, Jonathon Shlens, and Christian
+Szegedy. 2015. Explaining and harnessing adversar-
+ial examples. In ICLR.
+Yang Guo, Zhengyuan Liu, Savitha Ramasamy, and
+Pavitra Krishnaswamy. 2021.
+Uncertainty Char-
+acterization for Predictive Analytics with Clinical
+Time Series Data. Springer International Publishing.
+Irvin, Rajpurkar, Ko, Yu, Ciurea-Ilcus, Chute, Mark-
+lund, Haghgoo, Ball, and Shpanskaya. 2019. Chex-
+pert: A large chest radiograph dataset with uncer-
+tainty labels and expert comparison. In AAAI Con-
+ference on Artiﬁcial Intelligence, volume 33, pages
+590–597.
+Alistair E. W. Johnson, Tom J. Pollard, Nathaniel R.
+Greenbaum, Matthew P. Lungren, Chih ying Deng,
+Yifan Peng, Zhiyong Lu, Roger G. Mark, Seth J.
+Berkowitz, and Steven Horng. 2019. Mimic-cxr-jpg,
+a large publicly available database of labeled chest
+radiographs.
+Diederik P Kingma and Max Welling. 2014.
+Auto-
+encoding variational bayes.
+Balaji Lakshminarayanan,
+Alexander Pritzel,
+and
+Charles Blundell. 2017.
+Simple and scalable pre-
+dictive uncertainty estimation using deep ensembles.
+In Advances in Neural Information Processing Sys-
+tems.
+Christian Leibig, Vaneeda Allken, Murat Seçkin Ay-
+han, Philipp Berens, and Siegfried Wahl. 2017.
+Leveraging uncertainty information from deep neu-
+ral networks for disease detection. Scientiﬁc reports,
+7(1):1–14.
+Ekaterina Lobacheva, Nadezhda Chirkova, Maxim
+Kodryan, and Dmitry P Vetrov. 2020.
+On power
+laws in deep ensembles. Advances in Neural Infor-
+mation Processing Systems, 33:2375–2385.
+David J. C. MacKay. 1996.
+Bayesian Methods
+for Backpropagation Networks,
+pages 211–254.
+Springer New York, New York, NY.
+Yaniv Ovadia, Emily Fertig, Jie Ren, Zachary Nado,
+D. Sculley, Sebastian Nowozin, Joshua Dillon, Bal-
+aji Lakshminarayanan, and Jasper Snoek. 2019. Can
+you trust your model's uncertainty?
+evaluating
+predictive uncertainty under dataset shift.
+In Ad-
+vances in Neural Information Processing Systems,
+volume 32.
+Fabian Pedregosa, Gaël Varoquaux, Vincent Michel
+Alexandre Gramfort,
+Bertrand Thirion,
+Olivier
+Grisel, Peter Prettenhofer Mathieu Blondel, Ron
+Weiss, Vincent Dubourg, Jake Vanderplas, Alexan-
+dre Passos, David Cournapeau, Matthieu Brucher,
+Matthieu Perrot, and Édouard Duchesnay. 2011.
+Scikit-learn: Machine Learning in Python. Journal
+of Machine Learning Research, 12:2825–2830.
+Peng, Wang, Lu, Bagheri, Summers, and Lu. 2018.
+Negbio: a high-performance tool for negation and
+uncertainty detection in radiology reports.
+AMIA
+Summits on Translational Science Proceedings.
+Alvin Rajkomar, Eyal Oren, Kai Chen, Andrew M.
+Dai, Nissan Hajaj, Michaela Hardt, Peter J. Liu, Xi-
+aobing Liu, Jake Marcus, Mimi Sun, Patrik Sund-
+berg, Hector Yee, Kun Zhang, Yi Zhang, Gerardo
+Flores, Gavin E. Duggan, Jamie Irvine, Quoc Le,
+Kurt Litsch, Alexander Mossin, Justin Tansuwan,
+De Wang, James Wexler, Jimbo Wilson, Dana Lud-
+wig, Samuel L. Volchenboum, Katherine Chou,
+Michael Pearson, Srinivasan Madabushi, Nigam H.
+Shah, Atul J. Butte, Michael D. Howell, Claire Cui,
+Greg S. Corrado, and Jeffrey Dean. 2018. Scalable
+and accurate deep learning with electronic health
+records. npj Digital Medicine, 1(1).
+Peter Schulam and Suchi Saria. 2017. Reliable deci-
+sion support using counterfactual models.
+In Ad-
+vances in Neural Information Processing Systems,
+pages 1697–1708.
+Nabeel Seedat and Christopher Kanan. 2019.
+To-
+wards calibrated and scalable uncertainty repre-
+sentations for neural networks.
+arXiv preprint
+arXiv:1911.00104.
+Titsias. 2009.
+Variational learning of inducing vari-
+ables in sparse gaussian processes. In Artiﬁcial In-
+telligence and Statistics.
+Christopher KI Williams and Carl Edward Rasmussen.
+2006. Gaussian processes for machine learning, vol-
+ume 2. MIT press Cambridge, MA.
+Hao-Yu Yang, Junling Yang, Yue Pan, Kunlin Cao,
+Qi Song, Feng Gao, and Youbing Yin. 2019. Learn
+to be uncertain: Leveraging uncertain labels in chest
+x-rays with bayesian neural networks. In IEEE Con-
+ference on Computer Vision and Pattern Recognition
+Workshops.
+Zhongliang Yang, Yongfeng Huang, Yiran Jiang, Yuxi
+Sun, Yu-Jin Zhang, and Pengcheng Luo. 2018. Clin-
+ical assistant diagnosis for electronic medical record
+based on convolutional neural network.
+Scientiﬁc
+Reports, 8(1).
+Jingqing Zhang, Luis Bolanos, Tong Li, Ashwani Tan-
+war, Guilherme Freire, Xian Yang, Julia Ive, Vibhor
+Gupta, and Yike Guo. 2021. Self-supervised detec-
+tion of contextual synonyms in a multi-class setting:
+Phenotype annotation use case.
+Appendix A
+Calibration.
+Figure 1 compares the calibration of the GP, RF and ENS models, which all generate probabilities close
+to the optimal curve. While, seemingly the calibrated RF model (using Isotonic Regression) gives more
+optimal predictions than the GP and ENS models, this result is based on the CONS test set (which is the
+same as the training distribution where both CheXpert and NegBio labels agree). However, both the GP
+and ENS are slightly less optimal as they generalize better across labellers and hence the GP and ENS
+overﬁt less to CONS speciﬁcally, when compared to RF.
+Figure 1: Reliability diagram for the CONSTest set: fraction of positives (y-axis) vs mean predicted value (x-axis)
+Appendix B
+Examples of False Negatives
+A data point from consistent test set labelled Positive classiﬁed as Negative, (paraphrased)
+AGAIN MILD PROMINENCE OF THE PULMONARY INTERSTITIAL MARKINGS SUGGESTIVE
+OF PULMONARY EDEMA, STABLE. SUBSEGMENTAL ATELECTASIS AT THE LUNG BASES.
+THERE IS NO DEFINITE CONSOLIDATION. NO PNEUMOTHORACES ARE SEEN.
+A data point from inconsistent test set labelled
+Positive classiﬁed as Negative, (paraphrased)
+THE PATIENT IS STATUS POST DUAL-LEAD LEFT-SIDED AICD WITH LEADS EXTENDING TO
+THE EXPECTED POSITIONS OF THE RIGHT ATRIUM AND RIGHT VENTRICLE. PATIENT IS STA-
+TUS POST MEDIAN STERNOTOMY. THERE IS PROMINENCE OF THE CENTRAL PULMONARY
+VASCULATURE SUGGESTING MILD EDEMA/VASCULAR CONGESTION. THE CARDIAC
+SILHOUETTE REMAINS QUITE ENLARGED. DIFFICULT TO EXCLUDE SMALL PLEURAL
+EFFUSIONS. THERE IS BIBASILAR ATELECTASIS. NO DISCRETE FOCAL CONSOLIDATION
+IS SEEN, ALTHOUGH OPACITY AT THE LUNG BASES PROJECTED ON THE LATERAL VIEW
+WHILE MAY BE DUE TO OVERLYING SOFT TISSUES, CONSOLIDATION IS DIFFICULT TO
+EXCLUDE.

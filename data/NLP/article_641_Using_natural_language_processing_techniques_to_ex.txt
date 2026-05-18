@@ -1,0 +1,700 @@
+Title: Using natural language processing techniques to extract information on the properties and functionalities of energetic materials from large text corpora
+Source URL: http://arxiv.org/abs/1903.00415v1
+--------------------------------------------------
+
+USING NATURAL LANGUAGE PROCESSING TECHNIQUES TO
+EXTRACT INFORMATION ON THE PROPERTIES AND
+FUNCTIONALITIES OF ENERGETIC MATERIALS FROM LARGE
+TEXT CORPORA
+ARTICLE HAS BEEN ACCEPTED FOR PUBLICATION IN THE PROCEEDINGS OF THE
+22ND INTERNATIONAL SEMINAR IN NEW TRENDS IN RESEARCH OF ENERGETIC MATERIALS
+Daniel C. Elton
+University of Maryland, College Park
+Dept. of Mechanical Engineering
+College Park, MD 20742
+Dhruv Turakhia
+University of Maryland, College Park
+Dept. of Mechanical Engineering
+College Park, MD 20742
+Nischal Reddy
+University of Maryland, College Park
+Dept. of Mechanical Engineering
+College Park, MD 20742
+Zois Boukouvalas
+University of Maryland, College Park
+Dept. of Mechanical Engineering
+College Park, MD 20742
+Mark D. Fuge
+University of Maryland, College Park
+Dept. of Mechanical Engineering
+College Park, MD 20742
+Ruth M. Doherty
+Energetics Technology Center
+Indian Head, MD 20640
+Peter W. Chung
+University of Maryland, College Park
+Dept. of Mechanical Engineering
+College Park, MD 20742
+pchung15@umd.edu
+March 4, 2019
+ABSTRACT
+The number of scientiﬁc journal articles and reports being published about energetic materials
+every year is growing exponentially, and therefore extracting relevant information and actionable
+insights from the latest research is becoming a considerable challenge. In this work we explore how
+techniques from natural language processing and machine learning can be used to automatically
+extract chemical insights from large collections of documents. We ﬁrst describe how to download
+and process documents from a variety of sources - journal articles, conference proceedings (including
+NTREM), the US Patent & Trademark Ofﬁce, and the Defense Technical Information Center archive
+on archive.org. We present a custom NLP pipeline which uses open source NLP tools to identify
+the names of chemical compounds and relates them to function words (“underwater”, “rocket”,
+“pyrotechnic”) and property words (“elastomer”, “non-toxic”). After explaining how word embeddings
+work we compare the utility of two popular word embeddings - word2vec and GloVe. Chemical-
+chemical and chemical-application relationships are obtained by doing computations with word
+vectors. We show that word embeddings capture latent information about energetic materials, so that
+related materials appear close together in the word embedding space.
+arXiv:1903.00415v1  [cs.CL]  1 Mar 2019
+- MARCH 4, 2019
+1
+Introduction
+The number of scientiﬁc journal articles and reports being published every year is growing exponentially – since 1945,
+global scientiﬁc output has doubled roughly every nine years [1]. This growth has been accompanied by a growing
+demand for automatable technologies that can be used to keep abreast of developments in science and technology
+(S&T). The need for such capabilities is particularly acute for businesses and defense agencies looking to maintain a
+competitive advantage. Data mining, natural language processing (NLP), and natural language understanding (NLU)
+are three overlapping areas of research where techniques are being developed to automatically process large volumes of
+text and extract useful insights.
+Developments in NLP have a rich history extending over many decades, particularly in the biological and medical
+domains [2, 3, 4, 5, 6]. For many niche NLP tasks shared benchmark datasets are now available containing extensive
+hand annotations. Creating such datasets is highly resource intensive, however. For example, the creation of the training
+data for the BioCreative V Chemical Disease Relation task [7] required hand-annotating chemicals, diseases, and
+chemical-disease interactions in 1,500 PubMed articles. This required a team of subject matter experts using specialized
+annotation software [8]. Similar large scale hand labeling efforts have been undertaken for chemical named entity
+recognition (NER). For instance, the CHEMDNER corpus is a collection of 84,355 chemical entity mentions from
+10,000 PubMed articles labeled and classiﬁed manually by a team of experts [9]. Court et al. developed a system which
+automatically extracts data on the Curie and Néel temperatures of materials from journal articles [10].
+Thus, hand-labeled NLP datasets are important resources that serve well those communities that possess them. However,
+algorithms trained on hand labeled datasets often lack transferability to other datasets and problems. In this work
+we explore what can be achieved using word embeddings and off-the-shelf NER tools without having to invest large
+resources in hand labeling. This is a ﬁrst effort to assess the viability of NLP methods to assisting in energetics research.
+In the context of energetics, we particularly seek an automated system which can extract chemical-chemical, chemical-
+property, and chemical-application associations for chemicals used in energetic devices (including binders, energetics,
+and fuel). We note that relatively little work has been done on extracting chemical-property or chemical-application
+relations from text. Kim et al. have built a system to extract materials synthesis procedures. A technique they developed
+that is relevant to our work is what they call “contextual neighbor sampling”, which uses the word2vec word embedding
+method (discussed below) [11, 12]. Kim et al. were interested in training an autoencoder network to compress synthesis
+procedures to a low dimensional space. They were primarily interested in synthesis procedures for a narrow set of
+materials-BaTiO3 and SrTiO3. However, only about 200 synthesis descriptions were available for those materials,
+which was not enough to train an autoencoder. To augment their dataset, they used word2vec embeddings to identify
+inorganic oxides that appeared in similar contexts. By using the materials that were closest to BaTiO3 and SrTiO3 in
+the word embedding space (such as CaTiO3, PbTiO3, etc.) they were able to augment their dataset to contain 1,200
+synthesis descriptions.
+In this work, we borrow ideas from the NLP system developed by Cheong et al.[13, 14] which extracts information about
+the functionalities of mechanical parts by identifying “artifact - function - energy ﬂow” triplets. After ﬁrst describing
+word embedding techniques and our NLP pipeline, we demonstrate a system which can extract chemical-chemical,
+chemical-property, and chemical-application relations from text related to energetic materials. Due to our use of
+unlabeled data, we believe our approach has a high potential for transferability.
+2
+Word embedding methods
+Word embedding methods create vectors for each word such that words that often appear nearby in the text appear
+nearby in the embedding space. Word embeddings are used for many different NLP tasks, which can be broken into two
+categories - intrinsic and extrinsic [15, 16]. Intrinsic tasks extract latent semantic relations that are related to underlying
+meaning. Examples include analogy completion, synonym detection, and the disambiguation of acronyms [17]. By
+contrast, extrinsic tasks are tasks that are more related to syntax, such as named entity recognition, part-of-speech
+tagging, and semantic role labeling. We tested two of the most popular word embedding techniques—word2vec and
+GloVe.
+2.1
+word2vec
+The term word2vec is actually an umbrella term for a closely related family of word embedding algorithms [18, 19].
+The original word2vec authors have published two different objective functions for training word2vec vectors: skip
+grams [18] and continuous bag of words [19]. Each of these objective functions may be employed with a variety of
+different models. The skip gram objective takes a center word wc as input and tries to reproduce the (log) probability of
+2
+- MARCH 4, 2019
+context words:
+log p (wc−m, . . . , wc−1, wc+1, . . . , wc+m|wc) = log
+
+
+Y
+−m≤j≤m,j̸=0
+p(wc+j|wc)
+
+
+(1)
+where m is the (half) size of the contextual window. In equation 1 an assumption of conditional independence was
+made - it is assumed for simplicity that the presence of each context word is independent of the others. The output of
+the model is a vector ˆy in which each element represents the probability that of that word appearing in the context of
+the center word. The continuous bag of words model performs the opposite task of skip gram - it tries to predict the
+probability of a center word given a list of context words. One type of model used for the skip gram objective is what
+may be called a “one layer + softmax” model. This means the model consists solely of a one layer neural network
+followed by a softmax “squeezing” function which produces a probability distribution. When using the skip gram
+objective, the model works as follows: ﬁrst, the center word is encoded in a one hot vector xc. One hot vectors have one
+element which is equal to 1 (“hot”) corresponding to a particular word, and all other elements equal to zero. The one
+hot vector xc is multiplied by a matrix W of size V × N, where V is the vocabulary size and N is the word vector size.
+This generates the word vector wc. Then the word vector is multiplied by a different matrix W′ to obtain a weighting
+vector u, which is then turned into a probability vector ˆy using the softmax function. In summary:
+wc = Wxc
+u = W′wc
+(2)
+ˆy = softmax(u).
+The softmax function ˆy = softmax(u) is deﬁned element-wise as:
+ˆyi =
+exp(ui)
+PV
+j=1 exp(uj)
+.
+(3)
+A simpler method of generating the probability vector is what may be called the “single softmax" model, which operates
+directly on dot products of word vectors:
+ˆyi =
+exp((wi)⊤wc)
+PV
+j=1 exp((wc)⊤wj))
+.
+(4)
+Typically, the distance between the probabilities generated by the model ˆy and the real world probabilities y are
+computed using the cross-entropy metric:
+H(ˆy, y) = −
+V
+X
+j=1
+ˆyj log(ˆyj).
+(5)
+The model is trained by minimizing cross entropy, usually using stochastic gradient descent. While the “one layer +
+softmax” and “single softmax” models are often introduced for pedagogical purposes, they are rarely used in practice
+because computation of the softmax function with a large vocabulary size V becomes expensive computationally due to
+the sum in the denominator. Instead, the word2vec authors introduced two other techniques: hierarchical softmax and
+negative sampling, both of which are more efﬁcient. An additional implementation detail which is speciﬁc to word2vec
+is the use of subsampling [20]. During subsampling, words that are more frequent than a threshold t are removed with a
+probability p. Subsampling can be thought of as a probabilistic variant of stop word removal.
+2.2
+GloVe
+The GloVe (“Global Vector”) word embedding, introduced by Pennington et al. in 2014, takes a very different approach
+to generating word embeddings [21]. In GloVe, word vectors are used to reproduce the co-occurrence matrix Xij as
+faithfully as possible. Each element in the co-occurrence matrix tabulates the probability (inverse frequency) with
+which word i appears in the context of word j, where context is deﬁned using a window with half width m. The GloVe
+authors use the following model for the co-occurrence matrix:
+w⊤
+i ˜wj + bi + bj ≈log(1 + Xij).
+(6)
+The idea of factorizing the log of the occurrence matrix in such a way is closely related to latent semantic analysis (LSA)
+[22]. The method generates two sets of word vectors wi and ˜wi. Typically the left and right contexts are distinguished,
+so Xij is asymmetric, and these two word vectors are different. A single word vector is obtained as w′
+i = wi + ˜wi.
+The co-occurrence matrix is sparse, containing only a few values with large probabilities and having most elements
+being very close to or equal to zero. Therefore, a weighted least squares procedure is used for training the model.
+3
+- MARCH 4, 2019
+2.3
+Training word embeddings
+The main hyperparameters that need to be tuned when training word embeddings are the embedding dimension D and
+the (half) window size m. Additional parameters that may appear are the frequency cutoff for word consideration in
+training and the subsampling parameter t. Default values in most software packages are D = 100 or D = 150 and
+m = 5. Setting D too large (ie. D = 1000) or too small (ie. D = 50) will signiﬁcantly degrade performance. Previous
+hyperparameter studies suggest the optimal dimensionality is typically between D ≈200 −300 [23, 24]. The optimal
+setting for m may be more sensitive to the task(s) at hand - one hyperparameter study reports that accuracy on a variety
+of semantic and syntactic tasks plateaus around m = 4 −8 [23] while a different study on biomedical NLP ﬁnds a
+plateau when m = 16 −20 [24]. GloVe and word2vec may have different optimal settings. It has been noted that
+independent hyperparameter optimization usually causes word2vec and GloVe to converge to similar accuracies [20].
+After testing several different settings and not noticing major qualitative differences we settled on using D = 200 and
+m = 8.
+2.4
+Measuring word embedding similarity
+The cosine similarity Sc ∈[−1, 1] between two word embedding vectors w1 and w2 is deﬁned as:
+Sc(w1, w2) =
+w1 · w2
+||w1||||w2||.
+(7)
+There are several theoretical motivations for focusing on cosine similarity over Euclidean distance. The ﬁrst is that
+it disregards the length of the word vector. We found that the length of our word vectors depends on the number of
+times the word appears, which has been recognized as a common phenomenon. This is considered an issue since the
+semantics of words (which word vectors are supposed to encode) should be independent of the number of times that a
+word appears in a corpus. Cosine similarity is less sensitive to frequency-based effects, although it has been shown
+that cosine similarities are still contaminated by frequency-based effects to some extent [16]. Additionally, it has been
+shown that when using cosine similarity, fewer “hubs” appear in the nearest neighbor lists compared to when Euclidian
+distance is used [25]. Hubs are words that appear in the k-nearest neighbor ranking lists for a very large number of
+words. Hub words are generally words that do not have speciﬁc semantic relevance to the query word and thus are not
+considered useful. The presence of hubs (called “hubness”) appears to be a near-universal feature of high dimensional
+data [25].
+3
+Corpus construction and pipeline
+Collecting a corpus of text can be one of the most time consuming parts of any NLP endeavor. Articles in HTML
+format are preferable to those in PDF because the text of the article’s body is tagged so that headings, captions, tables,
+and references can easily be ignored during text extraction. However, different online publishers use different HTML
+conventions, so separate HTML parsers must be developed for each publisher, making this approach labor intensive.
+Also, most publishers have security mechanisms in place to prevent large-scale web scraping.
+3.1
+Patents
+A beneﬁt of working with patents is that they can be obtained as structured .xml objects, allowing the text to be extracted,
+as with HTML. In the United States Patent Classiﬁcation (USPC), the relevant section for energetic materials is class
+149, “Explosive and Thermic Compositions or Charges”, which has a total of 3,136 patents associated with it as either a
+primary or secondary classiﬁcation. In the international Cooperative Patent Classiﬁcation (CPC) the relevant class is
+C06, “Explosives, Matches”, in particular subclass B (C06B): “Explosives or Thermic Compositions; Manufacture
+Thereof; Use of Single Substances As Explosives”, which is associated with a total of 4,059 US patents. Free bulk
+downloads of patent data in .xml format are available online [26, 27]. A wide variety of open source toolkits for
+processing these .xml ﬁles can be found on GitHub. We used a modiﬁed version of the patent-parsing-tools code [28] to
+automatically download and extract the patent .xml ﬁles and then used a custom Python script to search the .xml ﬁles
+and extract text from patents that had C06B as their primary or secondary classiﬁcation.
+3.2
+Proceedings and other sources
+In addition to patents, our dataset consisted of several sets of proceedings papers from the International Detonation
+Symposium (“IDS”, 1976, 2002, 2014), Fraunhofer Institute for Chemical Technology Annual Conference (“ICT”,
+2008, 2010-2018) and NTREM (2014, 2015). Text from NTREM abstracts from 2004-2018 was also included. These
+4
+- MARCH 4, 2019
+Documents
+Text extraction
+and preprocessing
+Extract chemical names
+(named entity recognition) 
+Obtain chemical 
+structures from 
+PubChem API
+Energetics classifier
+Likely 
+energetics
+Other 
+compounds
+Word vectors
+Sentence 
+segmentation and 
+tokenization
+Extraction of chemical-application and chemical-property relations
+using word vector similarity metrics
+List of application 
+and property words
+Figure 1: The NLP pipeline used in this work.
+pdfs for these proceedings were taken from conference CD-ROMs and the Defense Technical Information Center
+(DTIC) website, a publicly available repository of unclassiﬁed materials run by the US Department of Defense. We
+used the pdfminer.six Python 3 package to extract text from the pdfs [29]. We also found we could download large sets
+of documents on energetic materials from the DTIC archive on archive.org using the internetarchive Python package.
+However, the text (from optical character recognition) was poor quality and was not used.
+3.3
+Proceeding pipeline
+Our NLP pipeline is shown in Figure 1. The preprocessing procedure can be summarized as follows:
+1. Convert .pdfs to text with PDFminer.six or extract text from patent .xml.
+2. Remove line breaks, references, and if possible metadata, ﬁgure captions, and tables.
+3. Remove stop words using NLTK stop word list combined with a custom stop words list.
+4. Remove abbreviations (“Dr.”, “No.”, etc) that confuse the sentence segmentor using regular expressions.
+Remove all numbers with decimal places or percentage signs.
+5. Extract chemical names with ChemDataExtractor.
+6. Call PubChem application program interface (API) to ﬁlter actual chemical names and obtain chemical
+structures.
+7. Use a machine learning based classiﬁer to classify energetic chemical names.
+8. Remove spaces and dashes from chemical names in text.
+9. Segment sentences using NLTK sent_tokenize().
+10. Convert all text to lower case and tokenize sentences using NLTK simple_preprocess().
+To extract chemical names we used the ChemDataExtractor Python package [30]. In a recent comparison, Chem-
+DataExtractor obtained the highest score compared to 10 other models that have been developed for the CHEMDNER
+“chemical entity mention” classiﬁcation task [31]. Another package which achieved a comparable score is the Scientiﬁc
+Natural Language Toolkit (https://github.com/skoblov-lab/scilk). For each chemical name identiﬁed by
+ChemDataExtractor we made a call to the PubChem API using the PubChemPy Python package to verify if it was
+indeed a chemical name. We also obtained the chemical graphs from PubChem in the form of SMILES strings. Next
+we used a custom classiﬁer to classify chemicals as energetic vs non-energetic materials. The classiﬁer was trained
+on a dataset of 617 known energetic materials and 1,128 non-energetic materials which were mostly pesticides and
+agrochemicals [32]. 80% of the data was used for training and 20% was used as a hold out test set for evaluation. The
+chemical structures were featurized using a concatenation of an Estate ﬁngerprint vector with the sum over bonds
+(bond counting) and custom descriptor set feature vectors. The latter two featurization methods are methods that were
+developed and tested in previous work where we applied machine learning to predicting the properties of energetic
+materials [33, 34]. For classiﬁcation we used a linear support vector machine (SVM) which achieved an area under the
+5
+- MARCH 4, 2019
+embedding
+groups
+energetics
+binders
+elements
+patents
+word2vec
+energetics
+0.79, 4.17
+binders
+0.50, 6.50
+0.82, 2.05
+elements
+0.22, 10.24
+0.38, 8.25
+0.57, 7.20
+GloVe
+energetics
+0.59, 0.68
+binders
+0.32, 0.98
+0.64, 0.29
+elements
+0.13, 1.85
+0.15, 1.69
+0.64, 1.30
+proceedings
+word2vec
+energetics
+0.72, 6.88
+binders
+0.40, 11.10
+0.81, 3.92
+elements
+0.14, 13.52
+0.27, 11.10
+0.56, 8.27
+GloVe
+energetics
+0.83, 1.08
+binders
+0.59, 1.80
+0.84, 0.70
+elements
+0.27, 2.26
+0.36, 1.88
+0.50, 1.48
+Table 1: Cosine similarities (bold) and Euclidean distances between groups. The groups were deﬁned as follows:
+energetics=[’hmx’, ’tatb’, ’rdx’, ’petn’, ’tnt’, ’nto’], binders=[’htpb’, ’viton’, ’wax’], elements=[’aluminum’, ’carbon’,
+’zinc’, ’nitrogen’, ’silicon’, ’boron’, ’magnesium’, ’oxygen’, ’hydrogen’, ’iron’].
+receiver operating characteristic (auROC) score of 0.99, an overall accuracy of 0.98, and a false positive rate of 0.02
+on the hold out test set. We also tested a random forest classiﬁer which achieved a similar accuracy. When the SVM
+classiﬁer was transferred from its original task to classifying chemicals from the corpus, the false positive rate became
+much higher. Therefore, we tuned the threshold of the classiﬁer by hand to make it more conservative and reduce its
+false positive rate.
+A weakness of NLP systems based on word embeddings is that chemical names with spaces or dashes get split – for
+instance “potassium nitrate” is considered as two separate words. One solution to this issue, developed by the original
+word2vec authors, is a method called phrase skip-gram [18]. In our work, however, we choose to circumvent this issue
+by removing all spaces and dashes from chemical names before sending the text to the tokenizer.
+4
+Results
+4.1
+Investigating clustering behavior
+Table 1 shows cosine similarities and Euclidean distances between three groups –“energetics”, “binders”, and “elements”.
+The table gives evidence that word embeddings of chemical names are weakly clustered according to which group
+they belong two. Clustering is indicated by the fact that in all cases intragroup similarities are larger than intergroup
+similarities. Similar clustering behavior is observed for both word2vec and GloVe. We visualized the clustering of the
+word vectors for chemical names using several dimensionality reduction techniques – principal components analysis
+(PCA) [35], t-stochastic neighbor embedding (t-SNE)[36], and spectral embedding. Some small clusters of energetic
+names were observed in t-SNE (not shown) but they did not appear to be semantically meaningful. Of the three
+embedding techniques, only PCA preserves the structure of the original space, since PCA amounts to just a rotation
+of axes. The projection to the ﬁrst two principal components is shown in Figure 2. In both word2vec and GloVe,
+names corresponding to chemical elements cluster to one side of the space. In both word2vec and GloVe, some names
+classiﬁed as likely energetic materials (shown in red) appear separated from the rest.
+4.2
+Most common chemical names and chemical-application relations
+Table 2 shows the most common chemical names found in the corpus. We created a list of 80 application related words
+(such as “airbag”, “underwater”, “nontoxic”, “nanoparticle”, “binder”, “desensitizer”). The most similar application
+words for each chemical name are shown. Next to each name is shown the total number of times it appeared along
+with the number of times that ChemDataExtractor identiﬁed the name as a chemical name. The table reveals that
+ChemicalDataExtractor misses identifying a large number of instances for most chemical names. We found that
+ChemDataExtractor could only identify chemical names that were embedded in sentences and could not identify
+chemical names in lists, which partially explains the low detection rate.
+6
+- MARCH 4, 2019
+ 
+Figure 2: Projection of the 200 dimensional word embeddings along the ﬁrst two principal components identiﬁed by
+principal components analysis, for word2vec (left) and GloVe (right).
+chemical name
+N
+NCDE
+word2vec application words
+GloVe application words
+1
+HMX
+5592
+456
+plastic, explosive
+binder, plastic
+2
+RDX
+5098
+9
+insensitive, explosive
+binder, plastic
+3
+AND
+4369
+5
+blasting, detonator
+primary, oxidizer
+4
+TNT
+3626
+304
+explosive, underwater
+plastic, explosive
+5
+nitrocellulose
+1960
+1749
+plasticizer, propellant
+binder, plasticizer
+6
+TATB
+1890
+1779
+insensitive, explosive
+plastic, insensitive
+7
+PETN
+1877
+1736
+explosive, detonator
+plastic, insensitive
+8
+3-nitro-1,2,4-triazol-5-one
+1484
+13
+primary, secondary
+elastomer, thermoplastic
+9
+5-nitro-2H-tetrazole
+1484
+4
+primary, secondary
+elastomer, thermoplastic
+Table 2: Most common chemical names in the corpus. N is the total number of times the word appears in the corpus,
+and NCDE is the number of times the word was identiﬁed as a chemical name by ChemDataExtractor. The two columns
+on the right give the most similar application words found in the word2vec and GloVe word embedding spaces.
+4.3
+Discovering chemical-chemical and application-chemical relations
+One of the ﬁrst tests we ran was to see if our system could detect synonyms. We found that synonyms often appeared
+in the top-5 similarity rankings for the most similar words. For instance, when using word2vec, for “RDX” the third
+most similar word (after “HMX” and “TNT”) was an older name for RDX, “hexogen”. Similarly, for PETN, the third
+most similar word was its full name, “pentaerythritol tetranitrate”. When only the patent data was used, synonyms
+often appeared higher in the rankings, which may have been due to the fact that the patent text was cleaner than
+the proceedings text. Next we investigated if word embedding similarity searches can be used to extract application
+– chemical relations. Table 3 shows some sample results for three application query words - “rocket”, “air”, and
+“underwater”. Three levels of ﬁltering are applied to the similarity rankings – ﬁrst no ﬁltering, then ﬁltering out only
+chemical names identiﬁed by ChemDataExtractor and found on PubChem, and ﬁnally ﬁltering out only chemical names
+identiﬁed as likely energetic materials by the SVM classiﬁer. The word “air” was chosen to ﬁnd energetic materials
+which are used for “aig bags” in the patent data. Argon and nitrogen, which are both a common gases used as airbag
+inﬂators are found high on the list for word2vec. While many of the words are not related to airbags, semicarbazide
+nitrate is an experimental energetic material for airbags. By searching through the corpus we determined what various
+acronyms stand for (this process could be automated). Under the results for the query word “air”, “HoB” stands for
+“height of blast” and “LAG” stands for “liquid assisted grinding”, a processing technique for energetic materials. In the
+results for “underwater”, “EBX” stands for “enhanced blast formulation”, “TBE” stands for “thermobaric explosive”,
+and “NOL” stands for Naval Ordnance Laboratory. In the results for “rocket”, NOP stands for “nitrous oxide-propane”,
+a proposed type of rocket fuel.
+7
+- MARCH 4, 2019
+Similarity ranking
+Similarity ranking
+Similarity ranking
+for all words
+for chemical names
+for likely energetic materials
+word2vec
+GloVe
+word2vec
+GloVe
+word2vec
+GloVe
+underwater
+0.70 deepwater
+0.79 explosions
+0.42 pentolite
+0.52 pentolite
+0.42 pentolite
+0.52 pentolite
+0.67 blast
+0.71 explosion
+0.42 TBE
+0.47 baratol
+0.39 Missile
+0.40 Triaminotri-
+nitrobenzene
+0.64 ebx
+0.65 mitigation
+0.39 Missile
+0.40 Triaminotri–
+nitrobenzene
+0.38 NOL
+0.35 Hexyl octyl
+decyl adipate
+0.63 mitigation
+0.64 desensitization
+0.38 Bullet
+0.35 Hexyl octyl
+decyl adipate
+0.38 Trotyl
+0.34 Dinitro-
+glycerine
+0.62 thermobaric
+0.63 nﬁned
+0.38 NOL
+0.35 Methoxypro-
+pylacetate
+0.42 cyclotol
+0.34 OCTOL
+air
+0.70 atmosphere
+0.80 bags
+0.63 Argon
+0.66 Argon
+0.26 HoB
+0.35 Di-n-hexyl
+phthalate
+0.63 Argon
+0.73 entrapped
+0.49 Steam
+0.46 Oxygen
+0.20 Missile
+0.32 Hexyl octyl
+decyl adipate
+0.60 dust
+0.72 bag
+0.48 Carbon
+Dioxide
+0.45 NITROGEN
+0.20 LAG
+0.30 semicarbazide
+nitrate
+0.60 surrounding
+0.70 entrapping
+0.47 nitrogen
+gas
+0.41 Dimethoxy-
+ethane
+0.20 pentolite
+0.29 Diethylhexyl
+adipate
+0.59 bag
+0.67 surrounding
+0.46 cyclone
+0.37 ALUMINIUM
+0.19 tetradecane
+0.29 Diisobutyl
+adipate
+rocket
+0.84 motors
+0.9 motors
+0.65 rocket fuel
+0.63 rocket fuel
+0.65 rocket fuel
+0.63 rocket fuel
+0.81 motor
+0.89 engines
+0.65 Propel
+0.54 Missile
+0.51 Missile
+0.54 Missile
+0.81 engines
+0.87 engine
+0.51 Missile
+0.54 NEM
+0.46 RAP
+0.31 Di-n-hexyl
+phthalate
+0.78 ducted
+0.86 biblarz
+0.47 AMMONIUM
+PERCHLORATE
+0.42 blue line
+0.31 NITRO-
+GLYCERINE
+0.29 NITRO-
+GLYCERINE
+0.75 hybrid
+0.86 nop
+0.46 RAP
+0.41 SRP
+0.29 nitrogen
+tetroxide
+0.29 TEGDN
+Table 3: Similarity rankings for three example query words – “underwater”, “air”, and “rocket”.
+5
+Conclusion
+In this paper we have presented a proof of concept system demonstrating how chemical-chemical and application-
+chemical relations can be obtained from large text corpora, without the need for hand labeling. We ﬁrst compiled
+a corpus of text comprised of open energetics documents. Using natural language processing techniques based on
+word2vec and GloVe word embeddings we demonstrated how our system can extract chemically meaningful associations
+and provide novel insights into how chemicals are used in energetic materials research and energetic systems.
+Acknowledgments
+Support for this work is gratefully acknowledged from the U.S. Ofﬁce of Naval Research under grant number N00014-17-
+1-2108 and from the Energetics Technology Center under project number 2044-001. Partial support is also acknowledged
+from the Center for Engineering Concepts Development in the Department of Mechanical Engineering at the University
+of Maryland, College Park. We thank Dr. Elan Moritz and Dr. Bill Wilson from the Energetics Technology Center for
+their encouragement and advice.
+References
+[1] Lutz Bornmann and diger Mutz, Rü. Growth rates of modern science: A bibliometric analysis based on the
+number of publications and cited references. Journal of the Association for Information Science and Technology,
+66(11):2215–2222, 2015.
+[2] Travers Ching, Daniel S. Himmelstein, Brett K. Beaulieu-Jones, Alexandr A. Kalinin, Brian T. Do, Gregory P. Way,
+Enrico Ferrero, Paul-Michael Agapow, Michael Zietz, Michael M. Hoffman, Wei Xie, Gail L. Rosen, Benjamin J.
+Lengerich, Johnny Israeli, Jack Lanchantin, Stephen Woloszynek, Anne E. Carpenter, Avanti Shrikumar, Jinbo Xu,
+Evan M. Cofer, Christopher A. Lavender, Srinivas C. Turaga, Amr M. Alexandari, Zhiyong Lu, David J. Harris,
+Dave DeCaprio, Yanjun Qi, Anshul Kundaje, Yifan Peng, Laura K. Wiley, Marwin H. S. Segler, Simina M. Boca,
+8
+- MARCH 4, 2019
+S. Joshua Swamidass, Austin Huang, Anthony Gitter, and Casey S. Greene. Opportunities and obstacles for deep
+learning in biology and medicine. Journal of The Royal Society Interface, 15(141):20170387, 2018.
+[3] Yifan Peng and Zhiyong Lu. Deep learning for extracting protein-protein interactions from biomedical literature.
+arXiv preprint arXiv:1706.01556, 2017.
+[4] Chanqin Quan, Lei Hua, Xiao Sun, and Wenjun Bai. Multichannel convolutional neural network for biological
+relation extraction. BioMed research international, 2016, 2016.
+[5] Masaki Asada, Makoto Miwa, and Yutaka Sasaki. Extracting drug-drug interactions with attention CNNs. BioNLP
+2017, pages 9–18, 2017.
+[6] Zibo Yi, Shasha Li, Jie Yu, Yusong Tan, Qingbo Wu, Hong Yuan, and Ting Wang. Drug-Drug Interaction
+Extraction via Recurrent Neural Network with Multiple Attention Layers, pages 554–566. Springer International
+Publishing, 2017.
+[7] Jiao Li, Yueping Sun, Robin J. Johnson, Daniela Sciaky, Chih-Hsuan Wei, Robert Leaman, Allan Peter Davis,
+Carolyn J. Mattingly, Thomas C. Wiegers, and Zhiyong Lu. Biocreative V CDR task corpus: a resource for
+chemical disease relation extraction. Database, 2016:baw068, 2016.
+[8] Jiao Li, Yueping Sun, R Johnson, Daniela Sciaky, Chih-Hsuan Wei, Robert Leaman, Allan Peter Davis, Carolyn J
+Mattingly, Thomas C Wiegers, and Zhiyong Lu. Annotating chemicals, diseases, and their interactions in
+biomedical literature. In Proceedings of the ﬁfth BioCreative challenge evaluation workshop, pages 173–182.
+[9] Martin Krallinger, Obdulia Rabal, Florian Leitner, Miguel Vazquez, David Salgado, Zhiyong Lu, Robert Leaman,
+Yanan Lu, Donghong Ji, Daniel M Lowe, et al. The CHEMDNER corpus of chemicals and drugs and its annotation
+principles. Journal of Cheminformatics, 7(1):S2, 2015.
+[10] Callum J. Court and Jacqueline M. Cole. Auto-generated materials database of curie and neel temperatures via
+semi-supervised relationship extraction. Scientiﬁc Data, 5:180111, 2018.
+[11] Edward Kim, Kevin Huang, Stefanie Jegelka, and Elsa Olivetti. Virtual screening of inorganic materials synthesis
+parameters with deep learning. npj Computational Materials, 3(1):53, 2017.
+[12] Edward Kim, Kevin Huang, Alex Tomala, Sara Matthews, Emma Strubell, Adam Saunders, Andrew McCallum,
+and Elsa Olivetti. Machine-learned and codiﬁed synthesis parameters of oxide materials. Scientiﬁc Data, 4:170127,
+2017.
+[13] Hyunmin Cheong and L. H. Shu. Retrieving causally related functions from natural-language text for biomimetic
+design. Journal of Mechanical Design, 136(8):081008, 2014.
+[14] Hyunmin Cheong, Wei Li, Adrian Cheung, Andy Nogueira, and Francesco Iorio. Automated extraction of function
+knowledge from text. Journal of Mechanical Design, 139(11):111407, 2017.
+[15] Amir Bakarov. A survey of word embeddings evaluation methods. ArXiV preprint, abs/1801.09536, 2018.
+[16] Tobias Schnabel, Igor Labutov, David M. Mimno, and Thorsten Joachims. Evaluation methods for unsupervised
+word embeddings. In Lluís Màrquez, Chris Callison-Burch, Jian Su, Daniele Pighin, and Yuval Marton, editors,
+EMNLP, pages 298–307. The Association for Computational Linguistics.
+[17] Yue Liu, Tao Ge, Kusum Mathews, Heng Ji, and Deborah McGuinness. Exploiting task-oriented resources
+to learn word embeddings for clinical abbreviation expansion. In Proceedings of BioNLP 15. Association for
+Computational Linguistics.
+[18] Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S. Corrado, and Jeff Dean. Distributed representations of words
+and phrases and their compositionality. Advances in Neural Information Processing Systems 26.
+[19] Tomas Mikolov, Kai Chen, Greg Corrado, and Jeffrey Dean. Efﬁcient estimation of word representations in vector
+space. ArXiV preprint, abs/1301.3781, 2013.
+[20] Omer Levy, Yoav Goldberg, and Ido Dagan. Improving distributional similarity with lessons learned from word
+embeddings. TACL, 3:211–225, 2015.
+[21] Jeffrey Pennington, Richard Socher, and Christopher D. Manning. GloVe: Global vectors for word representation.
+In Empirical Methods in Natural Language Processing (EMNLP), pages 1532–1543.
+9
+- MARCH 4, 2019
+[22] Thomas K. Landauer, Peter W. Foltz, and Darrell Laham. An introduction to latent semantic analysis. Discourse
+Processes, 25(2-3):259–284, 1998.
+[23] Rohit Mundra and Richard Socher. CS 224D: Deep Learning for NLP, Lecture Notes: Part II. Stanford, 2015.
+[24] Billy Chiu, Gamal Crichton, Anna Korhonen, and Sampo Pyysalo. How to train good word embeddings for
+biomedical NLP. In Proceedings of the 15th Workshop on Biomedical Natural Language Processing, pages
+166–174.
+[25] Miloš Radovanovi´c, Alexandros Nanopoulos, and Mirjana Ivanovi´c. Hubs in space: Popular nearest neighbors in
+high-dimensional data. Journal of Machine Learning Research, 11:2487–2531, 2010.
+[26] United States Patent and Trademark Ofﬁce Bulk Downloads. https://www.google.com/googlebooks/
+uspto.html.
+[27] USPTO Bulk Data Storage System (BDSS) Version 1.1.0. https://bulkdata.uspto.gov.
+[28] Przetacznik, P. patent-parsing-tools. https://github.com/pprzetacznik/patent-parsing-tools.
+[29] pdfminer.six Python PDF Parser – fork with Python 2+3 support using six. https://github.com/pdfminer/
+pdfminer.six.
+[30] Matthew C. Swain and Jacqueline M. Cole. ChemDataExtractor: A toolkit for automated extraction of chemical
+information from the scientiﬁc literature. Journal of Chemical Information and Modeling, 56(10):1894–1904,
+2016.
+[31] Ilia Korvigo, Maxim Holmatov, Anatolii Zaikovskii, and Mikhail Skoblov. Putting hands to rest: efﬁcient
+deep CNN-RNN architecture for chemical named entity recognition with no hand-crafted rules. Journal of
+Cheminformatics, 10(1):28, 2018.
+[32] John S. Delaney. ESOL: Estimating aqueous solubility directly from molecular structure. Journal of Chemical
+Information and Computer Sciences, 44(3):1000–1005, 2004.
+[33] Daniel C Elton, Zois Boukouvalas, Mark S Butrico, Mark D Fuge, and Peter W Chung. Applying machine
+learning techniques to predict the properties of energetic materials. Scientiﬁc Reports, 8(1):9059, 2018.
+[34] B. C. Barnes, D. C. Elton, Z. Boukouvalas, D. E. Taylor, W. D. Mattson, M. D. Fuge, and P. W. Chung. Machine
+Learning of Energetic Material Properties. ArXiv preprint arXiv:1807.06156, July 2018.
+[35] H. Hotelling. Analysis of a complex of statistical variables into principal components. Journal of Educational
+Psychology, 24(6):417–441, 1933.
+[36] Laurens van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. Journal of Machine Learning Research,
+9:2579–2605, 2008.
+10

@@ -1,0 +1,457 @@
+Title: Natural language processing of MIMIC-III clinical notes for identifying diagnosis and procedures with neural networks
+Source URL: http://arxiv.org/abs/1912.12397v1
+--------------------------------------------------
+
+Natural language processing of MIMIC-III clinical
+notes for identifying diagnosis and procedures with
+neural networks
+Siddhartha Nuthakki∗
+Department of BioHealth Informatics
+Indiana University-Purdue University Indianapolis
+Indianapolis, IN 46202
+snuthakk@iu.edu
+Sunil Neela
+Department of BioHealth Informatics
+Indiana University-Purdue University Indianapolis
+Indianapolis, IN 46202
+sneela@iupui.edu
+Judy W. Gichoya
+Department of Radiology & Imaging Sciences
+Emory University
+Atlanta, GA 30322
+judywawira@emory.edu
+Saptarshi Purkayastha
+Department of BioHealth Informatics
+Indiana University-Purdue University Indianapolis
+Indianapolis, IN 46202
+saptpurk@iupui.edu
+Abstract
+Coding diagnosis and procedures in medical records is a crucial process in the
+healthcare industry, which includes the creation of accurate billings, receiving
+reimbursements from payers, and creating standardized patient care records. In the
+United States, Billing and Insurance related activities cost around $471 billion in
+2012 which constitutes about 25% of all the U.S hospital spending. In this paper, we
+report the performance of a natural language processing model that can map clinical
+notes to medical codes, and predict ﬁnal diagnosis from unstructured entries of
+history of present illness, symptoms at the time of admission, etc. Previous studies
+have demonstrated that deep learning models perform better at such mapping when
+compared to conventional machine learning models. Therefore, we employed state-
+of-the-art deep learning method, ULMFiT on the largest emergency department
+clinical notes dataset MIMIC III which has 1.2M clinical notes to select for the
+top-10 and top-50 diagnosis and procedure codes. Our models were able to predict
+the top-10 diagnoses and procedures with 80.3% and 80.5% accuracy, whereas
+the top-50 ICD-9 codes of diagnosis and procedures are predicted with 70.7% and
+∗This is a shortened version of the Capstone Project that was accepted by the Faculty of Indiana University,
+in partial fulﬁllment of the requirements for the degree of Master of Science in Health Informatics.
+Preprint. Under review.
+63.9% accuracy. Prediction of diagnosis and procedures from unstructured clinical
+notes beneﬁts human coders to save time, eliminate errors and minimize costs.
+With promising scores from our present model, the next step would be to deploy
+this on a small-scale real-world scenario and compare it with human coders as the
+gold standard. We believe that further research of this approach can create highly
+accurate predictions that can ease the workﬂow in a clinical setting.
+1
+Introduction
+Electronic health records (EHR) consists of information about patients such as past medical and
+medication history, symptoms, chief complaints, treatment, procedures and tests, ﬁnal diagnosis,
+discharge medications, and care notes or referral notes which can be tracked over time and can be
+considered to be the best source for evidence-based care among healthcare professionals. EHRs
+provides a rich source of data for clinical informatics professionals to work on. Some open resources
+like the Medical Information Mart for Intensive Care (MIMIC) database [1] provide a vast amount of
+information to work on and they are already being mined and explored in several ways [2]. MIMIC-III
+is an openly available extensive database developed by the Massachusetts Institute of Technology
+(MIT) containing deidentiﬁed healthcare data of patients admitted to critical care units of a large
+tertiary care hospital [3]. Data primarily exists in two forms: structured and unstructured data with
+diagnostics and laboratory results, medications present under structured data, whereas unstructured
+data includes clinician progress notes and discharge summaries. The extraction of knowledge from
+the structured data with the help of statistical tests and machine learning techniques is relatively easier
+when compared with the unstructured text. Typically, several admission notes, clinical notes, transfer
+notes and discharge summaries are associated with each patient’s history. Extracting knowledge
+from this unstructured data has historically proven to be a difﬁcult task as it requires a wide range
+of manual feature engineering and mapping to ontologies [4], resulting in limited adoption of such
+techniques.
+1.1
+Uses of NLP in healthcare
+One of the recent advancements in Natural Language Processing (NLP) for healthcare is to use deep
+learning to ﬁnd associations between unstructured text with structured data in EHR [5]. This has
+lead to a better understanding of the patient disease state and prognosis to improve patient outcomes
+[6]. In a clinical setting, NLP can be used to convert data from provider notes such as clinical notes,
+transfer notes, discharge notes into structured text in a predeﬁned format which can be used for
+analysis. This can be an invaluable tool for Health Information Management (HIM) professionals, as
+they can directly process text, and organizations can utilize this to enhance communication among
+caregivers, provide a cost-effective way to document and process clinical text and also automate
+coding which is one of the important administrative tasks in documenting healthcare, billing and
+getting reimbursement [7, 8].Most NLP techniques have a limitation that they do not do well when
+dealing with non-grammatical text that has bullet points, telegraphic phrases and lack of complete
+sentences [9].
+1.2
+NLP work on MIMIC-III and other healthcare databases
+Researchers from Massachusetts Institute of Technology developed a technique known as ’Topic
+modeling’ to decode words in clinical notes which have multiple meanings [10], which, more
+recently, has been shown to be effective on MIMIC-III [11]. This technique requires minimal human
+supervision, automating the algorithm to reﬁne and revise the features [12]. However, in recent
+years, deep learning has shown big advances in tasks like speech recognition and image processing.
+With the availability of open clinical data resources, deep learning in health care analytics has
+become a valuable resource for researchers [13, 14, 15]. A recent review paper for extracting relevant
+information like a diagnosis to code for medical billing, extracting symptoms, procedures relevant to
+the study of interest from MIMIC-III clinical notes shows dominance of deep learning approaches
+[16]. Single concept extraction is used for extracting vital information like diagnosis, treatments, and
+procedures from clinical text [17]. Many studies have applied NLP techniques to match clinical notes
+with the top-10 ICD codes in MIMIC-III with varied levels of success [18, 19, 20]. However, with
+the complexity of the clinical notes, there is signiﬁcant room for improvement [21]. In this paper, we
+2
+comprehensively investigate entity extraction from clinical text using a state-of-the-art NLP deep
+learning approach. Universal Language Model Fine-tuning (ULMFiT) [22], an effective transfer
+learning technique, which uses the AWD-LSTM architecture, is deployed to recognize diagnosis and
+procedures from clinical text.
+2
+Methodology
+Overview We preprocessed and extracted the required data from the MIMIC-III dataset. Next, the
+required features were extracted according to the requirements of the language model. Lastly, we
+built the classiﬁer models. Throughout this paper, we utilized Google Cloud Platform virtual machine
+(Tesla V100 GPU), our school’s deep learning server (4x GeForce GTX 1080) and a Quadro P6000,
+which was through an NVidia GPU seeding grant. Figure 1 summarizes the methodology pipeline.
+Figure 1: Methodology pipeline overview
+2.1
+Data preprocessing
+We have selected the noteevents (containing the unstructured text), diagnosis_icd, procedures_icd
+tables from the MIMIC-III database that are relevant to the research question, as shown in Figure 2.
+We made use of columns such as subjectID, admissionID, discharge notes, ICD 9 codes. The selected
+ﬁles contained clinical notes of patients, diagnosis, procedures and ICD codes with "HADM_ID"
+column acting as a link for all the tables. After preprocessing the three datasets, it resulted in two
+separate datasets.
+Initially, we merged the diagnosis and procedures datasets using the parallel data processing library,
+Python Dask, based on the columns, subjectID, and admissionID. After inner joining these two tables,
+it resulted in a new table with 3.0M rows, consisting of subjectID, admissionID, diagnosis_icd9 code
+and procedures_icd9 code. This table is then merged with the note-events table containing 2.0M rows
+which resulted in an unmanageable 800GB data which in turn was divided into multiple CSV ﬁles
+with each ﬁle size ranging from 8 to 12GB. We chose a ﬁle with a 10GB size from this large number
+of ﬁles and divided it into a train and test of 90:10. We trained the language model using this ﬁle and
+it took 51 hours for 1 epoch on the GeForce GTX 1080. After we realized the potential problem with
+the size of the data and with the constraints of time and resources, we stopped using the entire note
+events, instead further ﬁltering of the diagnosis and procedures tables was performed by us.
+As each subject with an admissionID has multiple diagnosis and procedures, we ﬁltered the data by
+only considering the ﬁrst diagnosis (most important) and procedures (ﬁrst done) for each admission
+based on the sequence number which in turn restricted the dataset size of diagnosis and procedures
+to 58929 and 52243 rows respectively having 2789 and 1285 unique values [23]. Unlike merging
+the previous datasets wherein diagnosis was merged with procedures followed by merging with
+note events, herein the two datasets are individually merged with note-events data. Inner joining the
+diagnosis and procedures table with note-events dataset resulted in 1.8M and 1.7M rows respectively.
+As both the datasets are similar in size, we divided the diagnosis dataset into train and test of 90:10
+ratio for training language model. The time for training 1 epoch depicted 26 hours on GeForce GTX
+1080 which would take 800 to 900 hours to train a language model and classiﬁer for 10 epochs. As
+allocating the resources for this long length of time is not feasible, we performed further ﬁltering of
+data.
+From the discussion of the literature [24], prediction of the top-10 and top-50 codes for both
+diagnosis and procedure tables were done. Hence, the top-10 and top-50 codes for both diagnoses and
+3
+Figure 2: The schema of the tables from MIMIC
+procedures were identiﬁed from the datasets containing codes only with sequence 1. Based on these
+codes, we ﬁltered the entire datasets of 1.7M and 1.8M rows which were generated earlier. After the
+completion of the ﬁltration process, 4 datasets (top-10 diagnosis, top-10 procedures, top-50 diagnosis,
+top-50 procedures - each row with clinical notes) for the ﬁnal analysis remained with the top-10 and
+top-50 diagnosis and procedures codes and the datasets are split into 80:20 for training and testing.
+2.2
+Feature extraction
+All four datasets were processed to extract the required features. As each of the four datasets have
+different number of labels (10 for top 10 datasets and 50 for top 50 datasets), we converted all the
+labels to numeric ranging from 1 to 50 using a function called ’label encoder’ in sklearn in order to
+be extracted and then, the datasets are divided in 80:20 train and test. As the language model requires
+only text without the labels, all the labels were made to zero.
+’Fixup’ functions are deﬁned using Python to clean the text, remove stop words, alpha-numeric
+characters, and punctuation. After cleaning the text, the remaining text is tokenized using a tokenizer
+available in fastai which can support multi-processing that was built on top of spaCy. All the tokens
+are saved to the language model. We use the term frequency-inverse document frequency (TF-IDF)
+for feature extraction. TF-IDF which is a result of the product of TF and IDF evaluates the importance
+of a word in a document or a collection of documents. Term frequency can be deﬁned as several
+times a word occurs in each text whereas inverse document frequency is several times a word occurs
+in the whole document. Words that are used more frequently are given less weight when compared to
+the infrequent ones. TF-IDF is obtained from tokenizing and counting the frequency of each word
+(TF) and ﬁnally multiplying each word with its corresponding IDF. Two TF-IDF conﬁgurations with
+the top 60,000 words and with a minimum frequency of 2 are used. All the tokens are converted to
+integers using a torch-text function called ’itos’. Along with the 60,000 tokens, two more tokens are
+additionally inserted, with one for unknown (_unk_) and the other for padding (_pad_). With the
+addition of these two tokens, total tokens accounted for goes to 60,002. A dictionary is created which
+can map the integer back to the string, but it doesn’t cover everything as it is limited to 60,000 words.
+If some word which is not present in the dictionary shows up, it will return a zero automatically. This
+dictionary is called ’stoi’ which can call for each word in the sentence and with the help of it all the
+tokens in the training and the test datasets are converted to numerics. These training and validation
+4
+tokens of language model datasets using ’np.save’ function. Likewise, all the text in the classiﬁcation
+dataset is processed, converted to tokens, dictionary mapping of strings to integers is done and saved
+to the classiﬁcation model folder.
+2.2.1
+Language model
+The language model of our datasets is generated by a technique known as Transfer learning. We train
+the language model which starts with the weights from the wikitext103 language model. To load the
+wikitext103 weights using a torch. load, we make sure that the number of hidden and normal layers
+and embedding sizes are the same as that of the wikitext103 model. To map vocabulary wikitext103
+to that of our dataset’s vocabulary, we have used the simple ’itos’ function.
+A new set of weights which are zeros in vocabulary size are obtained. Later, we equate the words
+in the dataset with the words in the wikitext103 model. In this model, prediction of the next word
+is based on a set of given words and for this, a setup of a bunch of dropout values is required. We
+created a model data object and the model is transferred to the learner using ’learner.ﬁt’. We ﬁrst
+trained for a single epoch on the last layer to get the new embedding weights. Later we tested a few
+more epochs of the complete model. We saved the encoder and plotted the loss observed. All the
+language models are trained for 3 epochs each.
+2.2.2
+Classiﬁer
+Tokens for the classiﬁcation data were generated similarly as that of the language model. Hyper-
+parameters are constructed similarly but the dropouts were changed. For the classiﬁer, we classiﬁed
+each text to one of the 10 or 50 classes based on the dataset. Then we passed the dataset to the data
+loader constructor which in turn generates a batch of that. Later, a call is made to get_rnn_classiﬁer
+which creates an RNN encoder and a pooling linear classiﬁer. We then added the number of hidden
+layers, dropouts and discriminated learning rates for each layer to gain more accuracy. We started
+training the last layer and then unfreeze another layer with much-improved accuracy being observed.
+diagnosis_top10 training of 3 epochs on language model took 11.5 hours whereas the Training
+classiﬁer after unfreezing took 31 hours for 10 epochs. The Procedures_top10 training of 3 epochs
+on the language model took 10 hours whereas the Training classiﬁer for 10 epochs took 28 hours. In
+comparison, diagnosis_top50 training of 3 epochs on the language model took 14 hours whereas the
+Training classiﬁer after unfreezing took 40 hours for 9 epochs. procedures_top50 training 3 epochs
+on language model took 17.5 hours whereas the Training classiﬁer for 6 epochs took 33 hours. Then,
+we performed ﬁne-tuning of the entire model along with training top 10 diagnosis and procedures
+datasets for 10 epochs and top-50 diagnoses for 9 epochs and top-50 procedures dataset for 6 epochs
+to receive more accurate results.
+2.3
+Using the Universal Language Model Fine-tuning for Text Classiﬁcation (ULMFiT)
+Recurrent neural networks (RNNs), such as long short-term memory networks (LSTMs) serve as
+a fundamental building block for many sequence learning tasks, including machine translation,
+language modeling, and question answering. To perform the text classiﬁcation tasks, ULMFiT
+works by pretraining the language model on large-corpus and ﬁne-tuning the single architecture [22].
+In this study, we employed the ULMFiT model which uses the AWD-LSTM architecture. This
+architecture has dropouts at all possible layers like encoder dropout, input dropout, weight dropout,
+hidden dropout, and output dropout. ULMFiT technique uses three different steps in performing
+tasks: a) General-domain-language pretraining; b) Target task language model pretraining and c)
+Target task classiﬁer ﬁne-tuning [25]. For the suggestion mining task conducted by Haider [26], the
+ﬁrst step included training the language model on a large corpus of Wikipedia text. The second step
+included ﬁne-tuning the language model with task-speciﬁc text- the text to labeled as a suggestion
+or non-suggestion [26]. Finally, a classiﬁer was added on the top of the ﬁne-tuned language model
+and further ﬁne-tuned using additional hyperparameters like dropout and unfreezing of layers [26].
+In the study conducted by Dirkson and Verberne, 2019 [27], the ULMFiT model was ﬁne-tuned on
+twitter health data and adverse drug effects were classiﬁed from health-related tweets. The authors
+(Dirkson and Verberne, 2019), ﬁne-tuned the default language models using AWD_LSTM with a
+learning rate of 0.01 for the last layer and 0.001 for all layers [27]. Then a classiﬁer is added to
+this ﬁne-tuned language model with a drop out of 0.5 and a momentum of 0.8 and 0.7 [27]. For
+5
+the patent classiﬁcation task conducted by Hepburn, 2018 [25], ULMFiT outperformed the support
+vector machine (SVM) model. To achieve this text classiﬁcation task the author Hepburn, 2018 [25],
+used the state of art language model AWD LSTM trained on Wikitext103. Then to perform the target
+task the language was ﬁne-tuned which is supervised learning and then classiﬁer is added which
+applies RELU activation function on the layer. In order to output the probability over the target
+classes, a softmax activation layer was added [25].
+2.4
+Evaluation
+To check the signiﬁcance of performance differences, different performance metrics like precision,
+recall, accuracy, f-1 score, ROC curve, and AUC value are used to evaluate different datasets, feature
+extraction methods, and the language and classiﬁer, models.
+3
+Results
+S.No.
+Category
+No. of rows
+Accuracy(%)
+Precision
+Recall
+F-1 Score
+1
+Diagnosis top10
+677738
+80.3
+0.67
+0.67
+0.66
+2
+Procedure_top10
+632994
+80.5
+0.69
+0.69
+0.69
+3
+Diagnosis_top50
+1058928
+70.7
+0.58
+0.56
+0.55
+4
+Procedures_top50
+1215197
+63.9
+0.50
+0.50
+0.48
+Table 1: Performance of different models
+From the table, it demonstrates the performance of each model to their datasets like the top-10 and
+top-50 ICD codes for diagnosis and procedures respectively. The performance of the top-10 data is
+better with accuracy above 80.3% and 80.5% when compared to performances of the top-50 data
+having an accuracy of 70.7% and 63.0%. The precision and recall scores for the top-10 are also
+relatively better in comparison to the top-50 data.
+Figure 3: Plotting loss after each epoch
+6
+From Figure 3, we can infer that the loss keeps reducing with each epoch. Although the magnitude of
+loss is high in all the datasets, the loss is less in the top 10 diagnosis and procedures datasets when
+compared against its top 50 counterparts.
+Figure 4: Confusion matrix
+Figure 4 shows the values that are predicted to their actual label. From diagnosis top 10 we could
+observe that the last 3 diagnoses deviated more towards other labels than other diagnoses. However,
+in procedures top 10 classiﬁcations, all the diagnosis was accurately predicted with few deviations.
+Figure 5: ROC curve
+From ﬁgure 5 we can see the ROC curve and its area. The overall area for diagnosis top 10 and
+procedures top 10 classiﬁers are 64% and 72% respectively and it could be attributed to the fact that
+few classes were performing poorly, well under their baseline of 50%.
+We could observe that the training and validation loss for diagnosis and procedures top 10 dataset
+is relatively less i.e., 0.3 and 0.2 respectively when compared to their counterparts which are 0.5
+respectively. The closer the loss between training and validation datasets, the more accurate the
+model would turn out to be. Diagnosis_top10 training of 3 epochs on the language model had an
+accuracy of 68.1% whereas the Training classiﬁer after unfreezing gave an impressive ﬁnal accuracy
+of 80.3%. The Procedures_top10 training of 3 epochs on language model got an accuracy of 65.7%
+whereas the Training classiﬁer for 10 epochs showed excellent accuracy of 80.5%. In comparison,
+Diagnosis_top50 training of 3 epochs on the language model had an accuracy of 65.5% whereas
+the Training classiﬁer after unfreezing got the ﬁnal accuracy of 70.7%. Procedures_top50 training 3
+epochs on language model had an accuracy of 51.0% and the Training classiﬁer for 6 epochs got an
+accuracy of 63.9%. We can attribute to the fact that they were performed on different GPUs with
+varied performances, the time taken is not directly proportional to the size of the dataset.
+4
+Discussion
+Although numerous studies have reported coding of diagnosis from discharge notes, taking the entire
+clinical notes for each admission and predicting diagnosis and procedures is complex, but a required
+7
+task for billing and reimbursement, as well as knowledge discovery in healthcare. Such automated
+coding of long-text clinical notes has applications in teaching medical cases, where systematic reviews
+of related diagnosis and procedures can be presented to medical students [28]. Moreover, these
+models, if with improved accuracy can help learning health systems to identify which procedures and
+treatments work better for certain diagnosis will be valuable. We do recognize that ICD codes are less
+relevant for clinical practices and ontologies like SNOMED are more descriptive, there is no reason
+to believe that our method will not work on codes from another dictionary or ontology. However, the
+goal here is to not replace human coders [29], but rather involve humans for complex tasks and for
+correcting such machine learning models. We observe that the ULMFiT model we have adopted for
+predicting the top-10 and the top-50 diagnosis and procedures do better than previous approaches
+and give a fairly accurate outcome. On the other hand, the accuracy of the top-50 diagnosis and
+procedures shows the need for better approaches if such models have to be implemented in real-world
+practice or even within EHR forms for automated diagnosis or decision-support systems [30]. When
+compared to studies conducted by Jagannatha et al. (2016) [31], who proposed Recurrent Neural
+Network (RNN) models for detection of medical events from datasets such as MIMIC, it could be
+observed that our LSTM model outperforms RNN models in achieving better prediction of codes
+from clinical text. From the work that carried out by Gehrmann et al. (2018) [32], it showed that
+deep learning methods outperformed concept extraction-based methods, which is similar to what we
+have discovered.
+5
+Limitations and future work
+One of the challenges we faced during work is a lack of resources to run the high-end operations.
+Handling 800GB of data requires a huge amount of resources and time. However, the school GPU
+is available from the beginning of the project, as it is a shared resource, all of the GPUs were not
+available the whole time to train our model. Google resources were associated with high costs. Even
+though $6000 of credit has been given by Google, running on a large scale would have required
+a lot more than the available credits. The Quadro P6000, a new GPU is a grant from my mentor
+as a part of another project which enabled this project to move forward in this limited-resources
+environment. Future work relies on the prediction of diagnosis, procedures, and treatment using a
+single model unlike that of the multiple models predicting diagnosis and procedures distinctly. Also,
+some reﬁnements are to be made to enhance the accuracy and performance of the model when more
+than 10 diagnoses would be employed.
+6
+Conclusion
+In summary, this study observes the performance of novel variants of LSTM i.e., AWD-LSTM on
+MIMIC-III discharge summaries and reach to the conclusion that with this model, one can achieve
+good results for concept extraction i.e., diagnosis/procedure codes extraction from clinical notes. The
+model uses deep learning NLP techniques which assigns ICD-9 code automatically to the clinical text.
+Experiments demonstrate that implementation of AWD-LSTM will serve as a baseline for further
+research in identifying diagnosis, procedures, and treatments using a single model at once and with
+the automation of medical coding it can save time, cut costs that arise due to manual coding errors.
+References
+[1] Alistair EW Johnson, Tom J Pollard, Lu Shen, H Lehman Li-wei, Mengling Feng, Mohammad Ghassemi,
+Benjamin Moody, Peter Szolovits, Leo Anthony Celi, and Roger G Mark. Mimic-iii, a freely accessible
+critical care database. Scientiﬁc data, 3:160035, 2016.
+[2] Joseph Geraci, Pamela Wilansky, Vincenzo de Luca, Anvesh Roy, James L Kennedy, and John Strauss.
+Applying deep neural networks to unstructured text notes in electronic medical records for phenotyping
+youth depression. Evidence-based mental health, 20(3):83–87, 2017.
+[3] Tom J Pollard and Alistair EW Johnson. The mimic-iii clinical database. http://dx.doi.org/10.
+13026/C2XW26, 2016.
+[4] Suranga N Kasthurirathne, Brian E Dixon, Judy Gichoya, Huiping Xu, Yuni Xia, Burke Mamlin, and
+Shaun J Grannis. Toward better public health reporting using existing off the shelf approaches: A
+comparison of alternative cancer detection approaches using plaintext medical data and non-dictionary
+based feature selection. Journal of biomedical informatics, 60:145–152, 2016.
+8
+[5] Hong Liang, Xiao Sun, Yunlei Sun, and Yuan Gao. Text feature extraction based on deep learning: a
+review. EURASIP journal on wireless communications and networking, 2017(1):211, 2017.
+[6] Chen-Ying Hung, Ching-Heng Lin, and Chi-Chun Lee. Improving young stroke prediction by learning
+with active data augmenter in a large-scale electronic medical claims database. In 2018 40th Annual
+International Conference of the IEEE Engineering in Medicine and Biology Society (EMBC), pages
+5362–5365. IEEE, 2018.
+[7] Aliya Jiwani, David Himmelstein, Stefﬁe Woolhandler, and James G Kahn. Billing and insurance-related
+administrative costs in united states’ health care: synthesis of micro-costing evidence. BMC health services
+research, 14(1):556, 2014.
+[8] Saptarshi Purkayastha, Judy W Gichoya, and Abhishek Siva Addepally. Implementation of a single sign-on
+system between practice, research and learning systems. Applied clinical informatics, 26(01):306–312,
+2017.
+[9] Alexander Clark, Gianluca Giorgolo, and Shalom Lappin. Statistical representation of grammaticality
+judgements: the limits of n-gram models. In Proceedings of the fourth annual workshop on cognitive
+modeling and computational linguistics (CMCL), pages 28–36, 2013.
+[10] Benjamin Shickel, Patrick James Tighe, Azra Bihorac, and Parisa Rashidi. Deep ehr: a survey of recent
+advances in deep learning techniques for electronic health record (ehr) analysis. IEEE journal of biomedical
+and health informatics, 22(5):1589–1604, 2017.
+[11] Hongteng Xu, Wenlin Wang, Wei Liu, and Lawrence Carin. Distilled wasserstein learning for word
+embedding and topic modeling. In Advances in Neural Information Processing Systems, pages 1716–1725,
+2018.
+[12] Tian Bai, Ashis Kumar Chanda, Brian L Egleston, and Slobodan Vucetic. Joint learning of representations
+of medical concepts and words from ehr data. In 2017 IEEE International Conference on Bioinformatics
+and Biomedicine (BIBM), pages 764–769. IEEE, 2017.
+[13] Fei Li, Weisong Liu, and Hong Yu. Extraction of information related to adverse drug events from electronic
+health record notes: design of an end-to-end model based on deep learning. JMIR medical informatics,
+6(4):e12159, 2018.
+[14] Saptarshi Purkayastha, Tiwonge Davis Manda, and Terje Aksel Sanner. A post-development perspective
+on mhealth–an implementation initiative in malawi. In 2013 46th Hawaii International Conference on
+System Sciences, pages 4217–4225. IEEE, 2013.
+[15] Saptarshi Purkayastha and Jørn Braa. Big data analytics for developing countries–using the cloud for
+operational bi in health. The Electronic Journal of Information Systems in Developing Countries, 59(1):1–
+17, 2013.
+[16] Jinmiao Huang, Cesar Osorio, and Luke Wicent Sy. An empirical evaluation of deep learning for icd-9 code
+assignment using mimic-iii clinical notes. Computer Methods and Programs in Biomedicine, 177:141–153,
+2019.
+[17] Zhongliang Yang, Yongfeng Huang, Yiran Jiang, Yuxi Sun, Yu-Jin Zhang, and Pengcheng Luo. Clinical
+assistant diagnosis for electronic medical record based on convolutional neural network. Scientiﬁc reports,
+8(1):6329, 2018.
+[18] Priyanka Nigam. Applying deep learning to icd-9 multi-label classiﬁcation from medical records. Technical
+report, Technical report, Stanford University, 2016.
+[19] Christy Li, Dimitris Konomis, Graham Neubig, Pengtao Xie, Carol Cheng, and Eric Xing. Convolutional
+neural networks for medical diagnosis from admission notes. arXiv preprint arXiv:1712.02768, 2017.
+[20] Sandeep Ayyar, OB Don, and W Iv. Tagging patient notes with icd-9 codes. In Proceedings of the 29th
+Conference on Neural Information Processing Systems, 2016.
+[21] Jean-Emmanuel Bibault, Philippe Giraud, Martin Housset, Catherine Durdux, Julien Taieb, Anne Berger,
+Romain Coriat, Stanislas Chaussade, Bertrand Dousset, Bernard Nordlinger, et al. Deep learning and
+radiomics predict complete response after neo-adjuvant chemoradiation for locally advanced rectal cancer.
+Scientiﬁc reports, 8(1):1–8, 2018.
+[22] Jeremy Howard and Sebastian Ruder. Universal Language Model Fine-tuning for Text Classiﬁcation.
+arXiv:1801.06146 [cs, stat], May 2018.
+[23] Brett K Beaulieu-Jones, Patryk Orzechowski, and Jason H Moore. Mapping patient trajectories using
+longitudinal extraction and deep learning in the mimic-iii critical care database. In PSB, pages 123–132.
+World Scientiﬁc, 2018.
+[24] Zhengxing Huang, Wei Dong, Huilong Duan, and Jiquan Liu. A regularized deep learning approach for
+clinical risk prediction of acute coronary syndrome using electronic health records. IEEE Transactions on
+Biomedical Engineering, PP:1–1, 07 2017.
+9
+[25] Jason Hepburn. Universal language model ﬁne-tuning for patent classiﬁcation. In Proceedings of the
+Australasian Language Technology Association Workshop 2018, pages 93–96, Dunedin, New Zealand, dec
+2018.
+[26] Humza Haider. Suggestion Mining with Transfer Learning via ULMFiT. arXiv:18=904.09076v1 [cs,CL],
+page 4, 04 2019.
+[27] Anne Dirkson and Suzan Verberne. Transfer learning for health-related twitter data. In Proceedings of the
+Fourth Social Media Mining for Health Applications (#SMM4H) Workshop & Shared Task, pages 89–92.
+Association for Computational Linguistics, aug 2019.
+[28] S Purkayastha, A Price, R Biswas, AU Jai Ganesh, and P Otero. From dyadic ties to information
+infrastructures: care-coordination between patients, providers, students and researchers. Yearbook of
+medical informatics, 24(01):68–74, 2015.
+[29] Judy W Gichoya, Siddhartha Nuthakki, Pallavi G Maity, and Saptarshi Purkayastha. Phronesis of ai in
+radiology: Superhuman meets natural stupidity. arXiv preprint arXiv:1803.11244, 2018.
+[30] Siva Abhishek Addepally and Saptarshi Purkayastha. Mobile-application based cognitive behavior therapy
+(cbt) for identifying and managing depression and anxiety. In International Conference on Digital Human
+Modeling and Applications in Health, Safety, Ergonomics and Risk Management, pages 3–12. Springer,
+2017.
+[31] Abhyuday Jagannatha and Hong Yu. Structured prediction models for rnn based sequence labeling in
+clinical text. Proceedings of the Conference on Empirical Methods in Natural Language Processing.
+Conference on Empirical Methods in Natural Language Processing, 2016, 08 2016.
+[32] Sebastian Gehrmann, Franck Dernoncourt, Yeran Li, Eric Carlson, Joy Wu, Jonathan Welt, John Foote,
+Edward Moseley, David Grant, Patrick Tyler, and Leo Celi. Comparing deep learning and concept
+extraction based methods for patient phenotyping from clinical narratives. PLOS ONE, 13:e0192360, 02
+2018.
+10

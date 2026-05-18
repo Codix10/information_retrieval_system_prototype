@@ -1,0 +1,1031 @@
+Title: Schrödinger's Tree -- On Syntax and Neural Language Models
+Source URL: http://arxiv.org/abs/2110.08887v1
+--------------------------------------------------
+
+arXiv:2110.08887v1  [cs.CL]  17 Oct 2021
+Schrödinger’s Tree – On Syntax and Neural
+Language Models
+Artur Kulmizev∗
+Uppsala University
+Joakim Nivre
+Uppsala University
+In the last half-decade, the ﬁeld of natural language processing (NLP) has undergone two major
+transitions: the switch to neural networks as the primary modeling paradigm and the homoge-
+nization of the training regime (pre-train, then ﬁne-tune). Amidst this process, language models
+have emerged as NLP’s workhorse, displaying increasingly ﬂuent generation capabilities and
+proving to be an indispensable means of knowledge transfer downstream. Due to the otherwise
+opaque, black-box nature of such models, researchers have employed aspects of linguistic theory in
+order to characterize their behavior. Questions central to syntax — the study of the hierarchical
+structure of language — have factored heavily into such work, shedding invaluable insights
+about models’ inherent biases and their ability to make human-like generalizations. In this paper,
+we attempt to take stock of this growing body of literature. In doing so, we observe a lack of clarity
+across numerous dimensions, which inﬂuences the hypotheses that researchers form, as well as
+the conclusions they draw from their ﬁndings. To remedy this, we urge researchers make careful
+considerations when investigating coding properties, selecting representations, and evaluating
+via downstream tasks. Furthermore, we outline the implications of the different types of research
+questions exhibited in studies on syntax, as well as the inherent pitfalls of aggregate metrics.
+Ultimately, we hope that our discussion adds nuance to the prospect of studying language models
+and paves the way for a less monolithic perspective on syntax in this context.
+1. Introduction
+Syntax — how words are combined to form sentences in natural language — has
+perhaps never garnered as much attention from NLP researchers as it does in the present
+day. Naturally, its recent relevance at conferences is owed to the deep learning paradigm,
+which the NLP community has embraced with open arms since the midpoint of the last
+decade. Prior to this paradigm shift, questions central to syntax were often restricted
+to the parsing domain. There, researchers were largely interested in developing super-
+vised algorithms for processing structured input — usually in the form of annotated
+constituency or dependency treebanks. Beyond parsing, syntax also often factored into
+researchers’ hypotheses about what information models may need to succeed in a
+given task. Feature engineering was a pivotal component of pre-neural NLP, where text
+was ﬁltered through hand-crafted feature templates that emphasized parts of speech,
+morphology, and tree structure, so as to inform simple, often linear models about the
+underlying syntax of sentences.
+The deep learning revolution of the mid 2010s quickly obviated the need for feature
+engineering, which was widely considered a time-consuming and painstaking process.
+∗E-mail: artur.kulmizev@lingfil.uu.se
+Kulmizev and Nivre
+Schrödinger’s Tree
+Embeddings — dense vectors representing the distributional properties of words —
+quickly replaced the sparse, hand-crafted vectors of yore and boosted performance dra-
+matically (Mikolov et al. 2013; Pennington, Socher, and Manning 2014). Such progress
+presented a trade-off, however: accuracy at the expense of interpretability. Indeed,
+without the guiding hand of the feature engineer, it became difﬁcult to ascertain what
+properties of natural language the new neural models — highly complex and non-linear
+— had come to rely on.
+It was this uncertainty that inspired a new line of inquiry within NLP, concerning
+what exactly models know and how they come to learn it. Early insights from this
+domain intimated that neural networks could capture facets of the hierarchical structure
+of language, beyond the linear order of words in a sentence. The Long Short Term
+Memory network (LSTM) (Hochreiter and Schmidhuber 1997) featured prominently in
+such studies, where researchers employed linguistic minimal pairs (mostly based on
+agreement phenomena) in order to demonstrate the model’s sensitivity to syntactic
+hierarchy (Linzen, Dupoux, and Goldberg 2016a; Gulordava et al. 2018). Such ﬁndings
+were deemed exciting mainly due the LSTM’s design as a sequence processor, which
+lacked the sort of structural supervision or inductive bias that one might encounter in
+the parsing literature.
+Amidst skyrocketing research budgets and the continued advancement of process-
+ing hardware, NLP faced another paradigm shift in 2018–19. Researchers began realiz-
+ing that representations for input words need not be ﬁxed to a single static vector per
+type (as with word embeddings), but can instead be computed dynamically, with each
+word contextualized with respect to the rest of the sentence (Peters et al. 2018). Per this
+logic, it also became apparent that models capable of generating such representations
+could be ﬁne-tuned with respect to downstream tasks, with impressive gains in per-
+formance thereafter (Howard and Ruder 2018). Language models — the basis of classic
+word embedding algorithms — were a natural ﬁt for this paradigm and became NLP’s
+backbone going forward.
+In the modern day, models like BERT (Devlin et al. 2019), GPT (Radford et al. 2019)
+and their successors feature prominently in NLP research, showcasing the efﬁcacy of
+the pretrain-and-ﬁnetune paradigm. Naturally, the human-like generation capability of
+such models, as well as their success on natural language understanding (NLU) bench-
+marks (Wang et al. 2018, 2019), makes the question of what the models know about
+language and how they acquire such knowledge and ever-pressing one. Increasingly,
+we ﬁnd, NLP researchers turn to the ﬁeld of syntax — with its decades of research,
+theory, and debate — in order to answer such questions. In this paper, we attempt to
+take stock of the ever-growing literature on the syntactic capabilities of neural language
+models. In doing so, we observe a lack of clarity across numerous dimensions, which
+inﬂuences the hypotheses that researchers form, as well as the conclusions they draw
+from their ﬁndings. We argue that this failure of articulation results in a body of work
+whose hypotheses, methodologies, and conclusions comprise many conﬂicting insights,
+giving rise to a paradoxical picture reminiscent of Schrödinger’s cat — where syntax
+appears to be simultaneously dead and alive inside the black box models. In particular,
+by framing studies around aggregate metrics and benchmarks, syntax is often reduced
+to a monolithic phenomenon, which fails to do justice both to the complex interplay
+between different manifestations of hierarchical structure in natural language and to
+the substantial variation that exists across typologically different languages.
+Our goal in this article is not to criticize earlier studies, which all provide valuable
+pieces of evidence for understanding the role of syntax in contemporary NLP, partic-
+ularly language models. Instead, we propose a number of conceptual distinctions, the
+2
+Kulmizev and Nivre
+Schrödinger’s Tree
+consideration and articulation of which, we argue, can help us better understand the
+seemingly conﬂicting results, resolve some of the apparent contradictions, and pave
+the way for a more nuanced and articulated research agenda. To provide the necessary
+background for this analysis, we begin by introducing the concept of syntax from a
+bird’s eye perspective. We then review a representative sample of investigations into the
+syntactic capabilities of neural language models, which we categorize as belonging to
+three different paradigms. We supplement this review by discussing what we perceive
+to be important distinctions about syntax left implicit in this body of work. This leads to
+a discussion of different classes of research questions underlying the surveyed literature,
+and the role of aggregate metrics in addressing these research questions. We conclude
+with some thoughts on how our analysis can inform our research methodology for the
+future.
+2. Background: Aspects of Syntax
+Syntax is usually described as the way that words are combined into larger expressions
+like phrases and sentences. On one hand, syntax can then be contrasted with mor-
+phology, which is concerned with the internal structure of words. On the other hand,
+it can be contrasted with semantics, which deals with the meaning of words, phrases
+and sentences — as opposed to their form. In reality, however, syntax is concerned with
+the complex mapping between form and meaning at the phrase and sentence level. It
+is therefore important to make a distinction between syntactic structure — an abstract
+hierarchical structure that determines or constrains semantic composition — and coding
+properties — expressive devices such as word order, function words and morphological
+inﬂection that are used to partially encode the syntactic structure. To illustrate this point,
+let us consider two equivalent sentences in Finnish and English:
+(1)
+koira
+jahtasi
+kissan
+huoneesta
+dog-NOM chase-PRS cat-ACC room-ELA
+‘a/the dog chased a/the cat from a/the room’
+(2)
+the dog chased the cat from the room
+Most linguists would agree that (1) and (2) not only mean (roughly) the same thing
+but also have a similar syntactic structure, where the main verb (jahtasi, chased) takes a
+subject (koira, the dog), a direct object (kissan, the cat) and a locative modiﬁer (huoneesta,
+from the room). However, the encoding of this syntactic structure is quite different in
+the two languages. In English, the subject and object are primarily identiﬁed through
+their position relative to the verb, while the locative modiﬁer is introduced by a prepo-
+sition (from). In Finnish, the role of all three dependents of the verb is indicated by
+morphological case inﬂection, and constituent order is not signiﬁcant.1 Note also that
+the overt coding properties (word order, function words, morphological inﬂection) do
+not (always) uniquely determine the syntactic structure. For example, in the English
+example, the phrase from the room could also function as a modiﬁer of the noun phrase
+the cat, although this is a less likely interpretation in most contexts.
+1 In principle, the words of the Finnish sentence can be rearranged in any order without changing the
+syntactic roles, but some orders may be less natural and/or carry special pragmatic implications.
+3
+Kulmizev and Nivre
+Schrödinger’s Tree
+While coding properties are concrete aspects of the sentence, the syntactic structure
+is essentially an abstract concept that is not directly observable. Nevertheless, linguists
+have over the years accumulated compelling evidence for the existence of a hierarchical
+structure over and above the sequential order of words. The most obvious type of
+evidence is perhaps the occurrence of structural ambiguity, where a single sequence
+of words can be assigned multiple compositional interpretations, exempliﬁed in the
+following classic examples:
+(3)
+she saw the man with the telescope
+(4)
+old men and women
+(5)
+ﬂying planes can be dangerous
+Other types of evidence come from substitution and permutation tests (see, e.g.,
+Matthews 1981). However, while the existence of a hierarchical structure is hardly
+contested today, the linguistic theories developed to account for this structure vary
+in their theoretical assumptions as well as in their mathematical representations of
+syntactic structure. A broad distinction can be made here between theories based on
+phrase structure (constituency) (Bloomﬁeld 1933; Chomsky 1957) and theories based on
+dependency structure (Tesnière 1959; Mel’ˇcuk 1988), but there are also other approaches
+and considerable variation within each family of theories. To some degree, it is possible
+to convert syntactic representations from one theoretical framework to another, but the
+conversion is usually heuristic and lossy and, therefore, the different representations are
+not commensurable, strictly speaking.
+The existence of a wide range of syntactic theories arises from contested views on
+how a diverse range communicative principles, including the use of different coding
+properties, can come to exist across languages. For example, the Chomskyan tradition
+posits that an innate human grammar — a set of rules and processes that govern human
+cognition — is privy to a series of language-speciﬁc transformations that result in such
+idiosyncrasies (Chomsky 1965, 1981, 1995). Other accounts argue that syntax itself is
+shaped by functional or cognitive constraints (Zipf 1949; Givón 1995; Hawkins 2004;
+Jaeger and Tily 2011; Gibson et al. 2019), such as managing memory load by preferring
+dependencies of shorter length (Gibson 1998; Gibson et al. 2000) — a process which
+can also inﬂuence coding properties like word order (Hahn, Jurafsky, and Futrell 2020;
+Futrell, Levy, and Gibson 2020). Cultural differences across languages are likewise the-
+orized to play a large role (Tomasello 2009; Evans and Levinson 2009), with complex
+morphosyntactic processes like polysynthesis being largely observable in small, non-
+industrial communities with dense social-network structures (Trudgill 2017). Directly
+or not, such debates revolve around the controversial poverty of the stimulus argument
+(Lasnik and Lidz 2017)— linguistics’ own spin on psychology’s nature vs. nurture
+debate — where the human capacity to acquire and generalize across structures is
+perceived as either predominantly learned or predominantly innate.
+Neural networks — especially large scale language models — have recently as-
+sumed an interesting place in this discussion. Primarily, syntactic theory has offered a
+useful toolkit for more ﬁne-grained evaluation of language models, which have shown
+an ability to generate coherent, grammatical output, resembling that of humans. To
+this end, researchers have employed well-studied coding properties like subject-verb
+agreement (Linzen, Dupoux, and Goldberg 2016b) or phenomena like ﬁller-gap depen-
+dencies (Wilcox et al. 2018) to articulate exactly on which grounds a models’ output
+4
+Kulmizev and Nivre
+Schrödinger’s Tree
+might be judged as grammatical or not. Such studies have served as a welcome comple-
+ment to the ubiqutious, yet opaque perplexity metric — a measure of how predictable
+sentences or documents are, given a model’s parameterization. In a sense, however, they
+can likewise be perceived as a means of sanity-checking models’ behavior (Baroni 2021),
+with paper titles often framed interrogatively: do neural language models learn
+?
+Nonetheless, answering such questions is useful, and a concrete understanding of the
+ability of neural networks to generalize with respect to natural language — as well
+as the algorithmic processes that underlie this capacity — could, in the least, provide
+interesting perspectives on the age-old debates mentioned above (Linzen and Baroni
+2021).
+3. Review: The Quest for Syntax
+In this section, we review work belonging to what we perceive as the three dominant
+paradigms for attesting language models’ knowledge of syntax — targeted syntac-
+tic evaluation, probing, and (downstream) NLU evaluation. Though comprehensive
+surveys of such studies can be found, for example, in Linzen and Baroni (2021) or
+Manning et al. (2020), our aim here is to relate them to the concepts and distinctions
+discussed in the previous section. Readers interested in a more detailed description and
+analysis are referred to the aforementioned work.
+3.1 Targeted Syntactic Evaluation
+Targeted syntactic evaluation2 (TSE) is arguably the most popular framework for assess-
+ing neural networks’ ability to make syntactic — therefore hierarchical — generaliza-
+tions. At its core, TSE is a black-box testing approach concerned with measuring model
+output (typically probabilities) with respect to a curated set of stimuli. Such stimuli are
+typically based on minimal pairs motivated by phenomena in the syntax literature. For
+example, consider the (by now classic) example in sentences 6a and 6b.
+(6) a. The keys to the cabinet are on the table.
+b. *The keys to the cabinet is on the table.
+c. *The key to the cabinets are on the table.
+d. The key to the cabinets is on the table.
+The literature dictates that a competent English speaker would rely on a structural
+analysis of the keys to the cabinet to infer number agreement between the plural subject
+(keys) and the copula verb (are). On the other hand, a purely sequential processing of
+the sentence would arrive at the opposite conclusion in 6b: is agrees with the adjacent
+singular noun (cabinet). To ascertain whether or not a language model M follows the
+former logic, one could, for example, compare the probabilities assigned to the target
+verb be in 6a-6b, given the context C = the keys to the cabinet, and examine whether
+PM(are|C) > PM(is|C). This can also be extended to full paradigms, where, in the case
+of 6, M has to assign higher probabilities to both (6a) and (6d) with respect to (6b) and
+(6c). TSE (per this formulation) can thus be seen as based on an accuracy metric, which,
+if returning a high value over n stimuli, implies that M is able to generalize with respect
+to the relevant syntactic phenomenon. It should be noted that probability assigned to the
+word form x, per various theoretical justiﬁcations, is sometimes replaced with surprisal,
+2 This term was coined, to the authors’ best knowledge, by Marvin and Linzen (2018).
+5
+Kulmizev and Nivre
+Schrödinger’s Tree
+e.g., S = −log2PM(x|C), as in Wilcox et al. (2018) and Futrell et al. (2019). Furthermore,
+in situations where the locus of ungrammaticality does not lie on a single word (as
+in English subject-verb agreement), but is dependent on the interaction of several
+words (e.g., as in negative polarity items), it is common to compare the probabilities
+or perplexities of entire sentences (Marvin and Linzen 2018; Jumelet and Hupkes 2018).
+The TSE framework also allows for ﬂexibility in integrating more complex sets of
+stimuli, as in the study on syntactic state by Futrell et al. (2019):
+(7) a. As the doctor studied the textbook, the nurse walked into the ofﬁce.
+b. *As the doctor studied the textbook.
+c. ?The doctor studied the textbook, the nurse walked into the ofﬁce.
+d. The doctor studied the textbook.
+With respect to (7), Futrell et al. (2019) formulate a set of hypotheses, whereby they posit
+(1) that the surprisal at the matrix clause after the comma (... the nurse walked into the
+ofﬁce.) should be lower for (7a) than for (7c) (the network knows it is in a subordinate
+clause per the subordinator as), and (2) that the surprisal at the matrix clause should
+be higher for 7b than 7d (the network expects a matrix clause per the subordinator).
+Though the aforementioned accuracy approach could likewise be appropriated here as
+a summary statistic, researchers also often employ signiﬁcance testing in order to accept
+or reject their hypotheses. For example, Futrell et al. (2019) apply a linear mixed-effect
+model on their models’ stimulus-level predictions in order to accept hypothesis (1) on
+behalf of all models, but reject hypothesis (2) for all but two. This formulation — in line
+with common paradigms in psycholinguistics — leads them to conclude that, while all
+models are partially capable of tracking syntactic state across subordinate and main
+clauses, certain training conditions are required (large data or explicit structural objec-
+tives) in order to fully capture the structural expectations induced by subordinators.
+A similar methodology is employed in Wilcox et al. (2018) for investigating ﬁller-gap
+dependencies.
+The popularity of the TSE framework has precipitated the creation of challenge
+suites, which offer holistic measures of models’ performance across a variety of lin-
+guistic phenomena. Marvin and Linzen (2018) were among the ﬁrst to introduce such
+datasets, employing a context-free grammar to procedurally generate minimal pair
+sentences — such as 6a and 6b — for a variety of phenomena: agreement (of various
+kinds), reﬂexive anaphora, and negative polarity items. Warstadt et al. (2020) later pre-
+sented a similar, automatically generated dataset of minimal pairs (BLiMP), albeit with
+wider coverage: 1000 sentences per 67 paradigms belonging to 12 different phenom-
+ena. The authors used BLiMP to study various popular language model architectures
+(LSTM, Transformer), whereby they associated average accuracy across phenomena
+with models’ linguistic knowledge. A similar suite was contemporaneously introduced
+by Hu et al. (2020), albeit in employ of 2 × 2 templates like 6 for hand-curated stimuli
+culled from syntax textbooks. Like Warstadt et al. (2020), Hu et al. (2020) used their
+suite3 to study language model architectures, most notably relating language models’
+syntactic generalization (SG) score — measured in aggregate across phenomena — to
+their test set perplexity.
+3 This suite was later named SYNTAXGYM in (Gauthier et al. 2020).
+6
+Kulmizev and Nivre
+Schrödinger’s Tree
+3.2 Probing
+Probing4 is another popular paradigm for attesting NLP models’ acquisition of syntax.
+The key distinction between TSE and probing is that, while the former is concerned
+with model behavior, the latter focuses explicitly on model representation. In this context,
+behavior is likened to the probabilities assigned to certain outputs (extracted, typically,
+from the output layer of a language model), while representation refers to the intermedi-
+ate hidden state vectors computed by the model. Mainly, probing is motivated as being
+necessary due to deep learning’s end-to-end nature: features are learned with respect to
+a given task, not engineered like in traditional systems. Due to this fact, neural models’
+representations are wholly uninterpretable to the human interlocutor and thus require
+intervention in order to understand what they portray.
+Formally speaking, probing is concerned with representations h extracted from
+a model M for a given input x: h = M(x). A representation h ∈R1×d is typically a
+ﬁxed-length dense vector corresponding to input word x (e.g., keys in 6a), where d is
+the hidden-state dimensionality of M. A probe f for a given linguistic property A is
+a classiﬁer ﬁt on h to produce output y ∈Y , where Y is a ﬁnite label set: y = fA(h).
+For properties that can be decoded from single words, such as part-of-speech (POS)
+tags, a trained probe fPOS must be able to assign the correct label to h with respect to
+the ground truth, e.g., ˆy = NOUN for M(keys). For properties concerning two or more
+words, such as dependencies or phrases, a concatenation of hidden states corresponding
+to discontiguous tokens xi, xj or a contiguous span of tokens xi, ..., xj is applied. In
+this latter formulation, deemed edge-probing by Tenney et al. (2019), one might expect
+a probe fDEP to decode ˆy = NSUBJ for M(keys, are) and fCON to decode ˆy = PP for
+M(on, the, table). Though probing models vary widely in terms of architecture, param-
+eters, optimization, etc., the vast majority of them assume a training set DA representa-
+tive of property A on which f’s parameters Θ can be ﬁt, like a treebank. Such probes are
+then evaluated in standard supervised learning fashion via accuracy on a held out test
+set.If such accuracy is high, it can then be said that A is decodable from h, i.e. that M
+learns it. This framework was notably employed by Liu et al. (2019a) and Tenney et al.
+(2019), who concurrently demonstrated that representations extracted from popular con-
+textual embedding models (ELMo, BERT, GPT) yielded exceedingly good performance
+on suites of linguistic tasks. Also noteworthy is Tenney, Das, and Pavlick (2019)’s study,
+which showed that BERT’s representations appear to evolve in capturing properties
+with increasing levels of complexity, from lexical features to syntax and semantics.
+While the aforementioned word-level approach is by far the most popular probing
+setup, other methods for decoding the syntactic structure of entire sentences have
+been proposed. One model that is of particular interest is that of Hewitt and Manning
+(2019), who attempt to decode dependency structure from models’ vector spaces. To
+this end, they propose to learn transformations over model representations, such
+that (1) the squared l2 distance between any vectors hi, hj reﬂects the distance be-
+tween their corresponding words xi, xj in a parse tree, and (2) that the l2 norm of
+any vector hi reﬂects the depth of its corresponding word xi in a parse tree. They
+ﬁnd that this method is particularly effective for decoding Stanford Dependencies
+trees (de Marneffe, MacCartney, and Manning 2006) from ELMo and BERT represen-
+tations, with respect to several lexical-only baselines. Beyond Hewitt and Manning
+(2019)’s method, which can be imagined as doing parsing by proxy, other work has
+4 Also known as diagnostic classiﬁcation (see, e.g., Hupkes, Veldhoen, and Zuidema 2018).
+7
+Kulmizev and Nivre
+Schrödinger’s Tree
+directly employed (underparameterized) dependency parsers as probes. For example,
+see Hewitt and Liang (2019), who employ a graph-based bilinear probe; Maudslay et al.
+(2020), who investigate the relation between probing and parsing; and Pimentel et al.
+(2020), who advocate for adding full dependency parsing to the probing task suite.
+At this stage, probing can be considered a ﬁeld of inquiry in its own right, with
+researchers presenting new models, metrics, and criticisms for every conference cycle.
+Naturally, the use of intermediary models trained on top of extracted representations
+warrants caution from the interlocutor. Some concerns expressed in the literature in-
+clude, but are not limited to: the use of smaller, linear models vs. larger, nonlinear
+ones; appropriate baselines and evaluation metrics; properties being learned by the
+probe vs. occurring in representations; properties being employed by the model in
+the original task vs. simply being decodable, etc. Though a full consideration of these
+methodological concerns is outside the scope of this article, we refer the interested
+reader to Belinkov (2021) — a comprehensive review of the paradigm, open issues, and
+alternative approaches like attention analysis.
+3.3 NLU Evaluation
+Outside of TSE and probing, another technique that has recently attracted much atten-
+tion is the evaluation of models (imbued with or deprived of syntactic knowledge) on
+downstream tasks. The logic inherent to this line of inquiry is as follows: if a model
+has come to rely on human-like knowledge of language to solve complex NLP tasks,
+then it should (1) perform poorly on such tasks when the surface form of an utterance
+has been corrupted beyond (human) comprehension, and (2) perform identically when
+imbued with the exact abstract structure theorized by linguists as governing the surface
+form. Such tasks are typically taken from the GLUE benchmark — a suite of natural
+language understanding (NLU) datasets “designed to favor and encourage models that
+share general linguistic knowledge across tasks” (Wang et al. 2018). GLUE has served
+as the principal point of comparison for pretraining architectures, where, as of writing,
+15 models have surpassed the published human performance on the same tasks.
+In terms of input corruption, many studies have investigated the effect of word
+order on NLU task performance. Indeed, word order is the primary means of
+encoding syntactic argument structure in English, and such work often hypothe-
+sizes that sensitivity to this particular property should result in lower NLU scores.
+Gupta, Kvernadze, and Srikumar (2021) demonstrate that this is not the case for BERT
+when ﬁne-tuning on various GLUE tasks: sequences corrupted at test-time by means
+of shufﬂing, sorting, duplicating, and dropping tokens still retain 70-90% performance
+of the non-perturbed input. Moreover, models appear to be as conﬁdent in assigning
+labels to perturbed inputs as they are to naturalistic ones. These results are corroborated
+by Pham et al. (2020), who show that models predominantly seek salient words in
+sequences, with numerous attention heads specializing themselves for this exact pur-
+pose. Sinha et al. (2020) report similar ﬁndings for various NLI datasets (in English and
+Chinese) across a variety of model architectures. They show that models are insensitive
+to word reorderings, some of which can actually result in improved task performance.
+Perhaps most strinkingly, Sinha et al. (2021) show that pre-training full-scale RoBERTa
+models on perturbed sentences (across n-grams of varying lengths) and ﬁne-tuning
+them on unaltered GLUE tasks leads to negligible performance loss. They also report
+that a popular probe for dependency structure, that of Pimentel et al. (2020), is able
+to decode trees from the perturbed representations — even a unigram baseline with
+resampled words — with considerable accuracy.
+8
+Kulmizev and Nivre
+Schrödinger’s Tree
+As a conceptual counterpoint to the permutation-based line of research, several
+studies have posed the opposite question: does explicitly injecting syntactic structure
+into models’ representations or training objectives lead to better downstream perfor-
+mance? The observations in such studies are similar to the aforementioned work, albeit
+slightly more subtle: models that factor syntax into their decisions generally do not
+beneﬁt in performance via its injection, which is taken to imply that such structure is
+redundant to the model, or not needed at all. Most notably, Glavaš and Vuli´c (2021a)
+ﬁne-tune BERT and RoBERTa (Liu et al. 2019b) as dependency parsers, before ﬁne-
+tuning the same models again on NLI, paraphrase detection, and commonsense reason-
+ing tasks. They show that, while intermediate parsing training (IPT) can produce near
+state-of-the-art parsers, repurposing these parameters for NLU tasks leads to negligible
+improvement. A similar trend is shown in Kuncoro et al. (2020), who train a BERT
+model distilled from an RNNG teacher (Dyer et al. 2016). They, too, ﬁnd that, while
+their syntactically-aware model achieves top marks on a suite of parsing and otherwise
+syntactic tasks, the beneﬁts for ﬁne-tuning on GLUE are scant, if any. Swayamdipta et al.
+(2019) corroborate these ﬁndings for ELMo models conditioned on chunked input
+derived from phrase structure trees.
+4. Discussion: A Call For Clarity and Caution
+After our general discussion of syntax, as well as our review of work exploring its
+role in contemporary language models, we are now in a position to make a few basic
+distinctions. In this section, we attempt to situate the ﬁndings of the aforementioned
+studies along several dimensions that we deem important towards the advancement of
+our research agenda.
+4.1 Coding Properties are not Syntax
+First, we would like to highlight the need to be clear about whether a study is con-
+cerned with abstract syntactic structure, overt coding properties, or with some relation
+between the two. A typical fallacy that may arise from not observing this distinction
+is to conﬂate a particular coding property with the abstract syntactic structure that it
+partially encodes. Naturally, if we fall victim to this fallacy when interpreting certain
+ﬁndings, we risk drawing conclusions based on insufﬁcient or irrelevant evidence. This
+applies to situations where we may be tempted to employ coding properties as proxies
+of syntactic structure — either for attesting models’ sensitivity to the latter or refuting
+it.
+For example, it is important to acknowledge that studying agreement via TSE gives
+us a glimpse into how language models capture the syntactic relationship between
+selected words, such as verbs and their subjects. Per this view, high performance —
+even in the presence of various types of attractors — does not necessarily ential that a
+model has learned the grammar of a language. Rather, it has simply shown itself to be
+particularly sensitive to a single coding property, grammatical relation, or dependency
+type. Notably, English agreement is limited to expressing the number or person of the
+subject on the ﬁnite main verb (when in the present tense). This amounts to being, in
+the vast majority of cases, a binary distinction between correct and incorrect inﬂections,
+which bears a strong random choice baseline of 50% in the case of TSE. Thus, when one
+considers types of agreement manifested in other languages — such as number, gender,
+and case agreement between nouns and their modifying adjectives (e.g., German,
+Russian), or polypersonal agreement between a verb and multiple arguments (e.g.,
+9
+Kulmizev and Nivre
+Schrödinger’s Tree
+Basque, Georgian) — it becomes difﬁcult to judge agreement as the primary mechanism
+by which syntax is encoded in English. Indeed, studies have shown that models tend
+to struggle with more expressive agreement mechanisms in morphologically rich
+languages (Ravfogel, Goldberg, and Tyers 2018). Such insights call not only for a
+typologically driven research agenda, but also for nuance in interpreting positive
+ﬁndings for singular properties in selected languages.
+We must also note that the above logic can apply in reverse: a model’s lack of
+sensitivity to a single coding property, for example, word order (Dryer 1992), does
+not imply that the model has failed to acquire syntax as a byproduct of its training
+objective. Even in a language like English, where word order is very salient, it is not the
+only coding property that signals syntactic structure. Consider chases the cats the dog as
+a permutation of the dog chases the cats: it is not unreasonable for an English speaker to
+decode the argument structure of this permutation using subject-verb agreement alone.
+Indeed, recent research in psycholinguistics has intimated that humans are relatively
+robust to permutations of linguistic form (Traxler 2014). In the context of word order,
+Mollica et al. (2020) show that humans are able to process permuted sentences similarly
+to naturalistic ones, albeit when local structure (measured via pointwise mutual
+information) is preserved. Recently, this has been corroborated for models ﬁne-tuned
+on GLUE as well, with performance therein strongly correlated with the extent of local
+structure corruption (Clouatre et al. 2021). With this in mind, one can see that order
+perturbation studies do not provide enough evidence to conclude that models (or
+humans) are insensitive to syntax. Instead, when conducting such studies, we must
+recall that word order (or agreement, for that matter) is simply a single coding property
+in a mosaic of such properties, all of which are privy to underlying processes that drive
+composition and comprehension.
+4.2 Syntactic Representations are not Linguistic Data
+As a second point, if a study is concerned with syntactic structure, we need to clarify
+whether it assumes a speciﬁc type of syntactic representation, since the choice of rep-
+resentation may affect the results. Other things being equal, we may therefore prefer
+methods that do not presuppose speciﬁc syntactic representations, since conclusions
+will otherwise be valid only on the assumption that the chosen representation correctly
+captures syntactic structure. This consideration is even more important when we make
+use of automatically parsed data — as opposed to manually annotated sentences from
+treebanks — where otherwise sound syntactic representations may give misleading
+results due to parsing errors. At the same time, it is important to note that avoiding
+syntactic representations altogether may be limiting in another way, as it may restrict
+our methodological repertoire. Thus, as long as we maintain a critical attitude towards
+representation-dependent methods, they may still provide us with valuable results that
+cannot be obtained with other methods.
+To illustrate the importance of representations in the context of probing, we can
+start by asking: does high UAS on a particular treebank imply that those trees are
+indeed the structures encoded by a given model? Or can alternative, linguistically
+plausible structures be decoded with comparable accuracy? Kulmizev et al. (2020) ex-
+plore this question when probing various models for UD, a dependency formalism
+which prioritizes content-word heads (de Marneffe et al. 2021), and Surface-Syntactic
+UD, which assumes a traditional function-word head style analysis (Gerdes et al. 2018).
+10
+Kulmizev and Nivre
+Schrödinger’s Tree
+They ﬁnd that, while the difference in decoding UAS between the two formalisms is
+minimal for some treebanks, other treebanks exhibit strong preferences for either UD or
+SUD. They contribute such preferences to a complex interplay between the formalisms’
+inherent graph properties (e.g., average tree height), the probe employed for decoding
+(Hewitt and Manning (2019)’s, in their case), annotation factors like tokenization, and
+morphology. Though preliminary, Kulmizev et al. (2020)’s study is a cautionary tale in
+tree-based probing, where choice of representation directly affects what conclusions one
+may draw about models.
+We can ask similar questions when attempting to imbue models with syntactic
+structure. For example, is the injection of UD trees into a model’s architecture enough
+to draw conclusions about the role of syntax in downstream performance? Or do
+alternative, linguistically plausible representations exist that models might yet beneﬁt
+from? Beyond this, what privileges one particular injection method, say intermediate
+parsing training (Glavaš and Vuli´c 2021a), over another, such as knowledge distillation
+from an RNNG teacher (Kuncoro et al. 2020)? A template for exploring such consid-
+erations can be found in Wu, Peng, and Smith (2021), who report that infusing BERT
+with semantic dependencies can provide modest gains on GLUE. In that study, they
+compare the DM representation focused explicitly on predicate-argument structure
+(Ivanova et al. 2012) with the more syntactically oriented UD, ﬁnding that the former
+leads to slightly better performance.5 Furthermore, they compare their chosen infusion
+method — semantic graph embeddings learned via a relational graph convolution
+encoder (Schlichtkrull et al. 2018) — with other means of injecting structure into rep-
+resentations, where their method performs best in most cases.
+4.3 Theory, Model, and Task
+As a further means of promoting clarity, we consider it vital, for any study investigating
+the syntactic capabilities of language models, to motivate the evaluation with a direct
+aspect of syntax in mind. Indeed, TSE studies on coding properties and probing studies
+on tree representations satisfy this desideratum by design. Studies that investigate
+models’ knowledge of syntax through the prism of downstream tasks, however, do not.
+For example, if we observe models achieving high performance on NLU tasks, we
+may be tempted — by virtue of the NLU branding — to assume that they are, in
+some fashion, similar to humans in their decision-making. To ascertain the extent to
+which this is true, we must ﬁrst attempt to articulate exactly how humans behave when
+choosing a particular label for a sample over another. Indeed, this has, to an extent,
+been achieved for some textual entailment datasets, where annotators were asked to
+justify their labeling decisions with free-text rationales (Camburu et al. 2018; Rajani et al.
+2019). Such datasets, however, introduce a third variable into the mix (input, output, and
+explanation), which complicates architecture design and further divorces the original
+model (one that may be evaluated, presumably, for its syntactic capabilities) from the
+task on which it is now being ﬁne-tuned and offering explanations for. Furthermore, and
+perhaps more importantly, the existence of a third variable complicates the interpreta-
+tion of the self-rationalizing model itself, as noted by Wiegreffe, Marasovi´c, and Smith
+(2020): for example, how might we ensure that the model’s explanation is indeed faithful
+to the label it produced? To its input?
+5 Interestingly, both syntactic and semantic models seem to outperform the ﬁne-tuned RoBERTa baseline.
+11
+Kulmizev and Nivre
+Schrödinger’s Tree
+Given that we typically lack an explicit characterization of how humans make label-
+ing decisions at the sample level, we are then left to interpret the behavior of the model
+itself. For example, if working with Transformer models, we may be tempted to examine
+their self-attention weights after ﬁne-tuning, as in Clark et al. (2019) or Htut et al. (2019).
+However, the prospect of treating attention as explanation has received its fair share
+of criticism in recent years, due to (1) a lack of input token identiﬁability in deep
+Transformer models (Brunner et al. 2019; Abnar and Zuidema 2020) and (2) an unclear
+correspondence between a model’s attention patterns and its outputs (Jain and Wallace
+2019; Wiegreffe and Pinter 2019; Serrano and Smith 2019). Due to these drawbacks, we
+may then attempt to employ alternative methods of explanation, such as gradient-
+based saliency (Simonyan, Vedaldi, and Zisserman 2013; Sundararajan, Taly, and Yan
+2017), Shapley value-based feature attributions (Lundberg and Lee 2017), or model ag-
+nostic approaches (Ribeiro, Singh, and Guestrin 2016), inter alia. Here, we are met with
+a space of methods, whose utility in NLP tasks has been surveyed with mixed results
+(Poerner, Schütze, and Roth 2018; Arras et al. 2019; Atanasova et al. 2020). Hence, in or-
+der to draw insights about a model’s syntactic capabilities vis-a-vis its performance on a
+downstream task, we must not only make a principled choice of explanation model, but
+also relate that model’s explanations — which are computed with respect to predictions
+downstream — to the particular aspect of syntax we are interested in. Again, questions
+central to faithfulness (Jacovi and Goldberg 2021) become vital: how can we guarantee
+that an explanation of our model’s behavior represents what it actually did? Further
+yet, how can we use explanations pertaining to one type of behavior to shed light on
+another, unobserved one?
+Certainly, numerous caveats are endemic to the process of interpreting model be-
+havior (Lipton 2018). This may lead us to put our full trust in the task, which we can
+employ as a prism through which to opine on the model. This necessitates that the
+task is indeed well-motivated and designed, and difﬁcult to exploit via heuristics. If
+we believe this to be true, we can hypothesize that, by performing well on such tasks,
+our models possess whatever latent ability humans do in solving them — see, e.g.,
+Sinha et al. (2020): “models should have to know the syntax ﬁrst, ...if performing any
+particular NLU task that genuinely requires a humanlike understanding of meaning”.
+Unfortunately, in the context of NLI (which Sinha et al. (2020) study) this is a highly
+dubious claim: the crowd-funded nature of such datasets makes them prone to anno-
+tation artefacts (e.g., subsequence overlap between premise/hypothesis, lexical choice
+across inference classes, sentence length, etc.), which models often exploit as heuristics,
+thus leading to highly inﬂated performance metrics (Gururangan et al. 2018; Poliak et al.
+2018; McCoy, Pavlick, and Linzen 2019).
+Ultimately, the extent of trust we place in the model (performing as hypothesized)
+over the task (being correctly expressed) may inﬂuence not only our hypotheses, but
+also the conclusions we draw from our ﬁndings. For example, consider Pham et al.
+(2020) as a counterpoint to Sinha et al. (2020). Though the observations regarding BERT-
+based models’ insensitivity to word order are largely similar, the former are more
+critical of the task (“GLUE does not necessarily require syntactic information or complex
+reasoning”), and the latter of the model (“current models do not yet ‘know syntax’ in the
+fully systematic and human-like way we would like them to”). Naturally, for this and
+the aforementioned reasons, disentangling the complex web of theory, model, and task
+remains a gargantuan undertaking. However, if we formulate our hypotheses using
+the exact behavior we would like to investigate and evaluate our models along those
+same lines, then the conclusions we draw from our ﬁndings should be much clearer to
+interpret.
+12
+Kulmizev and Nivre
+Schrödinger’s Tree
+4.4 What are the Research Questions?
+In addition to specifying which aspect of syntax a study is concerned with, we also need
+to be clear about what our research questions are. For example, given a model M, a task
+T , some training data D and some aspect of syntax A, we may ask the following three
+questions:
+1.
+To what degree does M learn A when trained on D to perform T ?
+2.
+To what degree can M learn A when trained on D to perform T ?
+3.
+To what degree does M need to learn A when trained on D to perform T ?
+Questions of type 1 are the most straightforward to investigate as long as we have a
+valid and reliable method for measuring the degree to which M learns A in the context
+of D and T . This is quite a big assumption in itself, and one that we will return to shortly,
+but we will focus ﬁrst on the logic for answering different research questions. Questions
+of type 2 are modal in nature and therefore hard to investigate empirically, except
+indirectly by investigating questions of type 1. For example, in the pioneering study by
+Linzen, Dupoux, and Goldberg (2016a), discussed in Section 3, the authors were primar-
+ily interested in whether an LSTM (M) can learn “syntax-sensitive dependencies” (A) —
+a question of type 2. To investigate this, they examined the actual learning behavior of
+the model in two speciﬁc settings (questions of type 1): (a) when trained on unlabeled
+text (DU) for the task of language modeling (TLM), and (b) when trained on labeled
+sentences (DL) for a speciﬁc agreement decision task (TA). The results were largely
+negative in the ﬁrst case and positive in the second. From the positive result, they could
+conclude that the model can learn the relevant dependencies when trained on DL for TA;
+from the negative results, they could however only conclude that there was no evidence
+that the model was capable of learning the relevant aspect of syntax when trained on
+DU for TLM. This illustrates the fundamental asymmetry between positive and negative
+results when it comes to generalizations about possibility. A single positive result —
+if interpreted correctly — is sufﬁcient to establish that something is possible, while
+any number of negative results are in principle inconclusive.6 Indeed, as discussed in
+Section 3, the later study by Gulordava et al. (2018) managed to obtain positive results
+also in a setting similar to the ﬁrst scenario of Linzen, Dupoux, and Goldberg (2016a),
+from which they concluded that LSTMs are capable of learning at least one aspect of
+syntactic structure without explicit supervision.
+Questions of type 3 are more complex still, because they involve causality as well
+as modality. More precisely, they combine the question of whether learning A results
+in better performance of M on T (causality) with the question of whether learning A
+is necessary to achieve better peformance (modality). A typical example is the study
+of Glavaš and Vuli´c (2021b), discussed in Section 3, where the authors study the effect
+of intermediate parser training of a pre-trained language model later ﬁne-tuned for
+various language understanding tasks. The underlying research question is whether
+knowledge of syntax is needed for language understanding — a question of type 3 —
+and the lack of improvement may suggest a negative answer, but this conclusion is
+6 This is the mirror image of the case of necessity, underlying the famous quotation attributed (probably
+incorrectly) to Einstein: “No amount of experimentation can ever prove me right; a single experiment can
+prove me wrong.”
+13
+Kulmizev and Nivre
+Schrödinger’s Tree
+only warranted if it can also be shown (a) that the model has actually learned (some
+aspects of) syntax and (b) that this knowledge causally affects the model’s behavior on
+the downstream task (and still fails to improve performance). Note, however, that a
+positive improvement would not be more conclusive in this case, because it would only
+show that improvement is possible, not that it is necessary. This illustrates the complexity
+involved when relating experimental results to research questions and again points to
+the need for careful meta-analysis.
+4.5 Aggregate Metrics may be Misleading – but are Necessary
+Let us ﬁnally turn to the question of how we can measure the degree to which a model
+M learns some aspect of syntax A when trained on data set D to perform task T — a
+question that is crucial to all studies in this area, regardless of what the more general
+research questions are. As we have seen in Section 3, the answer usually involves
+measuring performance on an appropriate task T ′, although the exact solution depends
+on the type of study. In TSE studies, T ′ is typically the task of discriminating positive
+from negative instances of some grammatical pattern, for example by assigning higher
+probability to the positive instance in a minimal pair. In probing, T ′ is a supervised
+classiﬁcation task assumed to reﬂect syntactic knowledge. And in NLU evaluation, T ′ is
+simply the downstream language understanding task and thus normally coincides with
+the main task T . Each of these paradigms comes with its own methodological pitfalls,
+which have been extensively discussed in particular in the case of probing, but we will
+focus here on the complexities that are common to all of them.
+First of all, we note that performance on T ′ is almost always measured by averaging
+over individual test instances. In the simplest case, this may just be the arithmetic mean
+of a 0-1 loss metric, such as the accuracy reported for a probing classiﬁer predicting part-
+of-speech tags. In other cases, it may be a more or less sophisticated macro-average, like
+an average over different grammatical patterns in a TSE study. In all cases, however,
+such aggregate measures need to be interpreted carefully. First of all, how do we know
+whether a given metric value indicates presence or absence of syntactic knowledge?
+Does a value of 0.5 mean that the glass is half full or half empty? This highlights the
+importance of relevant and informative baselines, a point that has been made in the
+literature before but that has perhaps not been fully appreciated.
+Second, it is in the nature of aggregate metrics that they can easily be misleading
+by hiding important variation, especially if the distribution of different types of phe-
+nomena is heavily skewed. For example, in the related ﬁeld of syntactic parser evalua-
+tion, Rimell, Clark, and Steedman (2009) have shown that parsers with very respectable
+performance according to standard aggregate metrics like EVALB can have close to
+zero accuracy on certain types of unbounded dependency constructions. Moreover,
+aggregation may hide important variation in a number of different ways. If we use
+naturally occurring text in our test sets, certain words and constructions will inevitably
+be much more frequent than others and therefore dominate the aggregate scores in the
+same way as for syntactic parser evaluation. As a result of this, Newman et al. (2021)
+argue that standard metrics used in TSE overestimate the systematicity of language
+model behavior. If in addition we aggregate over different syntactic phenomena, we
+may hide the fact that different phenomena are captured to different degrees. And if we
+aggregate over multiple languages — or only report results for a single language — we
+may neglect important language-speciﬁc properties and risk over-generalization.
+Lastly, we must consider the role aggregation plays in the interpretation of models’
+performance on benchmarks like BLiMP, SyntaxGym, or GLUE. At its core, such an
+14
+Kulmizev and Nivre
+Schrödinger’s Tree
+enterprise entails that all aspects of syntax or language understanding — at least those
+of particular salience — have been successfully enumerated. Given the abstract nature of
+these notions, and the extent of debate regarding them, it is naturally doubtful that such
+an enumeration could ever be attained. Relaxing this somewhat, in assuming a salient
+set of aspects has indeed been collected, one must likewise assume — before aggre-
+gating — that a principled weighting of such aspects exists. This is especially relevant
+when dealing with a space of tasks or phenomena where ﬁne-grained categorizations
+are likewise included — for instance, the 6 subject-verb agreement settings attested in
+BLiMP. In such cases, one must not only choose between micro or macro averaging
+across phenomena and their ﬁne-grained attestations, but also articulate whether or not
+all phenomena lie on an equal playing ﬁeld — in other words, that they are all equally
+(1) difﬁcult to attest and (2) salient for evaluation. Certainly, in the vast majority of cases
+we assume a uniform weighting of classes when aggregating, since introducing hand-
+selected weights may introduce bias that we would otherwise prefer to avoid. However,
+we must not fail to acknowledge that benchmarks, in themselves, are inﬂuenced by
+designers’ theories on what component parts adequately represent abstract notions like
+syntax or language understanding.
+There is unfortunately no simple remedy to the complexities discussed in this
+section. In particular, giving up aggregate metrics is deﬁnitely not an option, since they
+are necessary for statistical signiﬁcance testing and generalization. However, to make
+further progress in this area, we need to be aware of their inherent limitations, be open to
+consider alternative metrics, and to make sure to complement them with more speciﬁc
+forms of analysis whenever possible.
+5. Conclusion
+The rapid progress in NLP thanks to deeper and larger neural network models trained
+on very large data sets with little or no linguistic supervision raises a number of
+questions concerning the status of traditional linguistic notions and theories in this land-
+scape. Is there still a role for traditional techniques like supervised syntactic parsing? If
+not, is this because neural language models learn the relevant generalizations about
+linguistic structure without explicit supervision, or because language understanding
+does not really depend on such generalizations in the way traditionally assumed. If the
+latter, does this hold only for language understanding by machines, or does it also have
+implications for human language understanding?
+These are exciting questions and it is therefore not surprising that we have seen a
+considerable body of research in this area recently. They are also hard questions, and the
+methodology for tackling them is still under development, so it is also not surprising
+that results so far have been inconclusive and sometimes contradictory. As stated in
+the introduction, the goal of this article has not been to criticize previous efforts, but to
+contribute to our understanding of methods and results by articulating and discussing
+some of the inherent complexities in this research area. Without pretending to have
+any solutions, we want to conclude with some recommendations for future research,
+echoing the main points made throughout the paper.
+Our general recommendation can be summed up as a plea for clarity and caution.
+Clarity means being clear about what conception of syntax underlies our investigations,
+which aspects of syntax are being studied, and whether we make speciﬁc assumptions
+about syntactic representations. Clarity also implies that we explicitly discuss what
+research questions are being asked, and how they can be elucidated by the speciﬁc
+experiments we perform. Caution means being careful when interpreting aggregate
+15
+Kulmizev and Nivre
+Schrödinger’s Tree
+results, always looking for alternative metrics and additional analysis, and making
+sure to consider evidence from multiple languages if we want to draw conclusions
+about natural language in general. Caution ﬁnally means resisting the temptation to
+draw strong conclusions from any single study, which is usually impossible given the
+complex interplay of research questions, methodology and data. It is only by piecing
+together all available evidence that we can hope to see the forest for the trees.
+References
+Abnar, Samira and Willem Zuidema. 2020. Quantifying attention ﬂow in transformers. In
+Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, pages
+4190–4197, Association for Computational Linguistics, Online.
+Arras, Leila, Ahmed Osman, Klaus-Robert Müller, and Wojciech Samek. 2019. Evaluating
+recurrent neural network explanations. In Proceedings of the 2019 ACL Workshop BlackboxNLP:
+Analyzing and Interpreting Neural Networks for NLP, pages 113–126, Association for
+Computational Linguistics, Florence, Italy.
+Atanasova, Pepa, Jakob Grue Simonsen, Christina Lioma, and Isabelle Augenstein. 2020. A
+diagnostic study of explainability techniques for text classiﬁcation. In Proceedings of the 2020
+Conference on Empirical Methods in Natural Language Processing (EMNLP), pages 3256–3274,
+Association for Computational Linguistics, Online.
+Baroni, Marco. 2021. On the proper role of linguistically-oriented deep net analysis in linguistic
+theorizing. arXiv preprint arXiv:2106.08694.
+Belinkov, Yonatan. 2021. Probing classiﬁers: Promises, shortcomings, and alternatives. arXiv
+preprint arXiv:2102.12452.
+Bloomﬁeld, Leonard. 1933. Language.
+Brunner, Gino, Yang Liu, Damian Pascual, Oliver Richter, Massimiliano Ciaramita, and Roger
+Wattenhofer. 2019. On identiﬁability in transformers. arXiv preprint arXiv:1908.04211.
+Camburu, Oana-Maria, Tim Rocktäschel, Thomas Lukasiewicz, and Phil Blunsom. 2018. e-snli:
+Natural language inference with natural language explanations. arXiv preprint
+arXiv:1812.01193.
+Chomsky, Noam. 1957. Syntactic Structures.
+Chomsky, Noam. 1965. Aspects of the Theory of Syntax.
+Chomsky, Noam. 1981. Lectures on Government and Binding.
+Chomsky, Noam. 1995. The Minimalist Program.
+Clark, Kevin, Urvashi Khandelwal, Omer Levy, and Christopher D Manning. 2019. What does
+bert look at? an analysis of bert’s attention. In Proceedings of the 2019 ACL Workshop
+BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP, pages 276–286.
+Clouatre, Louis, Prasanna Parthasarathi, Amal Zouaq, and Sarath Chandar. 2021. Demystifying
+neural language models’ insensitivity to word-order. arXiv preprint arXiv:2107.13955.
+Devlin, Jacob, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: pre-training
+of deep bidirectional transformers for language understanding.
+Dryer, Matthew S. 1992. The greenbergian word order correlations. Language, pages 81–138.
+Dyer, Chris, Adhiguna Kuncoro, Miguel Ballesteros, and Noah A. Smith. 2016. Recurrent neural
+network grammars. In Proceedings of the 2016 Conference of the North American Chapter of the
+Association for Computational Linguistics: Human Language Technologies, pages 199–209,
+Association for Computational Linguistics, San Diego, California.
+Evans, Nicholas and Stephen C Levinson. 2009. The myth of language universals: Language
+diversity and its importance for cognitive science. Behavioral and brain sciences, 32(5):429–448.
+Futrell, Richard, Roger P Levy, and Edward Gibson. 2020. Dependency locality as an
+explanatory principle for word order. Language, 96(2):371–412.
+Futrell, Richard, Ethan Wilcox, Takashi Morita, Peng Qian, Miguel Ballesteros, and Roger Levy.
+2019. Neural language models as psycholinguistic subjects: Representations of syntactic state.
+In Proceedings of the 2019 Conference of the North American Chapter of the Association for
+Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers), pages
+32–42.
+Gauthier, Jon, Jennifer Hu, Ethan Wilcox, Peng Qian, and Roger Levy. 2020. Syntaxgym: An
+online platform for targeted evaluation of language models. In Proceedings of the 58th Annual
+Meeting of the Association for Computational Linguistics: System Demonstrations, pages 70–76.
+Gerdes, Kim, Bruno Guillaume, Sylvain Kahane, and Guy Perrier. 2018. Sud or surface-syntactic
+16
+Kulmizev and Nivre
+Schrödinger’s Tree
+universal dependencies: An annotation scheme near-isomorphic to ud. EMNLP 2018, page 66.
+Gibson, Edward. 1998. Linguistic complexity: Locality of syntactic dependencies. Cognition,
+68(1):1–76.
+Gibson, Edward, Richard Futrell, Steven P Piantadosi, Isabelle Dautriche, Kyle Mahowald, Leon
+Bergen, and Roger Levy. 2019. How efﬁciency shapes human language. Trends in cognitive
+sciences, 23(5):389–407.
+Gibson, Edward et al. 2000. The dependency locality theory: A distance-based theory of
+linguistic complexity. Image, language, brain, 2000:95–126.
+Givón, Talmy. 1995. Functionalism and grammar. John Benjamins Publishing.
+Glavaš, Goran and Ivan Vuli´c. 2021a. Is supervised syntactic parsing beneﬁcial for language
+understanding tasks? an empirical investigation. In Proceedings of the 16th Conference of the
+European Chapter of the Association for Computational Linguistics: Main Volume, pages 3090–3104.
+Glavaš, Goran and Ivan Vuli´c. 2021b. Is supervised syntactic parsing beneﬁcial for language
+understanding tasks? an empirical investigation. In Proceedings of the 16th Conference of the
+European Chapter of the Association for Computational Linguistics: Main Volume, pages 3090–3104.
+Gulordava, Kristina, Piotr Bojanowski, Édouard Grave, Tal Linzen, and Marco Baroni. 2018.
+Colorless green recurrent networks dream hierarchically. In Proceedings of the 2018 Conference
+of the North American Chapter of the Association for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long Papers), pages 1195–1205.
+Gupta, Ashim, Giorgi Kvernadze, and Vivek Srikumar. 2021. Bert & family eat word salad:
+Experiments with text understanding. In Proceedings of the AAAI Conference on Artiﬁcial
+Intelligence, volume 35, pages 12946–12954.
+Gururangan, Suchin, Swabha Swayamdipta, Omer Levy, Roy Schwartz, Samuel Bowman, and
+Noah A. Smith. 2018. Annotation artifacts in natural language inference data. In Proceedings of
+the 2018 Conference of the North American Chapter of the Association for Computational Linguistics:
+Human Language Technologies, Volume 2 (Short Papers), pages 107–112, Association for
+Computational Linguistics, New Orleans, Louisiana.
+Hahn, Michael, Dan Jurafsky, and Richard Futrell. 2020. Universals of word order reﬂect
+optimization of grammars for efﬁcient communication. Proceedings of the National Academy of
+Sciences, 117(5):2347–2353.
+Hawkins, John A. 2004. Efﬁciency and complexity in grammars. Oxford University Press on
+Demand.
+Hewitt, John and Percy Liang. 2019. Designing and interpreting probes with control tasks. In
+Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th
+International Joint Conference on Natural Language Processing (EMNLP-IJCNLP), pages
+2733–2743, Association for Computational Linguistics, Hong Kong, China.
+Hewitt, John and Christopher D. Manning. 2019. A structural probe for ﬁnding syntax in word
+representations.
+Hochreiter, Sepp and Jürgen Schmidhuber. 1997. Long short-term memory. Neural Computation,
+9(8):1735–1780.
+Howard, Jeremy and Sebastian Ruder. 2018. Universal language model ﬁne-tuning for text
+classiﬁcation. In Proceedings of the 56th Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 328–339, Association for Computational Linguistics,
+Melbourne, Australia.
+Htut, Phu Mon, Jason Phang, Shikha Bordia, and Samuel R Bowman. 2019. Do attention heads
+in bert track syntactic dependencies? arXiv preprint arXiv:1911.12246.
+Hu, Jennifer, Jon Gauthier, Peng Qian, Ethan Wilcox, and Roger P Levy. 2020. A systematic
+assessment of syntactic generalization in neural language models. arXiv preprint
+arXiv:2005.03692.
+Hupkes, Dieuwke, Sara Veldhoen, and Willem Zuidema. 2018. Visualization and ‘diagnostic
+classiﬁers’ reveal how recurrent and recursive neural networks process hierarchical structure.
+Journal of Artiﬁcial Intelligence Research, 61:907–926.
+Ivanova, Angelina, Stephan Oepen, Lilja Øvrelid, and Dan Flickinger. 2012. Who did what to
+whom? a contrastive study of syntacto-semantic dependencies. In Proceedings of the sixth
+linguistic annotation workshop, pages 2–11.
+Jacovi, Alon and Yoav Goldberg. 2021. Aligning faithful interpretations with their social
+attribution. Transactions of the Association for Computational Linguistics, 9:294–310.
+Jaeger, T Florian and Harry Tily. 2011. On language ‘utility’: Processing complexity and
+communicative efﬁciency. Wiley Interdisciplinary Reviews: Cognitive Science, 2(3):323–335.
+17
+Kulmizev and Nivre
+Schrödinger’s Tree
+Jain, Sarthak and Byron C. Wallace. 2019. Attention is not Explanation. In Proceedings of the 2019
+Conference of the North American Chapter of the Association for Computational Linguistics: Human
+Language Technologies, Volume 1 (Long and Short Papers), pages 3543–3556, Association for
+Computational Linguistics, Minneapolis, Minnesota.
+Jumelet, Jaap and Dieuwke Hupkes. 2018. Do language models understand anything? on the
+ability of LSTMs to understand negative polarity items. In Proceedings of the 2018 EMNLP
+Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP, pages 222–231,
+Association for Computational Linguistics, Brussels, Belgium.
+Kulmizev, Artur, Vinit Ravishankar, Mostafa Abdou, and Joakim Nivre. 2020. Do neural
+language models show preferences for syntactic formalisms? pages ?–?
+Kuncoro, Adhiguna, Lingpeng Kong, Daniel Fried, Dani Yogatama, Laura Rimell, Chris Dyer,
+and Phil Blunsom. 2020. Syntactic structure distillation pretraining for bidirectional encoders.
+Transactions of the Association for Computational Linguistics, 8:776–794.
+Lasnik, Howard and Jeffrey L Lidz. 2017. The argument from the poverty of the stimulus. The
+Oxford handbook of universal grammar, pages 221–248.
+Linzen, Tal and Marco Baroni. 2021. Syntactic structure from deep learning. Annual Review of
+Linguistics, 7:195–212.
+Linzen, Tal, Emmanuel Dupoux, and Yoav Goldberg. 2016a. Assessing the ability of lstms to
+learn syntax-sensitive dependencies. Transactions of the Association for Computational Linguistics,
+4:521–535.
+Linzen, Tal, Emmanuel Dupoux, and Yoav Goldberg. 2016b. Assessing the ability of LSTMs to
+learn syntax-sensitive dependencies. Transactions of the Association for Computational Linguistics,
+4:521–535.
+Lipton, Zachary C. 2018. The mythos of model interpretability: In machine learning, the concept
+of interpretability is both important and slippery. Queue, 16(3):31–57.
+Liu, Nelson F., Matt Gardner, Yonatan Belinkov, Matthew E. Peters, and Noah A. Smith. 2019a.
+Linguistic knowledge and transferability of contextual representations. In Proceedings of the
+2019 Conference of the North American Chapter of the Association for Computational Linguistics:
+Human Language Technologies, Volume 1 (Long and Short Papers), pages 1073–1094, Association
+for Computational Linguistics, Minneapolis, Minnesota.
+Liu, Yinhan, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike
+Lewis, Luke Zettlemoyer, and Veselin Stoyanov. 2019b. Roberta: A robustly optimized bert
+pretraining approach. arXiv preprint arXiv:1907.11692.
+Lundberg, Scott M and Su-In Lee. 2017. A uniﬁed approach to interpreting model predictions. In
+Proceedings of the 31st international conference on neural information processing systems, pages
+4768–4777.
+Manning, Christopher D, Kevin Clark, John Hewitt, Urvashi Khandelwal, and Omer Levy. 2020.
+Emergent linguistic structure in artiﬁcial neural networks trained by self-supervision.
+Proceedings of the National Academy of Sciences, 117(48):30046–30054.
+de Marneffe, Marie, Christopher D. Manning, Joakim Nivre, and Daniel Zeman. 2021. Universal
+dependencies. Computational Linguistics, 47:255–308.
+de Marneffe, Marie-Catherine, Bill MacCartney, and Christopher D. Manning. 2006. Generating
+typed dependency parses from phrase structure parses. In Proceedings of the Fifth International
+Conference on Language Resources and Evaluation (LREC’06), European Language Resources
+Association (ELRA), Genoa, Italy.
+Marvin, Rebecca and Tal Linzen. 2018. Targeted syntactic evaluation of language models. In
+Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, pages
+1192–1202.
+Matthews, Peter H. 1981. Syntax.
+Maudslay, Rowan Hall, Josef Valvoda, Tiago Pimentel, Adina Williams, and Ryan Cotterell. 2020.
+A tale of a probe and a parser. In Proceedings of the 58th Annual Meeting of the Association for
+Computational Linguistics, pages 7389–7395.
+McCoy, Tom, Ellie Pavlick, and Tal Linzen. 2019. Right for the wrong reasons: Diagnosing
+syntactic heuristics in natural language inference. In Proceedings of the 57th Annual Meeting of
+the Association for Computational Linguistics, pages 3428–3448, Association for Computational
+Linguistics, Florence, Italy.
+Mel’ˇcuk, Igor. 1988. Dependency Syntax: Theory and Practice. State University of New York Press.
+Mikolov, Tomas, Kai Chen, Greg Corrado, and Jeffrey Dean. 2013. Efﬁcient estimation of word
+representations in vector space. arXiv preprint arXiv:1301.3781.
+18
+Kulmizev and Nivre
+Schrödinger’s Tree
+Mollica, Francis, Matthew Siegelman, Evgeniia Diachek, Steven T Piantadosi, Zachary Mineroff,
+Richard Futrell, Hope Kean, Peng Qian, and Evelina Fedorenko. 2020. Composition is the core
+driver of the language-selective network. Neurobiology of Language, 1(1):104–134.
+Newman, Benjamin, Kai-Siang Ang, Julia Gong, and John Hewitt. 2021. Reﬁning targeted
+syntactic evaluation of language models. CoRR, abs/2104.09635.
+Pennington, Jeffrey, Richard Socher, and Christopher Manning. 2014. Glove: Global vectors for
+word representation. pages 1532–1543.
+Peters, Matthew E., Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher clark, Kenton Lee,
+and Luke Zettlemoyer. 2018. Deep contextualized word representations. pages 2227–2237.
+Pham, Thang M, Trung Bui, Long Mai, and Anh Nguyen. 2020. Out of order: How important is
+the sequential order of words in a sentence in natural language understanding tasks? arXiv
+preprint arXiv:2012.15180.
+Pimentel, Tiago, Naomi Saphra, Adina Williams, and Ryan Cotterell. 2020. Pareto probing:
+Trading off accuracy for complexity. In Proceedings of the 2020 Conference on Empirical Methods
+in Natural Language Processing (EMNLP), pages 3138–3153, Association for Computational
+Linguistics, Online.
+Poerner, Nina, Hinrich Schütze, and Benjamin Roth. 2018. Evaluating neural network
+explanation methods using hybrid documents and morphosyntactic agreement. In Proceedings
+of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),
+pages 340–350, Association for Computational Linguistics, Melbourne, Australia.
+Poliak, Adam, Jason Naradowsky, Aparajita Haldar, Rachel Rudinger, and Benjamin Van Durme.
+2018. Hypothesis only baselines in natural language inference. In Proceedings of the Seventh
+Joint Conference on Lexical and Computational Semantics, pages 180–191, Association for
+Computational Linguistics, New Orleans, Louisiana.
+Radford, Alec, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever, et al. 2019.
+Language models are unsupervised multitask learners. OpenAI blog, 1(8):9.
+Rajani, Nazneen Fatema, Bryan McCann, Caiming Xiong, and Richard Socher. 2019. Explain
+yourself! leveraging language models for commonsense reasoning. In Proceedings of the 57th
+Annual Meeting of the Association for Computational Linguistics, pages 4932–4942, Association for
+Computational Linguistics, Florence, Italy.
+Ravfogel, Shauli, Yoav Goldberg, and Francis Tyers. 2018. Can LSTM learn to capture
+agreement? the case of Basque. In Proceedings of the 2018 EMNLP Workshop BlackboxNLP:
+Analyzing and Interpreting Neural Networks for NLP, pages 98–107, Association for
+Computational Linguistics, Brussels, Belgium.
+Ribeiro, Marco Tulio, Sameer Singh, and Carlos Guestrin. 2016. " why should i trust you?"
+explaining the predictions of any classiﬁer. In Proceedings of the 22nd ACM SIGKDD
+international conference on knowledge discovery and data mining, pages 1135–1144.
+Rimell, Laura, Stephen Clark, and Mark Steedman. 2009. Unbounded dependency recovery for
+parser evaluation. In Proceedings of the 2009 Conference on Empirical Methods in Natural Language
+Processing, pages 813–821.
+Schlichtkrull, Michael, Thomas N Kipf, Peter Bloem, Rianne Van Den Berg, Ivan Titov, and Max
+Welling. 2018. Modeling relational data with graph convolutional networks. In European
+semantic web conference, pages 593–607, Springer.
+Serrano, Soﬁa and Noah A. Smith. 2019. Is attention interpretable? In Proceedings of the 57th
+Annual Meeting of the Association for Computational Linguistics, pages 2931–2951, Association for
+Computational Linguistics, Florence, Italy.
+Simonyan, Karen, Andrea Vedaldi, and Andrew Zisserman. 2013. Deep inside convolutional
+networks: Visualising image classiﬁcation models and saliency maps. arXiv preprint
+arXiv:1312.6034.
+Sinha, Koustuv, Robin Jia, Dieuwke Hupkes, Joelle Pineau, Adina Williams, and Douwe Kiela.
+2021. Masked language modeling and the distributional hypothesis: Order word matters
+pre-training for little. CoRR, abs/2104.06644.
+Sinha, Koustuv, Prasanna Parthasarathi, Joelle Pineau, and Adina Williams. 2020. Unnatural
+language inference. arXiv preprint arXiv:2101.00010.
+Sundararajan, Mukund, Ankur Taly, and Qiqi Yan. 2017. Axiomatic attribution for deep
+networks. In International Conference on Machine Learning, pages 3319–3328, PMLR.
+Swayamdipta, Swabha, Matthew Peters, Brendan Roof, Chris Dyer, and Noah A Smith. 2019.
+Shallow syntax in deep water. arXiv preprint arXiv:1908.11047.
+Tenney, Ian, Dipanjan Das, and Ellie Pavlick. 2019. BERT rediscovers the classical NLP pipeline.
+19
+Kulmizev and Nivre
+Schrödinger’s Tree
+In Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pages
+4593–4601, Association for Computational Linguistics, Florence, Italy.
+Tenney, Ian, Patrick Xia, Berlin Chen, Alex Wang, Adam Poliak, R Thomas McCoy, Najoung Kim,
+Benjamin Van Durme, Samuel R Bowman, Dipanjan Das, et al. 2019. What do you learn from
+context? probing for sentence structure in contextualized word representations. arXiv preprint
+arXiv:1905.06316.
+Tesnière, Lucien. 1959. Éléments de syntaxe structurale. Editions Klincksieck.
+Tomasello, Michael. 2009. The cultural origins of human cognition. Harvard university press.
+Traxler, Matthew J. 2014. Trends in syntactic parsing: Anticipation, bayesian estimation, and
+good-enough parsing. Trends in cognitive sciences, 18(11):605–611.
+Trudgill, Peter. 2017. The anthropological setting of polysynthesis. In The Oxford handbook of
+polysynthesis.
+Wang, Alex, Yada Pruksachatkun, Nikita Nangia, Amanpreet Singh, Julian Michael, Felix Hill,
+Omer Levy, and Samuel R Bowman. 2019. Superglue: A stickier benchmark for
+general-purpose language understanding systems. arXiv preprint arXiv:1905.00537.
+Wang, Alex, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R Bowman.
+2018. Glue: A multi-task benchmark and analysis platform for natural language
+understanding. arXiv preprint arXiv:1804.07461.
+Warstadt, Alex, Alicia Parrish, Haokun Liu, Anhad Mohananey, Wei Peng, Sheng-Fu Wang, and
+Samuel R Bowman. 2020. Blimp: The benchmark of linguistic minimal pairs for english.
+Transactions of the Association for Computational Linguistics, 8:377–392.
+Wiegreffe, Sarah, Ana Marasovi´c, and Noah A Smith. 2020. Measuring association between
+labels and free-text rationales. arXiv preprint arXiv:2010.12762.
+Wiegreffe, Sarah and Yuval Pinter. 2019. Attention is not not explanation. In Proceedings of the
+2019 Conference on Empirical Methods in Natural Language Processing and the 9th International
+Joint Conference on Natural Language Processing (EMNLP-IJCNLP), pages 11–20, Association for
+Computational Linguistics, Hong Kong, China.
+Wilcox, Ethan, Roger Levy, Takashi Morita, and Richard Futrell. 2018. What do RNN language
+models learn about ﬁller–gap dependencies? In Proceedings of the 2018 EMNLP Workshop
+BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP, pages 211–221, Association
+for Computational Linguistics, Brussels, Belgium.
+Wu, Zhaofeng, Hao Peng, and Noah A Smith. 2021. Infusing ﬁnetuning with semantic
+dependencies. Transactions of the Association for Computational Linguistics, 9:226–242.
+Zipf, G.K. 1949. Human Behavior and the Principle of Least Effort: An Introduction to Human Ecology.
+Addison-Wesley Press.
+20
+21

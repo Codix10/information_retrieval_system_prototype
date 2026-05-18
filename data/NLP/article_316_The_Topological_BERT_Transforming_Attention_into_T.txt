@@ -1,0 +1,1851 @@
+Title: The Topological BERT: Transforming Attention into Topology for Natural Language Processing
+Source URL: http://arxiv.org/abs/2206.15195v1
+--------------------------------------------------
+
+The Topological BERT:
+Transforming Attention into Topology
+for Natural Language Processing
+Ilan Perez∗(ilan.perez@epﬂ.ch),
+Raphael Reinauer∗(raphael.reinauer@epﬂ.ch)
+July 1, 2022
+Abstract
+In recent years, the introduction of the Transformer models sparked a revolution in natural language
+processing (NLP). BERT was one of the ﬁrst text encoders using only the attention mechanism without any
+recurrent parts to achieve state-of-the-art results on many NLP tasks.
+This paper introduces a text classiﬁer using topological data analysis. We use BERT’s attention maps
+transformed into attention graphs as the only input to that classiﬁer. The model can solve tasks such as
+distinguishing spam from ham messages, recognizing whether a sentence is grammatically correct, or evaluating
+a movie review as negative or positive. It performs comparably to the BERT baseline and outperforms it on
+some tasks.
+Additionally, we propose a new method to reduce the number of BERT’s attention heads considered by the
+topological classiﬁer, which allows us to prune the number of heads from 144 down to as few as ten with no
+reduction in performance. Our work also shows that the topological model displays higher robustness against
+adversarial attacks than the original BERT model, which is maintained during the pruning process. To the
+best of our knowledge, this work is the ﬁrst to confront topological-based models with adversarial attacks in
+the context of NLP.
+Introduction
+In 2003, Yoshua Bengio and his team proposed the ﬁrst neural network for natural language processing (NLP)
+(Bengio, Ducharme, and Vincent 2000). Since then, there has been a festival of new model architectures surpassing
+current records on many textual tasks. Recurrent neural networks (RNNs) (Mikolov et al. 2010) were replaced by
+long short-term memory (LSTM) networks (Graves 2013) before attention-based models were proposed (Vaswani
+et al. 2017).
+One of the ﬁrst text encoder models using only the attention mechanism without any recurrent parts is BERT,
+and it got state-of-the-art performance on many NLP benchmark tasks. But its success came with the desire to
+understand what type of language knowledge these models acquire, such as grammar rules, semantics, syntactic
+relations between words, or even the world knowledge it can infer through language. Numerous studies about these
+diﬀerent subjects are very well summarized under the term Bertology (Rogers, Kovaleva, and Rumshisky 2020).
+The geometric and topological information contained in BERT has recently caught the interest of the topological
+data analysis (TDA) community (Zhu 2013; Cherniavskii et al. 2022; Kushnareva et al. 2021). The attention
+head activation can be transformed into an attention graph. One can then ﬁlter this graph and apply persistent
+homology to study the evolution of connected components and higher-order structures, compute a collection of
+Betti numbers, or store the average barcode length of a given homology dimension. This approach provides a
+topological representation of textual input and can be used to train a new type of textual classiﬁer or ﬁnd new
+interpretability methods for NLP.
+The contributions of this paper are summarized as follows:
+∗Ecole Polytechnique Fédérale de Lausanne (EPFL), Laboratory for topology and neuroscience,CH-1015 Lausanne, Switzerland
+1
+arXiv:2206.15195v1  [cs.CL]  30 Jun 2022
+(i) We reproduce the results of Anonymous 2020 but in a broader setting with diﬀerent choices of attention graph
+ﬁltrations, types of persistence homology (ordinary and directed), and symmetry functions. In addition, we
+also use diﬀerent topological features (they considered Betti numbers, and we consider persistence images).
+(ii) We study UMAP projections of persistent diagrams obtained via the attention graphs and compare their
+distribution with the classiﬁcation of attention maps proposed by Kovaleva et al. 2019. We could not
+observe any correlation, but we ﬁnd stability across input sentences of the cluster composition, indicating a
+specialization of the attention heads.
+(iii) We propose a new method to rate attention heads inspired by GradCam (Selvaraju et al. 2020) on the
+topological inputs that works remarkably well to prune the number of heads down from 144 to ten with
+no reduction either in classiﬁcation performance or robustness against adversarial attacks. Moreover, the
+selected heads largely display attention patterns focusing on the [SEP] token, leading to a new perspective
+on the no-op hypothesis proposed in Clark et al. 2019.
+(iv) Our research is the ﬁrst study that contemplates the topic of adversarial attacks in relation to topological-based
+models for NLP tasks.
+1
+Related Work
+Topological Data Analysis Combining algebraic topology and machine learning has become a vast ﬁeld of
+investigation in the past decade. To the best of our knowledge, Zhu 2013 was the ﬁrst to use persistent homology
+in the context of NLP. The author diﬀerentiated child writing from teenager writing using persistence tools. This
+is followed by an increase in interest from the scientiﬁc community in TDA methods in NLP, including a successful
+attempt to predict the genre of a movie from its plot (Doshi and Zadrozny 2018), an application of persistent
+homology to depict textual entailment in legal processes (Savle, Zadrozny, and Lee 2019), an unsuccessful TED-talk
+rating (Das, Haque, and Tanveer 2021), and detection of artiﬁcially generated text (Kushnareva et al. 2021).
+To demonstrate this increase in interest, Cherniavskii et al. 2022 examined, independently and in parallel to our
+work, the linguistic acceptability of text using the topology of the attention graphs. They were able to enhance the
+performance of existing models for two standard practices in linguistics: binary judgments and linguistic minimal
+pairs. They also proposed a method for analyzing the linguistic functions of attention heads and interpreting the
+correspondence between the graph features and grammatical phenomena.
+The challenge of combining a neural network with a topological layer is the diﬀerentiability of the overall
+objective function. The PersLay model (Carrière et al. 2020) obtained excellent classiﬁcation performance of
+real-life graph datasets such as social graphs or data from medical or biological domains. This is similar to
+Persformer (Reinauer, Caorsi, and Berkouk 2021), which can process persistent diagrams without using handcrafted
+features but using the self-attention mechanism and achieving state-of-the-art results on the standard ORBIT5K
+dataset.
+BERT Model Multiple studies have shown that BERT is overparametrized. Kovaleva et al. 2019 obtained an
+increase in performance of the model when disabling the attention in certain attention heads. Michel, Levy, and
+Neubig 2019 proposed a pruning method that disabled 40% of the attention heads while keeping the accuracy high
+and the authors showed that some layers could be reduced to one attention head for better performance. Even the
+original transformer architecture has been pruned from 48 heads down to 10 heads while maintaining the accuracy
+level (Voita et al. 2019). Interestingly. these remaining heads displayed speciﬁc interpretable linguistic functions.
+These specialized heads have also been found in BERT by Clark et al. 2019, who present attention heads that
+attend to the direct objects of verbs, to the determiner of nouns, or to coreferent mentions (Clark et al. 2019).
+Prasanna, Rogers, and Rumshisky 2020 showed that BERT contained many subnetworks achieving performance
+comparable to the full model, and furthermore, that the worst performing subnetwork remains highly trainable.
+Another approach to illustrate the information contained in a pretrained model is the study of the transferability
+of the contextual representations stored inside the model. Liu et al. 2019 found that linear models trained on top
+of frozen contextual representations, such as the pretrained BERT model, are competitive with state-of-the-art
+task-speciﬁc models. This is related to our work, as we also extract information from a frozen BERT model and
+train a topological classiﬁer on it.
+2
+2
+Background
+2.1
+BERT Model
+The multi-headed attention model BERT (Devlin et al. 2019) was one of the ﬁrst models to use only the
+encoder part of the original transformer architecture (Vaswani et al. 2017) while obtaining state-of-the-art results
+on many NLP tasks. It is a model composed of L encoder layers connected in series each containing H attention
+heads applied in parallel.
+We focus on the attention heads of BERTBASE (L = 12, H = 12) as they are the part of the model containing
+the topological information we want to analyse. The input of an attention head is a matrix X of size n × d (where
+d = 512) whose rows are vector representations of the n tokens of the input sentence, and the output is a new
+representation Xout of size n × d′ with d′ < d (d′ = 64) following the formula:
+Xout = W attn · (X · W V ) with W attn = softmax
+(X · W Q) · (X · W K)T
+√
+d
+
+(1)
+where W Q, W K, W V ∈Rd×d′ are trainable matrices that project the token embeddings into a lower-dimensional
+vector space, and the softmax is token over the second dimension. The matrix W attn is a n × n-dimensional matrix
+called the attention matrix.
+Its entries wattn
+ij
+can be interpreted as the attention given to the token at position j when computing the new
+representation of the token at position i. They are non-negative and the attention scores of a token sum up to one,
+i.e., Pn
+j=1 wattn
+ij
+= 1 for all i = 1, . . . , n.
+2.2
+Attention Maps and Attention Graphs
+Attention maps are the representations of the attention matrices into d × d pixel images. The higher wattn
+ij
+is, the darker the pixel color is. Those maps where intensively studied in Kovaleva et al. 2019 and divided into
+four classes: diagonal patterns, vertical patterns, diagonal and vertical patterns, and heterogeneous patterns (see
+Figure 1).
+Figure 1: Typical self-attention maps depicted by Kovaleva et al. 2019. Both axes on every attention map represent
+BERT tokens of an input sentence. The colors denote attention weights: the darker the color, the larger the
+weight. The authors assumed that only the last two types potentially encode syntactic and semantic information,
+while the ﬁrst three are associated with model pretraining.
+Another representation of an attention matrix is through an attention graph. Given a head, we construct a
+weighted directed graph taking as vertices the tokens of the input sentence and connecting two words i and j with
+an edge from i to j with weight wattn
+ij
+and an opposite direction edge with weight wattn
+ji
+. No further modiﬁcation is
+needed to apply directed persistent homology and in the non-directed versions, this directed graph is transformed
+into a complete non-directed weighted graph on the set of tokens via a symmetric function f. The edge connecting
+tokens i and j is assigned to the weight 1 −f(wattn
+ij
+, wattn
+ji
+). The larger the weight of the edge connecting the two
+vertices, the lower the transformed attention score between the two tokens. The transformation from attention
+map to attention graph is illustrated in Figure 3.
+3
+2.3
+Persistent Homology
+The attention graphs constructed from the attention heads contain the topological structure we are interested in.
+Topologically, a weighted graph and the corresponding unweighted graph are identical. To encode the topological
+information provided by the graph weights, we use ﬁltrations of the graph. A ﬁltration is a sequence of nested
+topological subspaces indexed either on a discrete set like {1, . . . , n} or on a continuous real-valued parameter.
+Starting with an attention graph, we consider three types of ﬁltrations: Ordinary, MultiDim, and Directed.
+Ordinary We initiate the ﬁltration with only the vertices of the graph. Then we add edges one by one, depending
+on their weights, until we obtain the complete graph (see Figure 3). The order of how the edges are added is as
+follows: Given two edges e1 and e2, if the weight of e1 is smaller than the weight of e2, then e1 will be added
+before e2. This ﬁltration is based on a real-valued parameter t taking value in [0, 1] and the ﬁltration at stage t0 is
+formed by all the edges with weights smaller or equal to t0.
+MultiDim The Ordinary ﬁltration can be seen as starting with 0-simplices and then adding 1-simplices to
+construct the graph. The 0-simplices can be thought of as points, the 1-simplices as edges, the 2-simplices as
+triangles, these 3-simplices as tetrahedrons, and so on. The edges for the MultiDim ﬁltration have the same
+ﬁltration values as for the Ordinary ﬁltration, but we add a 2-simplex everytime three edges form a triangle.
+Directed We consider the directed version of the attention graph and again start the ﬁltration with only the
+vertices. The idea is similar to the MultiDim ﬁltration: we add edges one by one, depending on their weight, and
+we add a 2-simplex if its boundary 1-simplices are present and do not form a directed cycle.
+Filtrations are the topological interpretation of edge weights and their directions, for if the weights on the
+edges or the direction of the edges were diﬀerent, the ﬁltration would change accordingly.
+Given a ﬁltered simplicial complex, we can analyze it through persistent homology. The idea is to keep track of
+the appearance and disappearance of topological features through the ﬁltration by computing the homology of each
+topological space encountered during the ﬁltration and keeping track of the maps induced by the inclusions. An
+introduction to the mathematical background of TDA can be found in Zhu 2013. One can think of 0-dimensional
+persistent features as connected components, 1-dimensional features as holes and 2-dimensional features as cavities
+(2-dimensional holes). The birth time of a persistent feature is the ﬁltration value at which the feature appears.
+For examples, the birth time of all the 0-dimensional features of our graph ﬁltration is 0 and the birth time of a
+1-dimensional features is the ﬁltration value of the edge completing a graph cycle. The death time is the ﬁltration
+value at which the feature disappears. For a 0-dimensional feature it will correspond to the weight of the edge
+connecting the corresponding vertex to the main connected component. If there are no 2-simplices in the ﬁltration,
+a 1-dimensional feature will never vanish, and its death time is said to be equal to ∞. But for computational
+purpose, it is set to the maximal ﬁltration value 1.0. The birth and death times of each feature are stored in a
+persistence diagram. A persistent feature is seen as a point in R2 with its birth time as x-coordinate and death
+time as y-coordinate (see Figure 3). Hence a persistence diagram is a multi-set of elements in R2 – multi because
+two or more persistent features may have the same birth and death time.
+2.4
+Persistence Images
+Incorporating persistence diagrams into a machine learning pipeline faces two main challenges. Firstly, one
+can add distances on the space of persistence diagrams, such as the bottleneck distance or a Wasserstein-type
+distance (see Deﬁnition 5.1). But the underlying data structure remains a set, not a vector. Secondly, the space of
+persistence diagrams cannot be isometrically embedded into a Hilbert space, and this remains true for any type of
+distance considered (Mitra and Virk 2021, Theorem 4.3).
+To overcome this issue, the TDA community has developed many methods to convert a collection of persistence
+diagrams into a collection of vectors contained in a Hilbert space. The method we consider uses persistence images
+(Adams et al. 2017) because they are simple to compute and interpret. Furthermore, they are compatible with
+convolutional neural networks.
+A persistence diagram D can be seen as a non-continuous map f : R2 →N that counts the number of points
+in the diagram at the input location u = (x, y). This function can be decomposed into a ﬁnite sum of indicator
+functions fu that return 1 if the input is u and 0 otherwise. These indicator functions can be seen as probability
+4
+density functions. To work with continuous functions, fu will be approximated by the 2-dimensional Gaussian
+distribution φu of of mean u and standard deviation σ, a hyperparameter that has to be chosen. We sum up all
+those continuous functions to obtain g, a continuous approximation of the function f.
+For more ﬂexibility and stability, a weight function w: R2 →R≥0 is incorporated inside the sum to emphasize
+certain regions of the persistence diagram. The obtained function P
+u∈D w(u)φu is called the persistence surface
+of the persistence diagram D.
+The last step is to integrate the persistence surface over cells of a grid of dimension (nx, ny) with given
+horizontal and vertical boundaries. This grid deﬁnes the frame and resolution of the persistence image and has to
+be chosen (see Figure 2). The value of a pixel R of the persistence image of the persistence diagram D is given by
+Im(D)(R) =
+Z
+R
+X
+u∈D
+w(u)φu(z)dz.
+The value of the integration over each pixel is stored in a nx × ny image, called the persistence image of the
+persistence diagram.
+Figure 2: Persistence image of a persistence diagram. From left to right: persistence diagram, persistence images
+with diﬀerent resolutions.
+For our application, we consider various image frames, image resolutions (see Table 12), and weight functions
+(see Table 13). An illustration for the Ordinary ﬁltration can be found in Figure 3. The tables are in the appendix
+with examples for all types of persistence images (see Table 14).
+3
+Methodology
+We compare BERT against the topological model on numerous classiﬁcation tasks. BERT is ﬁne-tuned for
+a variable amount of epochs. To apply the topological model, we ﬁrst transform each sentence into a stack of
+persistence images. To do so, we feed a ﬁne-tuned BERT model with the sentence and extract the attention graphs
+for each head. We then transform the attention graphs into persistence images. One attention graph generates a
+number of persistence images equals to the number of persistence features inside the ﬁltration (2 for Ordinary, 3
+for the two others). For the Ordinary ﬁltration, a sentence is transformed into 288 images and for the two others
+into 432 images. The topological classiﬁer receives as input a 4-dimensional tensor where the dimensions are:
+batch-size, the number of persistence images per sentence, the width and height of the image.
+We use the Gudhi library (The GUDHI Project 2015) to convert persistence diagrams into persistence images
+for the Ordinary and MultiDim ﬁltrations, and the Giotto-tda library (Tauzin et al. 2020) to manage the directed
+ﬁltration.
+3.1
+Data
+We load the datasets from Hugging Face and we follow the data processing proposed by Anonymous 2020. All
+dataset statistics are presented in Table 1.
+CoLA The Corpus of Linguistic Acceptability (Warstadt, Singh, and Bowman 2018) is part of the GLUE
+benchmarks (A. Wang et al. 2018). The task is to detect if a sentence is grammatically correct (class 1) or not
+5
+(a)
+Diagonal
+attention
+map
+(L: 3, H: 1)
+(b) Directed attention graph
+(c) Column attention map (L: 8, H: 7)
+(d) Undirected attention graphs where the edge width is proportional to the maximal attention between the two vertices.
+Left: diagonal (L: 3, H: 1), right: column (L: 8, H: 7).
+t = 0.0
+t = 0.005
+t = 0.1
+t = 0.9999
+t = 1.0
+(e) Attention graph ﬁltration (L: 3, H: 1).
+t = 0.05
+t = 0.1
+t = 0.9
+t = 0.99
+t = 1.0
+(f) Attention graph ﬁltration (L: 8, H: 7).
+(g) Persistence diagram (left), persistence images
+(right), (L: 3, H: 1).
+(h) Persistence diagram (left), persistence images
+(right), (L: 8, H: 7).
+Figure 3: Transformation from attention maps to persistence images for the sentence “Bill ﬂoated down the river
+for hours.” and attention heads (L: 3, H: 1) and (L: 8, H: 7). Graph pictures are drawn with from the Pyvis
+library (https://pyvis.readthedocs.io).
+6
+(class 0). We consider the public part of the dataset that contains labels, and disregard the hidden part. We
+use the original validation set for prediction, and we split the train set into train and validation subsets with
+proportions 90 : 10.
+IMDB Large Movie Review Dataset v1.0 (Maas et al. 2011) consists of movie reviews labeled by two sentiments
+“positive” (1) or “negative” (0). It contains 50,000 reviews. We ﬁrst divide the data set into two equal sized
+subsets, one for training and the other for testing and validation. To obtain attention graphs of manageable sizes,
+we consider only sentences of length smaller or equal to 128 after tokenization with the standard BERT uncased
+tokenizer. We then divide the second subset into validation and prediction datasets following the proportion
+50 : 50.
+SPAM The SMS Spam Collection v.1 (Almeida, Hidalgo, and Yamakami 2011) contains text SMS and the task
+is to determined if they are spam (1) or ham (0). It contains 5,574 messages that we divide into train, validation
+and prediction subsets (80 : 10 : 10).
+SST2 The binary version of Stanford Sentiment Treebank (Socher et al. 2013) is also part of the GLUE benchmarks
+and consists of parts of movie reviews labeled by two sentiment “positive” (1) and “negative” (0). As for the CoLA
+dataset, we split the original train set into two subsets with proportions 90 : 10, and use the original validation set
+for the prediction.
+CoLA
+IMDB
+SPAM
+SST2
+# Train sent.
+7695
+2675
+4459
+60614
+# Validation sent.
+856
+1414
+557
+6735
+# Prediction sent.
+1043
+1414
+558
+872
+%
+70
+55
+14
+51
+Mean sent. size
+11
+88
+25
+13
+Max sent. size
+47
+128
+238
+64
+Table 1: Statistics of the classiﬁcation task datasets. % = percentage of class 1 in prediction set. Mean/Max
+sent. size = mean/max length of tokenized sentences.
+3.2
+Model
+We run the experiments on the “bert-base-uncased” model from the HuggingFace library (Wolf et al. 2019) for
+the BERT baselines. For explanatory purposes, we consider numerous variations:
+Fine-tuning We ﬁne-tuned BERT for 4, 10, and 20 epochs 1 to study the importance of ﬁne-tuning with respect
+to the performance of the topological classiﬁers. This gives use three BERT models per task, and each is used to
+transform sentences into persistence images.
+Symmetry function The choice of the symmetry function is a crucial step to get from the attention matrices to
+the non-directed attention graphs. To explore its relevance with respect to the performance of the topological
+classiﬁer, we use four diﬀerent symmetry functions: maximum, minimum, multiplication and mean.
+Filtration We also consider the three types of ﬁltrations describe in Section 2.3. Unfortunately, we are limited
+in terms of computation time and power as it can reach excessively high values depending on the length of the
+sentence to transform (see Figure 4). Hence for the MultiDim ﬁltration, we consider only the maximum as a
+symmetry function, and the Directed ﬁltration is only applied to the CoLA dataset.
+In total, one ﬁne-tuned BERT model generates 5 or 6 persistence image datasets (PI-datasets). We refer to a
+PI-dataset by the ﬁne-tuned BERT model producing it (name of the dataset and number of ﬁne-tuning epochs),
+the type of ﬁltration, and the symmetry function, e.g., “IMDB, 10 epochs, MultiDim, max”.
+1We follow the procedure proposed in https://github.com/MohamedAteya/BERT-Fine-Tuning-Sentence-Classiﬁcation-for-CoLA
+7
+Figure 4: The computation time of the persistence images from the attention maps as a function of the number of
+tokens in a sequence for the three types of ﬁltrations. Because of the high memory usage for the Directed version,
+we only plotted sequence lengths of a size up to 80 tokens for it.
+Our topological classiﬁers are convolutional neural networks taking as input the stack of persistence images
+from one sentence. The architecture identiﬁed by running a hyperparameter search using the Optuna library
+(Akiba et al. 2019) for 500 trials tuning the number of convolution and fully connected layers, the learning rate,
+the optimizer, and the dropout rate. The hyperparameter search is done on one dataset (CoLA, IMDB, SPAM,
+or SST2), and we say that the model designed from the hyperparameter search result is speciﬁc to this dataset.
+We run hyperparameter searches for each classiﬁcation task and type of ﬁltration. The architectures of all the
+topological classiﬁers are presented in Table 15.
+We then investigate the performance of a topological classiﬁer speciﬁc to one dataset when evaluated on the
+other datasets. To do so, for each PI-dataset, we evaluate the performance of two topological models: one whose
+hyperparameters are optimized on the current dataset, the other one speciﬁc to the CoLA dataset. We refer to
+the ﬁrst model as the speciﬁc model and to the second as the general model.
+The inference time of our combination of the BERT model and the topological classiﬁer is greater than the
+inference time of the BERT model itself. For example, when using the Ordinary ﬁltration, the time needed to
+transform a tokenized sentence into a persistence image and predict its class is two times greater than the BERT
+prediction time. It goes up to 20 times for the MultiDim ﬁltration and 70 times for the Directed ﬁltration. The
+bottleneck is the computation of the persistence images from the persistence diagrams, which is not implemented
+on GPU but only on CPU.
+3.3
+Hardware
+All the computations are done using a virtual machine from the Google Cloud Platform (https://cloud.google.com/).
+The machine we work on has a NVIDIA Tesla T4 GPU with 16GB of VRAM, 8 CPUs, named “n1-standard-8”,
+with 30GB of RAM.
+4
+Results of the topological classiﬁers
+The performance results obtained by the model whose hyperparameters are optimized on the CoLA dataset
+and the speciﬁc models are outlined in Table 2 and Table 3. As performance measures, we choose the accuracy on
+the prediction set and the Matthew Correlation coeﬃcient which is a good metric for unbalanced datasets.
+8
+CoLA
+IMDB
+SPAM
+SST2
+4 Epochs
+10 Epochs
+20 Epochs
+4 Epochs
+10 Epochs
+20 Epochs
+4 Epochs
+10 Epochs
+20 Epochs
+4 Epochs
+10 Epochs
+20 Epochs
+BERT
+0.518 / 80.8
+0.561 / 82.2
+0.591 / 83.3
+0.843 / 92.2
+0.833 / 91.7
+0.831 / 91.7
+0.993 / 99.8
+1.00 / 100
+1.00 / 100
+0.853 / 92.7
+0.830 / 91.5
+0.830 / 91.5
+Ordinary
+max
+0.539 / 81.2
+0.585 / 83.0
+0.591 / 83.3
+0.776 / 88.8
+0.809 / 90.4
+0.818 / 91.0
+0.999 / 99.9
+-
+-
+0.799 / 89.8
+0.814 / 91.0
+0.824 / 91.2
+min
+0.548 / 81.5
+0.579 / 82.5
+0.579 / 82.8
+0.591 / 78.4
+0.801 / 89.9
+0.828 / 90.7
+0.980 / 99.5
+-
+-
+0.813 / 90.7
+0.822 / 91.1
+0.825 / 91.2
+mean
+0.546 / 81.2
+0.586 / 83.0
+0.595 / 83.5
+0.769 / 88.4
+0.805 / 90.2
+0.813 / 90.7
+0.993 / 99.8
+-
+-
+0.802 / 90.0
+0.810 / 90.5
+0.805 / 90.2
+mult
+0.524 / 80.8
+0.552 / 81.7
+0.576 / 82.9
+0.130 / 54.2
+0.120 / 54.4
+0.310 / 64.1
+0.978 / 99.5
+-
+-
+0.783 / 88.9
+0.814 / 90.7
+0.820 / 91.2
+MultiDim
+max
+0.552 / 81.5
+0.591 / 83.2
+0.593 / 83.4
+0.795 / 89.7
+0.809 / 90.4
+0.818 / 91.0
+0.978 / 99.5
+-
+-
+0.792 / 89.6
+0.824 / 91.2
+0.813 / 90.6
+Directed
+-
+0.532 / 80.7
+0.577 / 82.6
+0.583 / 82.8
+-
+-
+-
+-
+-
+-
+-
+-
+-
+Table 2: Comparison of our classiﬁcation methods with BERT model (MCC / accuracy on prediction set in %). The models hyperparameters are
+optimized on the CoLA dataset. The highest value is in bold, the second highest is underlined. Each value is computed ﬁve times. For the datasets
+CoLA and SST2, the standard deviation of the prediction accuracy of each measure turns around 0.3%. For the IMDB dataset, the standard
+deviation turns around 0.8%. For the SPAM dataset, the standard deviation is below 0.1%.
+CoLA
+IMDB
+SPAM
+SST2
+4 Epochs
+10 Epochs
+20 Epochs
+4 Epochs
+10 Epochs
+20 Epochs
+4 Epochs
+10 Epochs
+20 Epochs
+4 Epochs
+10 Epochs
+20 Epochs
+BERT
+0.518 / 80.8
+0.561 / 82.2
+0.591 / 83.3
+0.843 / 92.2
+0.833 / 91.7
+0.831 / 91.7
+0.993 / 99.8
+1.00 / 100
+1.00 / 100
+0.853 / 92.7
+0.830 / 91.5
+0.830 / 91.5
+Ordinary
+max
+0.533 / 80.1
+0.585 / 83.0
+0.585 / 83.1
+0.795 / 89.8
+0.793 / 89.6
+0.817 / 90.9
+0.978 / 99.5
+-
+-
+0.793 / 89.5
+0.821 / 91.1
+0.820 / 91.0
+min
+0.538 / 80.9
+0.579 / 82.5
+0.579 / 82.8
+0.775 / 88.3
+0.818 / 90.9
+0.810 / 91.6
+0.976 / 99.4
+-
+-
+0.785 / 89.2
+0.822 / 91.1
+0.824 / 91.1
+mean
+0.546 / 81.2
+0.586 / 83.0
+0.595 / 83.5
+0.805 / 90.3
+0.805 / 90.2
+0.810 / 90.5
+0.987 / 99.7
+-
+-
+0.804 / 90.2
+0.823 / 91.1
+0.819 / 90.9
+mult
+0.523 / 80.7
+0.552 / 81.7
+0.579 / 82.9
+0.571 / 77.0
+0.552 / 75.6
+0.721 / 85.5
+0.960 / 99.0
+-
+-
+0.799 / 89.9
+0.815 / 90.7
+0.816 / 90.7
+MultiDim
+max
+0.552 / 81.5
+0.591 / 83.2
+0.593 / 83.4
+0.781 / 88.6
+0.788 / 89.4
+0.801 / 90.0
+0.985 / 99.6
+-
+-
+0.793 / 89.6
+0.830/91.5
+0.813 / 90.6
+Table 3: Comparison of our classiﬁcation methods with BERT model (MCC / accuracy on prediction set in %). The models hyperparameters are
+optimized on the same dataset task the model is evaluated. The highest value is in bold, the second highest is underlined. Each value is computed
+ﬁve times. For the datasets CoLA and SST2, the standard deviation of the prediction accuracy of each measure turns around 0.3%. For the IMDB
+dataset, the standard deviation turns around 0.5%. For the SPAM dataset, the standard deviation is below 0.2%.
+9
+The general topological classiﬁer outperforms BERT for the CoLA dataset by 1% and obtains similar perfor-
+mances for the other datasets. It suggests that the persistence images contain as much syntactic information as the
+encoding provided by BERT. The biggest increase in performance is generally obtained by the MultiDim ﬁltration.
+It seems that the more topological information is provided to the model, the better it performs. However, the
+enhancement is not comparable with the computation cost needed to compute the persistent homology of the
+MultiDim ﬁltration. The model based on the Directed ﬁltration performs as well as the Ordinary. One explanation
+could be that the persistence images produced by the Giotto TDA library have diﬀerent ranges making it diﬃcult
+for the CNN to compare them.
+There is no symmetry function that works best in all cases. The mean is the best choice when considering the
+CoLA dataset. The multiplication performs less well for IMDB, but better for the three others. In general, all
+symmetry functions perform similarly on a given task. Hence this choice is not crucial for the overall performance
+of the topological classiﬁer. Interestingly, there is also no signiﬁcant diﬀerence between the results obtained by
+the speciﬁc models versus the general model. In some cases, when applied on another dataset, the general model
+outperforms the speciﬁc model. This observation would suggest that we could use one topological classiﬁer for
+multi-task learning with a performance similar to BERT.
+Lastly, there is an overall tendency for performance-boosting when we increase the amount of BERT ﬁne-tuning
+epochs. This is the case on each task with respect to any ﬁltration and any symmetry function, even when the
+BERT model overﬁts by training for more epochs (SST2 and IMDB).
+5
+UMAP Description
+It is challenging to understand how BERT learns to solve a task, and many attempts have been published
+(Jain and Wallace 2019; Clark et al. 2019; Rogers, Kovaleva, and Rumshisky 2020). Persistence diagrams of the
+attention graphs oﬀer a new perspective to look at attention heads.
+To do so, we use the UMAP (Uniform Manifold Approximations & Projection) library (C. Adam and P. Adam
+2022). It allows to project a high dimensional point cloud onto the two dimensional plane. The data we use
+consists of the persistence diagrams of the 144 attention heads corresponding to one sentence. To give a graph
+structure to the set of data points, we compute the 1-Wasserstein distance between each pair of diagrams.
+Deﬁnition 5.1 (Dey and Y. Wang 2022, Deﬁnition 3.9 and 3.10). Let p ≥1 be ﬁxed and let D1 and D2 be two
+ﬁnite persistence diagrams of the same homology dimension. Let D′
+1 and D′
+2 be the diagrams obtained from D1
+and D2 by adding all points on the diagonal with inﬁnite multiplicity. We deﬁne the p-Wasserstein distance
+between D1 and D2 by
+Wp(D1, D2) :=
+min
+π∈Π(D′
+1,D′
+2)
+ X
+x∈D′
+1
+|x −π(x)|p1/p
+,
+where Π(D′
+1, D′
+2) is the set of all bijections between D′
+1 and D′
+2.
+From the pair-wise distances of the diagrams, UMAP construct a graph as follows: It connects each point to a
+ﬁxed number of closest neighbors. Then it projects this graph onto the two-dimensional plane. The number of
+neighbors to connect to has to be chosen manually. The higher it is, the more global information will be retrieved.
+The lower it is, the more local information will be displayed in the ﬁnal projection. Figure 5 shows examples of
+UMAP projections.
+UMAP provides us with information about similitude between persistence diagrams. The main observation is
+the formation of clusters, indicating that there are groups of diagrams that look similar and that are diﬀerent
+from the diagrams not in the cluster.
+The primary motivation to use UMAP projections of persistence diagrams is to give another perspective on the
+self-attention patterns depicted in the paper (Kovaleva et al. 2019). We want to see if the persistence diagrams
+are also clustered in a similar way. We consider sentences of the CoLA dataset, and we plot the UMAP for any
+category of diagrams; one per type of ﬁltration (Ordinary, MultiDim, or Directed) and per homology dimension (0
+and 1 for Ordinary, 0,1 and 2 for MultiDim and Directed). We manually identiﬁed heads with the pattern type of
+their self-attention maps for each sentence. Then we display the UMAP projections, coloring the dots with respect
+to the pattern: yellow for diagonal, red for vertical, blue for diagonal and vertical and green for heterogeneous.
+10
+In Figures 5, 6, 12, 13, 14 and 15, the distribution of the persistence diagrams are not correlated with the
+distribution of the attention map classes. The colors are spread evenly across all the points, with no clear
+monochromatic area. In some projection maps, a color gradient between green and red can be observed, but
+with no clear distinction between the two groups. Nevertheless, there are some cluster formations shared across
+sentences. In the next subsections we explore the cluster compositions and compare them across sentences. We
+observe similar pattern for a large range of sentences, but only present the plots of three sentences for illustratory
+purposes. The three sentences are:
+1. “Our friends won’t buy this analysis, let alone the next one we propose.” (1)
+2. “I know a boy mad at John.” (1)
+3. “Mary has more friends that two.” (0)
+We only look at the Ordinary ﬁltration here. The UMAP projection for the MultiDim and the Directed
+ﬁltrations can be found in Appendix A and Appendix B.
+Figure 5 shows the UMAPs of the 0-dimension diagrams for the three considered sentences.
+(a) Sentence 1
+(b) Sentence 2
+(c) Sentence 3
+Figure 5: UMAP projections for the 0-features of the Ordinary ﬁltration. Clusters are circled in red. They contain
+23, 30, 59 elements for sentences 1, 2 and 3 respectively. Cluster 2 shares 20 elements with cluster 1, and cluster 3
+contains all of them.
+A small cluster is present for the two ﬁrst sentences. The overall shape and the color distribution are similar
+across sentences and we observed that pattern for many more sentences. Looking at the persistent images of each
+head, no clear pattern is depicted between diagrams in or outside the cluster. But surprisingly, the cluster is
+formed on average by the same heads. For example, the cluster for the second sentence contains 20 of the 23 heads
+of the cluster from sentence 1. The circled area for sentence 3 contains all the elements of this cluster of size 23.
+We observe no common cluster for the ﬁrst homological dimension diagrams, but their UMAP projections tend
+to divide green and red points.
+(a) Sentence 1
+(b) Sentence 2
+(c) Sentence 3
+Figure 6: UMAPs for the 1-features of the Ordinary ﬁltration.
+11
+5.1
+Discussion
+The classes proposed by Kovaleva et al. 2019 are not observed through the topological lens in these three
+sentences. However, the UMAP projections display clusters that appear for each sentence and whose composition is
+shared in each example. For persistence diagrams of homology dimension zero, there is a small dense cluster shared
+across sentences, but we could not ﬁnd a pattern shared between the diagrams inside. For homology dimension one,
+there is a cluster whose diagrams contain mostly short lifespan features, i.e., persistence features with death-time
+equal or very close to the birth-time. And for homology dimension two, there is a cluster whose diagrams present
+almost only features with a high birth-time. These speciﬁc clusters vary in size, but their composition is shared
+across sentences. In average, more than 90% of the smallest speciﬁc cluster is shared with the clusters in the other
+sentences. We made the same observation for numerous sentences of the CoLA dataset, leading to the claim that
+the attention heads of the ﬁne-tuned BERT model specialize in searching for speciﬁc information. This claim was
+acknowledged in (Rogers, Kovaleva, and Rumshisky 2020), and we provide a new approach to back it up.
+6
+Pruning the heads
+Instead of exploring the structure of the persistence diagrams, we investigate what part of the input is most
+relevant for the model to predict the class of the sentence. To do so, we develop a method inspired by GradCam
+(Selvaraju et al. 2020).
+GradCam is used to help understand the decisions made by deep learning models. Given an image, GradCam
+produces a heatmap that shows how the model makes its decision for that image. In our case, as the input is
+composed of either 288 (twice the number of heads) or 432 images (three times the number of heads), we can not
+directly apply the method proposed by Selvaraju et al. 2020. Instead, we compute the gradient of the output logit
+with respect to the input image. This yields a tensor of the same shape as the input (for example for the ordinary
+case, the shape is [288, 50, 5]). Then we average the absolute value of the gradient over each channel to obtain a
+number that represents the inﬂuence of each individual image on the model output. Finally, we take the mean of
+these values corresponding to images coming from the same attention head (two images in the case of the ordinary
+ﬁltration, three for the others). We end up with a score for the 144 heads of BERT for one input sentence. We
+perform this procedure for a large number of sentences and average all the obtained scores.
+Our hypothesis is that the higher the score of a head, the more relevant it is to the topological model, and the
+more information about the sentence structure with respect to the current task it contains. Figure 7 displays the
+30 best attention heads of the topological model trained on the PI-dataset “CoLA, 4 Epochs, Ordinary”, but with
+various numbers of sentences considered and for diﬀerent symmetry functions.
+The heads with the highest scores are independent of the number of sentences used, as there is almost no
+diﬀerence in Figures 7a to 7c, Figures 7d to 7f, and Figures 7g to 7i. We also observed that the best performing
+heads are almost independent of the symmetry function considered. In general, the best heads are located in the
+deep layers of BERT. Therefore, the heads of BERT located in the later layers are the ones that change the most
+when ﬁne-tuning (Kovaleva et al. 2019), and they are also the most relevant for the topological classiﬁer.
+6.1
+Experiments
+We design the following experiment to determine if these high-scoring heads contain most of the necessary
+information for our topological classiﬁer to perform well. First we determine the head with the highest scores. We
+train a model on a selected PI-dataset α and we apply our rating procedure on it. We look at the n heads with
+the highest score (for n = 70, 50, 30, 10, 5, 3, 2, and ﬁnally the best head). Then, we train another model on a
+PI-dataset β but with persistence images only related to the n highest scoring heads. When considering the 70
+best heads, we do not consider the persistence images from the other 74 for heads. In the case of the Ordinary
+ﬁltration the input of shape [288, 50, 5] is pruned to the shape [140, 50, 5], as each head produces two persistence
+images (one for the 0-dimensional features, one for the 1-dimensional features). Table 4 presents the performance
+obtained from such a pruning. The base PI-dataset considered is “CoLA, 4 Epochs, Ordinary, max”. The other
+columns are variations of the base PI-dataset by changing either the considered symmetry function or the number
+of ﬁne-tuning epochs. In Table 4 the PI-dataset α is the base PI-dataset and the PI-dataset β is the PI-dataset
+identiﬁed by the column. In Table 5, α and β are both the PI-dataset identiﬁed by the column.
+12
+(a) max and 50 sentences
+(b) max and 500 sentences
+(c) max and 5000 sentences
+(d) min and 50 sentences
+(e) min and 500 sentences
+(f) min and 5000 sentences
+(g) mean and 50 sentences
+(h) mean and 500 sentences
+(i) mean and 5000 sentences
+Figure 7: Scores of the 30 best heads for variations of models over the PI-dataset “CoLA, 4 Epochs, Ordinary,
+max”. The x-axis is the head id and the y-axis is the layer id.
+13
+CoLA
+4 Epochs
+Ordinary
+Max
+CoLA
+4 Epochs
+Ordinary
+Min
+CoLA
+4 Epochs
+Ordinary
+Mean
+CoLA
+10 Epochs
+Ordinary
+Max
+CoLA
+20 Epochs
+Ordinary
+Max
+BERT
+0.518 / 80.6
+0.518 / 80.6
+0.518 / 80.6
+0.561 / 82.2
+0.591 / 83.3
+144 Heads
+0.539 / 81.2
+0.548 / 81.5
+0.546 / 81.2
+0.585 / 83.0
+0.591 / 83.3
+70 Heads
+0.557 / 81.3
+0.552 / 81.7
+0.544 / 80.6
+0.581 / 82.9
+0.587 / 83.2
+50 Heads
+0.557 / 81.2
+0.545 / 81.5
+0.551 / 81.2
+0.580 / 82.7
+0.590 / 83.3
+30 Heads
+0.582 / 82.4
+0.548 / 81.5
+0.548 / 80.9
+0.584 / 83.0
+0.578 / 82.8
+10 Heads
+0.545 / 81.0
+0.540 / 81.2
+0.555 / 81.6
+0.589 / 83.1
+0.574 / 82.5
+5 Heads
+0.553 / 81.7
+0.519 / 80.6
+0.563 / 81.9
+0.594 / 83.3
+0.590 / 83.2
+3 Heads
+0.554 / 81.9
+0.504 / 80.0
+0.556 / 81.6
+0.594 / 83.4
+0.583 / 82.9
+2 Heads
+0.560 / 82.1
+0.497 / 79.8
+0.525 / 80.3
+0.582 / 82.9
+0.582 / 82.9
+1 Head
+0.492 / 79.4
+0.469 / 78.7
+0.479 / 78.7
+0.459 / 77.4
+0.535 / 80.7
+Table 4: Performances of the topological models while considering diﬀerent number of high scoring heads. These
+are determined from the base PI-dataset “CoLA, 4 Epochs, ordinary, max”.
+CoLA
+4 Epochs
+Ordinary
+Max
+CoLA
+4 Epochs
+Ordinary
+Min
+CoLA
+4 Epochs
+Ordinary
+Mean
+CoLA
+10 Epochs
+Ordinary
+Max
+CoLA
+20 Epochs
+Ordinary
+Max
+BERT
+0.518 / 80.6
+0.518 / 80.6
+0.518 / 80.6
+0.561 / 82.2
+0.591 / 83.3
+144 Heads
+0.539 / 81.2
+0.548 / 81.5
+0.546 / 81.2
+0.585 / 83.0
+0.591 / 83.3
+70 Heads
+0.557 / 81.3
+0.539 / 81.0
+0.553 / 81.6
+0.571 / 82.6
+0.601 / 83.7
+50 Heads
+0.557 / 81.2
+0.557 / 81.9
+0.556 / 81.7
+0.582 / 82.9
+0.591 / 83.3
+30 Heads
+0.582 / 82.4
+0.541 / 81.4
+0.537 / 81.2
+0.576 / 82.6
+0.581 / 82.9
+10 Heads
+0.545 / 81.0
+0.547 / 81.4
+0.556 / 81.8
+0.592 / 83.1
+0.581 / 83.4
+5 Heads
+0.553 / 81.7
+0.518 / 80.5
+0.555 / 81.6
+0.587 / 83.0
+0.591 / 83.3
+3 Heads
+0.554 / 81.9
+0.500 / 79.9
+0.569 / 82.1
+0.590 / 83.2
+0.579 / 82.7
+2 Heads
+0.560 / 82.1
+0.500 / 80.0
+0.527 / 80.4
+0.578 / 82.7
+0.579 / 82.7
+1 Head
+0.492 / 79.4
+0.463 / 78.5
+0.487 / 79.0
+0.458 / 77.8
+0.539 / 80.9
+Table 5: Performances of the topological models while considering diﬀerent numbers of high scoring heads. These
+are determined speciﬁcally for each PI-dataset.
+14
+The performance of the topological classiﬁer trained on the base PI-dataset does not decrease with decreasing
+number of input images. It is even increasing and outperforms the 144 heads model at most by 2% in accuracy on
+the prediction set. Astonishingly, with 2 heads, our topological classiﬁer outperforms BERT by 1.5% in accuracy.
+The model receives only 4 images of the initial 288, and its accuracy is still very large. It diminishes when
+considering only one head, but it still has a high accuracy of almost 80%.
+The same trend can be observed for all the other PI-datasets: an increasing or constant accuracy when we
+decrease the number of considered heads from 70 to 10. However, we get a lower accuracy when we only consider
+less than ten heads. In all the models, decreasing the number of input images increases the performance of our
+topological classiﬁer, up to a certain minimal number of heads considered. Choosing a model-speciﬁc rating of
+heads does not change the behavior in the results, neither in the trend nor in values. Hence the heads containing
+the most relevant information with respect to our topological classiﬁer are consistent across diﬀerent symmetry
+functions and number of ﬁne-tuning epochs.
+We do not observe the same phenomenon when we look at diﬀerent datasets: there are not high scoring heads
+shared across tasks (see Tables 8 and 9 in Appendix). For the pruning to be eﬃcient, the head scores has to be
+determined speciﬁcally for each dataset.
+We also consider the eﬀect of image pruning for other ﬁltrations (see Table 10 in Appendix) and observe that
+they also beneﬁt a gain in performance from it. Interestingly, to increase the performance of the topological
+classiﬁer, one should prefer to remove some well-chosen input images, rather than considering more complex and
+computation-demanding ﬁltrations.
+The highest-rated heads may not be the only ones from which the model retrieves valuable information. To
+explore this, we trained the model while keeping the images coming from all the attention heads except the heads
+with the highest rating (see Table 11 in Appendix). We conclude that the high scoring heads are not necessary.
+Even without them, the topological classiﬁer obtains a similar performance as in the non-pruning case.
+These results verify the statements proposed by Prasanna, Rogers, and Rumshisky 2020 that one can ﬁnd a
+good sub-model inside BERT even when it is highly pruned. In Michel, Levy, and Neubig 2019, some layers where
+pruned to one head with no eﬀect on performance. With our procedure, we could reduce the number of head to
+ﬁve without a loss of performance.
+We further investigate how the our pruning procedure behaves across diﬀerent ﬁne-tuned BERT models in
+Appendix C.
+6.2
+Discussion
+From all these experiments, a clear observation arises: speciﬁc heads are highly relevant for our model to
+perform comparably to BERT or even outperform it. To investigate what these heads look like, we plot the
+attention maps (Kovaleva et al. 2019) for the three best heads of our base PI-dataset (“CoLA, 4 Epochs, Ordinary,
+max”) for ten sentences in class 1 (grammatically correct) and 10 sentences in class 0 (grammatically incorrect).
+Almost all the feature maps have high values on the column corresponding to the [SEP] token. This means
+that to encode the sentence, the head will mainly consider the current vectorization of [SEP] to compute the
+new representation of each token. This suggests that this pattern contains suﬃcient information to get a good
+performance from the topological classiﬁer. In Clark et al. 2019, this peculiar pattern on [SEP] is interpreted as a
+no-op function; the default mode a head enters if it cannot apply its speciﬁc function. For example in (Clark et al.
+2019) the authors found a head that is specialized in verb-subject recognition. This head puts all the attention on
+[SEP] if the input word is not a verb. Our observation suggests that giving attention to [SEP] contains useful
+information, and is not only a way for the head to do no operation.
+To deduce how full attention on [SEP] can be used to classify sentences, the persistence images are of great
+help. Figure 9 plots the persistence images corresponding to the above attention maps.
+These images correspond to attention almost exclusively on the token [SEP]. Each bar in the persistence
+image represents the ﬁltration value where a token is connected to the [SEP] vertex. Sparse diagrams represent
+a ﬁltration where the vertices are connected to the [SEP] vertex at diﬀerent ﬁltration values. Pack diagrams
+indicate a ﬁltration where the vertices are connected to [SEP] in a narrow range of ﬁltration values. The valuable
+information of the full-attention-to-[SEP] pattern might be in the connection to the [SEP] vertex in the attention
+graph, which is easily obtained by the topological classiﬁers.
+15
+(a) Attention maps corresponding to sentences in class 1.
+(b) Attention maps corresponding to sentences in class 0.
+Figure 8: Attention maps of the 3 best heads of the PI-dataset “CoLA, 4 Epochs, Ordinary, max”. Each line
+corresponds to a head, the best one at the top. Sentences are part of the CoLA dataset.
+16
+Figure 9: Persistence images of the 3 best heads from the PI-dataset “CoLA, 4 Epochs, Ordinary, max”. Each line
+corresponds to a head, the best one at the top. The ﬁrst 10 pictures refers to sentences in class 0, the last ten to
+class 1. The persistence images represent the zero dimensional persistence features.
+17
+Figure 10: Gradient values of each pixel from the PI-dataset “CoLA, 4 Epochs, Ordinary, max”. Each line
+corresponds to one head, and the lines are sorted by average importance score. The ﬁrst 10 pictures refers to
+sentences in class 0, the last ten to class 1. The darker the red, the more the area inﬂuences the model towards
+class 0; the darker the blue, the more the inﬂuence is towards class 1. The persistence images represent the zero
+dimensional persistence features.
+But where does the model look when it processes persistence images? The regions that are the most relevant
+to the model appear when the gradient is visualized, as in Figure 10. The darker the red, the more the area
+inﬂuences the model towards class 0; the darker the blue, the more the inﬂuence is towards class 1. The white
+areas are not considered by the model as being relevant to the output classiﬁcation..
+The model has diﬀerent behavior for each sentence label. If the sentence is in class 0, any positive pixel value
+will decrease the model output, thus increasing the probability of class 0. This is independent of the death time of
+the feature, and hence only the existence is relevant. If the sentence belongs to class 1, then again, any point
+in the image will inﬂuence the output probability towards class 1, except for some particular regions generally
+situated at ﬁltration values between 0.7 and 0.8, where the inﬂuence is inverted. Persistence features of dimension
+0 that die at this ﬁltration value inﬂuence the model output toward class 0. A 0-dimensional feature dies when it
+gets connected to the main connected component; hence if a vertex has edges with the lowest value in this speciﬁc
+ﬁltration range, it will inﬂuence the model toward class 0.
+From the CoLA dataset perspective, a sentence containing such a token has a higher chance of being predicted
+as grammatically incorrect.
+18
+Avoided Attacks
+Avoided Common Attacks
+#
+144 heads
+46
+(52%)
+40
+(45%)
+83
+70 heads
+45
+(50%)
+40
+(48%)
+84
+50 heads
+42
+(47%)
+36
+(43%)
+83
+30 heads
+39
+(44%)
+35
+(42%)
+84
+10 heads
+39
+(44%)
+33
+(40%)
+83
+5 heads
+40
+(45%)
+36
+(42%)
+85
+3 heads
+52
+(58%)
+45
+(56%)
+81
+2 heads
+45
+(51%)
+36
+(46%)
+79
+1 heads
+45
+(51%)
+36
+(45%)
+80
+Table 6: Stability of the topological classiﬁer under attacks generated for the SST2 dataset. Avoided attacks =
+number of attacks for which the result of the topological classiﬁer does not change (89 attacks overall). Avoided
+Common Attacks = consider only the attacks for which the topological classiﬁer was initially correct.
+7
+Adversarial Attacks
+The transformation of attention head activations into persistence images, despite being computationally
+demanding could increases the robustness of our model. On the other hand, pruning the number of heads
+considered for the input of the model might diminish the stability of the classiﬁer. To explore both concerns we
+face our topological model with adversarial attacks. We used TextAttack (Morris et al. 2020) to generate hundred
+attacks for the SST2 dataset. After removing the skipped and failed attempts, 89 successful attacks on BERT
+remain. We then apply the topological classiﬁer “SST2, 4 Epochs, ordinary, max” on each sentence before and
+after the changes made by the attacks, and with various numbers of heads considered, determined by the pruning
+method presented in Section 6.
+We consider SST2 and not the CoLA dataset, because the attacks generated by TextAttack were mostly
+transforming a grammatically correct sentence into a grammatically incorrect one, and the attack is considered a
+success even if the model detected the grammatical mistake. For that we looked at the 89 sentences in SST2 that
+where initially correctly classiﬁed by the BERT model.
+Table 6 shows that the topological model is much more stable than the BERT model. Only half of the attacks
+that succeed on BERT also succeed in fooling the topological classiﬁer, which is surprising since the attention
+graphs are coming from the fooled BERT model. Even more, the stability of our model does not decrease with the
+number of considered heads. Even with persistence images coming from less than 5 heads, the adversarial attack
+eﬃciency exceeds slightly 50%. This suggest that the robustness of the classiﬁer based on persistence homology is
+not due to the large amount of input images.
+Furthermore, the robustness is not due to the stability against adversarial attacks of the persistence images.
+Figure 11 displays the perturbation between the persistence images before and after the 10 ﬁrst attacks. The
+squares represent the attention heads sorted by layers, with one pixel per head. The darker the pixel, the larger
+the Euclidean distance between the images generated from the head. We consider both the persistence images of
+dimension 0 and 1 by summing up their diﬀerences.
+Looking at the perturbation value of one head across diﬀerent attacks, we notice that the perturbation value
+highly depends on the attack. For example, the perturbation value of the ﬁrst head in the ﬁrst layer (upper left
+corner) varies up to a factor of 100 between diﬀerent attacks. In general, the images undergo modiﬁcation before
+and after the attack. But even if the images change, the model’s output remains constant.
+There are no canonical ways to analyze the perturbations in the attention maps. The sentence length can vary
+before and after the attack; therefore, the dimension of the attention maps can also vary. Hence, to measure the
+Euclidean distance, for example, one must ﬁrst resize one of the attention maps to match the dimension of the
+other. Shrinking the largest is unsuitable as it removes the [SEP] column and will drastically change the attention
+graph’s structure. The same goes for the solution of padding the smaller attention map. This illustrates one
+advantage that persistence images adduce to interpretability methods: they allow to compare the model’s behavior
+when it faces two sentences of diﬀerent lengths.
+It is worth noticing that the attacks do not produce correct or understandable movie reviews for SST2 (see
+19
+Figure 11: Perturbations of the persistence images for the ﬁrst 10 attacks. A pixel represents the head in the
+corresponding layer and column. The darker the pixel, the larger the Euclidean distance between persistence
+images. The scale is logarithmic.
+Before Attack
+After Attack
+It’s a charming and often aﬀecting journey. (1)
+It ’s a cutie and often aﬄicts journey. (0)
+Unﬂinchingly bleak and desperate (0)
+Unﬂinchingly eerie and desperate (1)
+Allows us to hope that Nolan is poised to embark a
+major career as a commercial yet inventive ﬁlmmaker.
+(1)
+Allows ourselves to hope that Nolan is poised to
+embarked a severe career as a commercial yet novelty
+superintendent. (0)
+The acting, costumes, music, cinematography and
+sound are all astounding given the production’s
+austere locales. (1)
+The acting, costumes, music, cinematography and
+sound are all breathless given the production’s austere
+locales. (0)
+It’s slow – very, very slow. (0)
+It’s slow – pretty, perfectly lent. (1)
+Table 7: Five sample attacks generated by TextAttack for the SST2 dataset. BERT classiﬁes the reviews as
+positive (1) or negative (0).
+Table 7) in general. The topological classiﬁer seems to worry less about the overall meaning of the sentence. It
+might represent the input more abstractly and hence procure a stability towards meaning-switching words that is
+more appreciated for classiﬁcation.
+The topological model presents greater stability than BERT. Furthermore, the stability is maintained regardless
+of the number of heads considered for the images and the impact of the attacks on the images. The stability must
+therefore be intrinsic to the classiﬁcation itself.
+This robustness and high classiﬁcation performance make our topological model more suitable than BERT
+when consistency and stability are needed.
+8
+Conclusion
+In this work, we proposed numerous experiments on persistent homology applied for text classiﬁcation. The
+model we present outperforms the baselines from BERT by 2% and has higher robustness against adversarial
+attacks. We presented a new perspective on the specialization of BERT’s attention heads using persistence
+diagrams, and also developed a new BERT attention head scoring technique.
+Our most surprising ﬁnding is the eﬃciency of our proposed ratings, allowing us to consider only ten attention
+heads out of 144 with no reduction in accuracy on the test dataset or stability. Although the attention to the [SEP]
+token was assumed to have a no-op behavior (Clark et al. 2019), a majority of the best scoring heads showcase
+20
+this pattern, suggesting that through the lens of TDA, the attention to [SEP] displays valuable information for
+the classiﬁcation task.
+One possible direction for future research is to extend the tools from TDA to other types of NLP tasks. We
+recommend using ordinary persistence homology up to the ﬁrst dimension to avoid computational complexity and
+to use more powerful vector representations than persistence images like the ones computed by the Persformer
+(Reinauer, Caorsi, and Berkouk 2021). We also propose applying our rating approach to identify the most relevant
+heads and prune the others, which could increase performance. Lastly, we suggest training a speciﬁc classiﬁer to
+detect adversarial textual attacks from the topology of the attention graphs.
+9
+Acknowledgements
+This work was supported by the Swiss Innovation Agency (Innosuisse project 41665.1 IP-ICT). We thank
+Matthias Kemper for helpful discussions and constructive comments on the paper.
+References
+Adam Coenen and Pearce Adam (2022). Understanding UMAP. url: https : / / pair - code . github . io /
+understanding-umap/ (visited on May 11, 2022).
+Adams Henry, Tegan Emerson, Michael Kirby, Rachel Neville, Chris Peterson, Patrick Shipman, Sofya Chep-
+ushtanova, Eric Hanson, Francis Motta, and Lori Ziegelmeier (2017). “Persistence images: A stable vector
+representation of persistent homology”. In: Journal of Machine Learning Research.
+Akiba Takuya, Shotaro Sano, Toshihiko Yanase, Takeru Ohta, and Masanori Koyama (2019). “Optuna: A Next-
+generation Hyperparameter Optimization Framework”. In: Proceedings of the 25rd ACM SIGKDD International
+Conference on Knowledge Discovery and Data Mining.
+Almeida Tiago A., José Maria Gómez Hidalgo, and Akebo Yamakami (2011). “Contributions to the study of
+SMS spam ﬁltering: new collection and results”. In: Proceedings of the 2011 ACM Symposium on Document
+Engineering. ACM, pp. 259–262. url: https://doi.org/10.1145/2034691.2034742.
+Anonymous (2020). “Betti numbers of attention graphs is all you really need”. In: Submitted to NeurIPS 2020
+Workshop on Topological Data Analysis and Beyond. under review. url: https://openreview.net/forum?
+id=KaPw8VdbNr4.
+Bengio Yoshua, Réjean Ducharme, and Pascal Vincent (2000). “A Neural Probabilistic Language Model”. In:
+Advances in Neural Information Processing Systems 13. Papers from Neural Information Processing Systems.
+MIT Press, pp. 932–938.
+Carrière Mathieu, Frédéric Chazal, Yuichi Ike, Théo Lacombe, Martin Royer, and Yuhei Umeda (2020). “PersLay:
+A Neural Network Layer for Persistence Diagrams and New Graph Topological Signatures”. In: The 23rd
+International Conference on Artiﬁcial Intelligence and Statistics. PMLR, pp. 2786–2796. url: http://
+proceedings.mlr.press/v108/carriere20a.html.
+Cherniavskii Daniil, Eduard Tulchinskii, Vladislav Mikhailov, Irina Proskurina, Laida Kushnareva, Ekaterina
+Artemova, Serguei Barannikov, Irina Piontkovskaya, Dmitri Piontkovski, and Evgeny Burnaev (2022). “Accept-
+ability Judgements via Examining the Topology of Attention Maps”. In: CoRR. url: https://doi.org/10.
+48550/arXiv.2205.09630.
+21
+Clark Kevin, Urvashi Khandelwal, Omer Levy, and Christopher D. Manning (2019). “What Does BERT Look
+at? An Analysis of BERT’s Attention”. In: Analyzing and Interpreting Neural Networks for NLP. Proceedings
+of the 2019 ACL Workshop BlackboxNLP. Association for Computational Linguistics, pp. 276–286. url:
+https://doi.org/10.18653/v1/W19-4828.
+Das Shouman, Syed A. Haque, and Md. Iftekhar Tanveer (2021). “Persistence Homology of TEDtalk: Do Sentence
+Embeddings Have a Topological Shape?” In: CoRR. url: https://arxiv.org/abs/2103.14131.
+Devlin Jacob, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova (2019). “BERT: Pre-training of Deep
+Bidirectional Transformers for Language Understanding”. In: Human Language Technologies. Proceedings of the
+2019 Conference of the North American Chapter of the Association for Computational Linguistics. Association
+for Computational Linguistics, pp. 4171–4186. url: https://doi.org/10.18653/v1/n19-1423.
+Dey Tamal Krishna and Yusu Wang (2022). Computational Topology for Data Analysis. Cambridge University
+Press.
+Doshi Pratik and Wlodek Zadrozny (2018). “Movie Genre Detection Using Topological Data Analysis”. In:
+Statistical Language and Speech Processing - 6th International Conference. Lecture Notes in Computer Science.
+Springer, pp. 117–128. url: https://doi.org/10.1007/978-3-030-00810-9%5C_11.
+Graves Alex (2013). “Generating Sequences With Recurrent Neural Networks”. In: CoRR. url: http://arxiv.
+org/abs/1308.0850.
+Jain Sarthak and Byron C. Wallace (2019). “Attention is not Explanation”. In: Human Language Technologies.
+Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational
+Linguistics. Association for Computational Linguistics, pp. 3543–3556. url: https://doi.org/10.18653/v1/
+n19-1357.
+Kovaleva Olga, Alexey Romanov, Anna Rogers, and Anna Rumshisky (2019). “Revealing the Dark Secrets of
+BERT”. In: Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the
+9th International Joint Conference on Natural Language Processing. Association for Computational Linguistics,
+pp. 4364–4373. url: https://doi.org/10.18653/v1/D19-1445.
+Kushnareva Laida, Daniil Cherniavskii, Vladislav Mikhailov, Ekaterina Artemova, Serguei Barannikov, Alexander
+Bernstein, Irina Piontkovskaya, Dmitri Piontkovski, and Evgeny Burnaev (2021). “Artiﬁcial Text Detection via
+Examining the Topology of Attention Maps”. In: CoRR. url: https://arxiv.org/abs/2109.04825.
+Liu Nelson F., Matt Gardner, Yonatan Belinkov, Matthew E. Peters, and Noah A. Smith (2019). “Linguistic
+Knowledge and Transferability of Contextual Representations”. In: Human Language Technologies. Proceedings
+of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics.
+Association for Computational Linguistics, pp. 1073–1094. url: https://doi.org/10.18653/v1/n19-1112.
+Maas Andrew L., Raymond E. Daly, Peter T. Pham, Dan Huang, Andrew Y. Ng, and Christopher Potts (2011).
+“Learning Word Vectors for Sentiment Analysis”. In: Human Language Technologies. Proceedings of the 49th
+Annual Meeting of the Association for Computational Linguistics. Portland, Oregon, USA: Association for
+Computational Linguistics, pp. 142–150. url: https://aclanthology.org/P11-1015.
+Michel Paul, Omer Levy, and Graham Neubig (2019). “Are Sixteen Heads Really Better than One?” In: Advances
+in Neural Information Processing Systems. Curran Associates, Inc. url: https://proceedings.neurips.cc/
+paper/2019/file/2c601ad9d2ff9bc8b282670cdd54f69f-Paper.pdf.
+Mikolov Tomás, Martin Karaﬁát, Lukás Burget, Jan Cernocký, and Sanjeev Khudanpur (2010). “Recurrent neural
+network based language model”. In: INTERSPEECH 2010, 11th Annual Conference of the International
+22
+Speech Communication Association. ISCA, pp. 1045–1048. url: http://www.isca-speech.org/archive/
+interspeech%5C_2010/i10%5C_1045.html.
+Mitra Atish and Žiga Virk (2021). “The space of persistence diagrams on n points coarsely embeds into Hilbert
+space”. In: Proceedings of the American Mathematical Society 6, pp. 2693–2703. url: https://doi.org/10.
+1090/proc/15363.
+Morris John, Eli Liﬂand, Jin Yong Yoo, Jake Grigsby, Di Jin, and Yanjun Qi (2020). “TextAttack: A Framework
+for Adversarial Attacks, Data Augmentation, and Adversarial Training in NLP”. In: Proceedings of the 2020
+Conference on Empirical Methods in Natural Language Processing: System Demonstrations, pp. 119–126.
+Prasanna Sai, Anna Rogers, and Anna Rumshisky (2020). “When BERT Plays the Lottery, All Tickets Are Winning”.
+In: Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing. Association for
+Computational Linguistics, pp. 3208–3229. url: https://doi.org/10.18653/v1/2020.emnlp-main.259.
+Reinauer Raphael, Matteo Caorsi, and Nicolas Berkouk (2021). “Persformer: A Transformer Architecture for
+Topological Machine Learning”. In: CoRR. url: https://arxiv.org/abs/2112.15210.
+Rogers Anna, Olga Kovaleva, and Anna Rumshisky (2020). “A Primer in BERTology: What We Know About
+How BERT Works”. In: Trans. Assoc. Comput. Linguistics, pp. 842–866. url: https://transacl.org/ojs/
+index.php/tacl/article/view/2257.
+Savle Ketki, Wlodek Zadrozny, and Minwoo Lee (2019). “Topological Data Analysis for Discourse Semantics?” In:
+Proceedings of the 13th International Conference on Computational Semantics - Student Papers. Gothenburg,
+Sweden: Association for Computational Linguistics, pp. 34–43. url: https://aclanthology.org/W19-0605.
+Selvaraju Ramprasaath R., Michael Cogswell, Abhishek Das, Ramakrishna Vedantam, Devi Parikh, and Dhruv
+Batra (2020). “Grad-CAM: Visual Explanations from Deep Networks via Gradient-Based Localization”. In: Int.
+J. Comput. Vis. 2, pp. 336–359. url: https://doi.org/10.1007/s11263-019-01228-7.
+Socher Richard, Alex Perelygin, Jean Wu, Jason Chuang, Christopher D. Manning, Andrew Ng, and Christo-
+pher Potts (2013). “Recursive Deep Models for Semantic Compositionality Over a Sentiment Treebank”. In:
+Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing. Seattle, Washington,
+USA: Association for Computational Linguistics, pp. 1631–1642. url: https://aclanthology.org/D13-1170.
+Tauzin Guillaume, Umberto Lupo, Lewis Tunstall, Julian Burella Pérez, Matteo Caorsi, Anibal Medina-Mardones,
+Alberto Dassatti, and Kathryn Hess (2020). giotto-tda: A Topological Data Analysis Toolkit for Machine
+Learning and Data Exploration.
+The GUDHI Project (2015). GUDHI User and Reference Manual. GUDHI Editorial Board. url: http://gudhi.
+gforge.inria.fr/doc/latest/.
+Vaswani Ashish, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser,
+and Illia Polosukhin (2017). “Attention is All you Need”. In: Advances in Neural Information Processing
+Systems 30. Annual Conference on Neural Information Processing Systems 2017, pp. 5998–6008. url: https:
+//proceedings.neurips.cc/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html.
+Voita Elena, David Talbot, Fedor Moiseev, Rico Sennrich, and Ivan Titov (2019). “Analyzing Multi-Head Self-
+Attention: Specialized Heads Do the Heavy Lifting, the Rest Can Be Pruned”. In: Proceedings of the 57th
+Annual Meeting of the Association for Computational Linguistics. Florence, Italy: Association for Computational
+Linguistics, pp. 5797–5808. url: https://aclanthology.org/P19-1580.
+23
+Wang Alex, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R. Bowman (2018). “GLUE:
+A Multi-Task Benchmark and Analysis Platform for Natural Language Understanding”. In: CoRR. url:
+http://arxiv.org/abs/1804.07461.
+Warstadt Alex, Amanpreet Singh, and Samuel R. Bowman (2018). “Neural Network Acceptability Judgments”. In:
+CoRR. url: http://arxiv.org/abs/1805.12471.
+Wolf Thomas, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac,
+Tim Rault, Rémi Louf, Morgan Funtowicz, and Jamie Brew (2019). “HuggingFace’s Transformers: State-of-the-
+art Natural Language Processing”. In: CoRR. url: http://arxiv.org/abs/1910.03771.
+Zhu Xiaojin (2013). “Persistent Homology: An Introduction and a New Text Representation for Natural Language
+Processing”. In: Proceedings of the 23rd International Joint Conference on Artiﬁcial Intelligence. IJCAI/AAAI,
+pp. 1953–1959. url: http://www.aaai.org/ocs/index.php/IJCAI/IJCAI13/paper/view/6291.
+24
+Appendix
+A
+MultiDim UMAPs
+For this ﬁltration, there is a clear cluster in the UMAPs of the 1-dim diagrams observed across the three
+sentences.
+(a) Sentence 1
+(b) Sentence 2
+(c) Sentence 3
+Figure 12: UMAPs for the 1-features of MultiDim ﬁltration. Clusters are circled in red. They contain 49, 86, and
+72 elements for sentences 1, 2 and 3 respectively. Cluster 2 contains all elements of cluster 1. Cluster 3 shares 45
+elements with it, and 58 with cluster 2.
+This time, they represent diagrams that contain almost only points on the diagonal y = x. Those points
+represent 1-persistence features that vanish at the time they are born. In other terms, these points represent a
+“triangular” cycle, a cycle formed by three edges only. When the third edge is added, a 2-cell is also added and
+ﬁlls the inside of the triangle, making the hole of the cycle disappear. As previously observed, the clusters across
+the sentences share globally the same heads.
+For the second homological dimension diagrams, a similar pattern is observed.
+(a) Sentence 1
+(b) Sentence 2
+(c) Sentence 3
+Figure 13: UMAPs for the 2-features of the MultiDim ﬁltration. Clusters are circled in red. They contain 61, 38,
+and 64 elements for sentences 1, 2 and 3 respectively. Cluster 2 contains 36 elements with cluster 1. Cluster 3
+shares 46 elements with it, and 33 with cluster 2.
+The diﬀerence between the diagrams that are inside the cluster from the ones that are outside is that the former
+have only 2-holes with a high birth-time and the latter have 2-holes with varying birth-times. When transformed
+into persistence images, the diagrams outside the cluster will display a richer variety of patterns, compared to the
+diagrams inside the cluster whose images are similar: high value pixels on the top right corner, and small values
+everywhere else. Again, the clusters across sentences share a similar composition.
+B
+Directed UMAPs
+We observe similar clusters as in the MultiDim ﬁltration case.
+25
+(a) Sentence 1
+(b) Sentence 2
+(c) Sentence 3
+Figure 14: UMAPs for the 1-features of the Directed ﬁltration. Clusters are circled in red. They contain 51, 82,
+and 68 elements for sentences 1, 2 and 3 respectively. Cluster 2 shares 41 elements with cluster 1. Cluster 3 shares
+35 elements with it, and 50 with cluster 2.
+(a) Sentence 1
+(b) Sentence 2
+(c) Sentence 3
+Figure 15: UMAPs for the 2-features of the Directed ﬁltration. Clusters are circled in red. They contain 63, 91,
+and 96 elements for sentences 1, 2 and 3 respectively. Cluster 2 shares 58 elements with cluster 1. Cluster 3 shares
+60 elements with it, and 79 with cluster 2
+Their meaning is identical: diagrams with almost only diagonal points for the ﬁrst-dimensional features and top
+right points for the second-dimensional features. Again the composition of the clusters is similar across sentences.
+C
+Pruning heads across models and datasets
+We further investigate how the our pruning procedure behaves across diﬀerent dataset and across diﬀerent
+ﬁne-tuned BERT models.
+26
+CoLA
+4 Epochs
+Ordinary
+Max
+IMDB
+4 Epochs
+Ordinary
+Max
+SPAM
+4 Epochs
+Ordinary
+Max
+SST2
+4 Epochs
+Ordinary
+Max
+BERT
+0.518 / 80.6
+0.843 / 92.2
+0.993 / 99.8
+0.853 / 92.7
+144 Heads
+0.539 / 81.2
+0.776 / 88.8
+0.999 / 99.9
+0.799 / 89.8
+70 Heads
+0.557 / 81.3
+0.664 / 83.0
+0.993 / 99.8
+0.784 / 89.2
+50 Heads
+0.557 / 81.2
+0.611 / 79.1
+0.957 / 98.9
+0.782 / 89.1
+30 Heads
+0.582 / 82.4
+0.596 / 79.1
+0.993 / 99.8
+0.771 / 88.5
+10 Heads
+0.545 / 81.0
+0.413 / 70.7
+0.993 / 99.5
+0.766 / 88.3
+5 Heads
+0.553 / 81.7
+0.412 / 70.1
+0.978 / 99.5
+0.459 / 72.4
+3 Heads
+0.554 / 81.9
+0.395 / 65.4
+0.948 / 98.6
+0.460 / 72.7
+2 Heads
+0.560 / 82.1
+0.231 / 60.6
+0.710 / 93.6
+0.307 / 63.5
+1 Head
+0.492 / 79.4
+0.184 / 57.4
+0.396 / 88.0
+−0.026 / 48.6
+Table 8: Performances of the topological models from the diﬀerent tasks while considering diﬀerent amounts of
+high scoring heads. These are determined from the base PI-dataset, and the evaluated model is speciﬁc to
+CoLA.
+CoLA
+4 Epochs
+Ordinary
+Max
+IMDB
+4 Epochs
+Ordinary
+Max
+SPAM
+4 Epochs
+Ordinary
+Max
+SST2
+4 Epochs
+Ordinary
+Max
+BERT
+0.518 / 80.6
+0.843 / 92.2
+0.993 / 99.8
+0.853 / 92.7
+144 Heads
+0.539 / 81.2
+0.787 / 89.4
+0.999 / 99.9
+0.799 / 89.8
+70 Heads
+0.557 / 81.3
+0.777 / 89.0
+0.993 / 99.8
+0.780 / 89.0
+50 Heads
+0.557 / 81.2
+0.762 / 88.2
+0.993 / 99.8
+0.767 / 88.3
+30 Heads
+0.582 / 82.4
+0.783 / 89.3
+1.0 / 100
+0.798 / 89.9
+10 Heads
+0.545 / 81.0
+0.779 / 89.0
+0.993 / 99.8
+0.778 / 88.9
+5 Heads
+0.553 / 81.7
+0.770 / 88.6
+0.836 / 95.5
+0.789 / 89.5
+3 Heads
+0.554 / 81.9
+0.767 / 88.5
+0.831 / 95.5
+0.745 / 87.3
+2 Heads
+0.560 / 82.1
+0.695 / 84.8
+0.786 / 94.4
+0.717 / 85.8
+1 Head
+0.492 / 79.4
+0.560 / 77.2
+0.772 / 94.3
+0.721 / 85.9
+Table 9: Performances of the topological models from the diﬀerent tasks while considering diﬀerent amounts of
+high scoring heads. These are determined for each PI-datasets, and the evaluated model is speciﬁc to the
+current task.
+For the head scores from CoLA, the performance of the model on the other tasks decreases with decreasing
+number of considered images. But when the head scores are determined for each PI-dataset, the performance
+remains constant when at least 10 heads are considered, and decreases slowly when less than 10 heads are
+considered. For the SPAM dataset, we even observe a perfect score of 100% accuracy obtained while considering
+30 heads. The boosting eﬀect of pruning images are the most signiﬁcant for the CoLA dataset.
+27
+CoLA
+4 Epochs
+Ordinary
+Max
+CoLA
+4 Epochs
+MultiDim
+Max
+CoLA
+4 Epochs
+Directed
+Max
+BERT
+0.518 / 80.6
+0.518 / 80.6
+0.518 / 80.6
+144 Heads
+0.539 / 81.2
+0.552 / 81.5
+0.532 / 80.7
+70 Heads
+0.557 / 81.3
+0.544 / 81.2
+0.551 / 81.8
+50 Heads
+0.557 / 81.2
+0.546 / 81.1
+0.547 / 81.6
+30 Heads
+0.582 / 82.4
+0.561 / 82.0
+0.548 / 81.6
+10 Heads
+0.545 / 81.0
+0.555 / 81.5
+0.538 / 81.2
+5 Heads
+0.553 / 81.7
+0.557 / 81.6
+0.528 / 80.9
+3 Heads
+0.554 / 81.9
+0.554 / 81.6
+0.538 / 81.0
+2 Heads
+0.560 / 82.1
+0.556 / 81.7
+0.503 / 79.7
+1 Head
+0.492 / 79.4
+0.485 / 79.2
+0.455 / 78.1
+Table 10: Performances of the topological models for diﬀerent types of persistent homology for the CoLA dataset
+while considering diﬀerent amounts of high scoring heads. These are determined speciﬁcally for each PI-dataset.
+Pruning the images is beneﬁcial for performance, with a more signiﬁcant eﬀect for the Ordinary and Directed
+ﬁltrations. Without pruning, the MultiDim ﬁltration outperforms the others, but the ordinary persistence combined
+with pruning reaches the same peak performance of 82% in accuracy. Interestingly, to increase the performance of
+the topological classiﬁer, one should prefer to remove some well-chosen input images, rather than considering more
+complex and computation-demanding ﬁltrations.
+Table 11 shows the result for diﬀerent symmetry functions and a diﬀerent number of ﬁne-tuning epochs. Here,
+the line 10 heads corresponds to the performance obtained by the model while trained on images from 134 attention
+heads (we removed the images from the 10 best heads).
+CoLA
+4 Epochs
+Ordinary
+Max
+CoLA
+4 Epochs
+Ordinary
+Min
+CoLA
+4 Epochs
+Ordinary
+Mean
+CoLA
+10 Epochs
+Ordinary
+Max
+CoLA
+20 Epochs
+Ordinary
+Max
+BERT
+0.518 / 80.6
+0.518 / 80.6
+0.518 / 80.6
+0.561 / 82.2
+0.591 / 83.3
+70 Heads
+0.0 / 30.9
+0.540 / 81.2
+0.0 / 30.9
+0.562 / 81.9
+0.0 / 30.9
+50 Heads
+0.486 / 79.4
+0.505 / 80.1
+0.492 / 15.9
+0.564 / 82.2
+0.593 / 83.4
+30 Heads
+0.517 / 80.4
+0.559 / 82.0
+0.499 / 79.6
+0.565 / 82.4
+0.573 / 82.7
+10 Heads
+0.533 / 80.9
+0.538 / 81.3
+0.484 / 76.6
+0.574 / 82.7
+0.584 / 83.0
+5 Heads
+0.514 / 80.4
+0.536 / 81.2
+0.545 / 81.6
+0.561 / 82.0
+0.583 / 83.0
+3 Heads
+0.537 / 80.9
+0.531 / 81.1
+0.531 / 81.1
+0.574 / 82.7
+0.573 / 82.6
+2 Heads
+0.540 / 80.7
+0.546 / 80.9
+0.526 / 80.9
+0.585 / 82.5
+0.593 / 83.4
+1 Head
+0.537 / 81.0
+0.525 / 80.8
+0.538 / 80.3
+0.584 / 82.7
+0.566 / 82.4
+Table 11: Performances of the topological models while removing diﬀerent numbers of high scoring heads. For
+examples, 5 heads means that we removed the images generated by the 5 best heads, always determined from the
+base model.
+The general tendency is a constant performance while the number of considered images increases.
+The
+exceptions are for the mean symmetry function where a neat increase in accuracy occurs, and the low accuracy
+when only half of the worst performing heads are considered.
+28
+D
+Data and model speciﬁcations
+Type of persistence
+homology
+Feature
+dimension
+Picture frame
+Resolution
+Library
+Standardize
+Ordinary
+0
+[0, 0.01] × [0, 1]
+5 × 50
+Gudhi
+-
+Ordinary
+1
+[0, 1] × [0.99, 1]
+50 × 5
+Gudhi
+rotation of 45°
+MultiDim
+0
+[0, 0.01] × [0, 1]
+5 × 50
+Gudhi
+padding
+with zeros to
+50 × 50
+MultiDim
+1
+[0.5, 1] × [0.5, 1]
+50 × 50
+Gudhi
+-
+MultiDim
+2
+[0.7, 1] × [0.999, 1]
+50 × 5
+Gudhi
+padding
+with zeros to
+50 × 50
+Directed
+0,1,2
+[0, 0.01] × [0, 1]
+30 × 30
+Giotto-tda
+-
+Table 12: Parameters for the persistence image computation per type of persistent homology considered. Various
+picture frames and resolutions are considered to use to good advantage the particular structure of the persistence
+diagrams. Picture frame = transformed part of the persistent diagram contained in [0, 1] × [0, 1]. Standardize
+= transformation to apply to the image to have identical image dimensions for each feature dimension. References
+for libraries: Gudhi (The GUDHI Project 2015), Giotto-tda (Tauzin et al. 2020).
+29
+Type of persistence
+homology
+Weight function
+Motivation
+Ordinary - 0
+w: (x, y) 7→1
+-
+Ordinary - 1
+w: (x, y) 7→
+(
+5 · (1 −x), if x ≥0.8
+1, otherwise.
+decrease inﬂuence of
+end-ﬁltration features
+MultiDim - 0
+w: (x, y) 7→1
+-
+MultiDim - 1
+w: (x, y) 7→
+(
+2 −x+y
+2
+−e−10·|x−y|, if x+y
+2
+≥0.9
+1.1 −e−10·|x−y|, otherwise.
+decrease inﬂuence of
+end-ﬁltration and
+near diagonal features
+MultiDim - 2
+w: (x, y) 7→
+(
+10 · (1 −x), if x ≥0.9
+1, otherwise.
+decrease inﬂuence of
+end-ﬁltration features
+Directed - 0,1,2
+w: (x, y) 7→1
+-
+Table 13: Weight functions we considered for the persistence image computation. The core motivation is to
+decrease the importance of features appearing at the very end of the ﬁltration, and of features really close to the
+diagonal x = y.
+30
+Type of persistence
+homology
+Examples
+Ordinary - 0
+Ordinary - 1
+MultiDim - 0
+MultiDim - 1
+MultiDim - 2
+Directed - 0
+Directed - 1
+Directed - 2
+Table 14: Examples of persistence images for each type of persistent homology and each features dimension. Notice
+that the persistence images are the horizontal reﬂection of the persistence diagrams.
+31
+Dataset
+Type of persistence
+homology
+Optimizer
+lr
+# conv.
+ﬁlters
+dim. ker.
+stride
+pad
+# liner
+dim. layer
+dropout rate
+CoLA
+Ordinary
+Adam
+6.7e-4
+3
+[15; 25; 45]
+None
+None
+None
+1
+[150]
+0.25
+CoLA
+MultiDim
+RMSprop
+7.5e-5
+2
+[15; 25]
+[3; 2]
+[3; 2]
+[1; 1]
+2
+[500; 120]
+0.25
+CoLA
+Directed
+RMSprop
+9.2e-4
+3
+[4; 30; 20]
+[2; 1; 2]
+[1; 1; 2]
+[1; 0; 1]
+3
+[700; 350; 750]
+0.15
+IMDB
+Ordinary
+Adam
+8.4e-5
+2
+[35; 30]
+None
+None
+None
+1
+[180]
+0.25
+IMDB
+MultiDim
+Adam
+1.2e-3
+3
+[17; 17; 17]
+[2; 3; 2]
+[2; 1; 2]
+[1; 0; 0]
+3
+[700; 660; 800]
+0.2
+SPAM
+Ordinary
+Adam
+2.2e-4
+2
+[15; 25]
+None
+None
+None
+1
+[700]
+0.2
+SPAM
+MultiDim
+Adam
+7e-4
+3
+[33; 5; 32]
+[1; 2; 1]
+[1; 2; 1]
+[0; 1; 0]
+2
+[480; 220]
+0.3
+SST2
+Ordinary
+Adam
+5e-4
+1
+[35]
+None
+None
+None
+2
+[190; 940]
+0.25
+SST2
+MultiDim
+Adam
+2.4e-5
+2
+[20; 20]
+[2; 1]
+[2; 1]
+[1; 0]
+2
+[650; 680]
+0.25
+Table 15: Architectures of all the topological classiﬁers we design, based on running a hyperparameter search using the Optuna library (Akiba et al.
+2019) for 500 trials. Dataset= dataset on which the hyperparameter search was run. Type of persistent homology = type of the persistence
+images as input. The input is a tensor of shape [288, 50, 5] for Ordinary, of shape [432, 50, 50] for MultiDim, and of shape [432, 30, 30] for Directed.
+dim. ker / stride / pad = dimension of the max pooling layers, None if no pooling. The dropout layer is right after the ReLU activation.
+32

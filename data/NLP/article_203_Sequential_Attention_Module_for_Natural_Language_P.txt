@@ -1,0 +1,1117 @@
+Title: Sequential Attention Module for Natural Language Processing
+Source URL: http://arxiv.org/abs/2109.03009v1
+--------------------------------------------------
+
+Sequential Attention Module for Natural Language Processing
+Mengyuan Zhou, Jian Ma, Haiqin Yang§, Lianxin Jiang, Yang Mo
+Ping An Life Insurance, Ltd.
+Shenzhen City, Guangdong Province, China
+{ZHOUMENGYUAN425,MAJIAN446,JIANGLIANXIN769,MOYANG853}@pingan.com.cn
+§ the corresponding author, email: hqyang@ieee.org
+Abstract
+Recently, large pre-trained neural language
+models have attained remarkable performance
+on many downstream natural language pro-
+cessing (NLP) applications via ﬁne-tuning. In
+this paper, we target at how to further improve
+the token representations on the language mod-
+els. We, therefore, propose a simple yet effec-
+tive plug-and-play module, Sequential Atten-
+tion Module (SAM), on the token embeddings
+learned from a pre-trained language model.
+Our proposed SAM consists of two main atten-
+tion modules deployed sequentially: Feature-
+wise Attention Module (FAM) and Token-wise
+Attention Module (TAM). More speciﬁcally,
+FAM can effectively identify the importance
+of features at each dimension and promote
+the effect via dot-product on the original to-
+ken embeddings for downstream NLP applica-
+tions. Meanwhile, TAM can further re-weight
+the features at the token-wise level. Moreover,
+we propose an adaptive ﬁlter on FAM to pre-
+vent noise impact and increase information ab-
+sorption. Finally, we conduct extensive experi-
+ments to demonstrate the advantages and prop-
+erties of our proposed SAM. We ﬁrst show
+how SAM plays a primary role in the cham-
+pion solution of two subtasks of SemEval’21
+Task 7.
+After that, we apply SAM on sen-
+timent analysis and three popular NLP tasks
+and demonstrate that SAM consistently outper-
+forms the state-of-the-art baselines.
+1
+Introduction
+In natural language processing (NLP), pretrain-
+ing large neural language models on a plethora
+of unlabeled text have proven to be a successful
+strategy for transfer learning (Yang et al., 2019a;
+Clark et al., 2020). An elite example, e.g., Bidirec-
+tional Encoder Representations from Transformers
+(BERT) (Devlin et al., 2019), or RoBERTa (Liu
+et al., 2019), has become a standard building block
+for training task-speciﬁc NLP models via ﬁne-
+tuning.
+Transformer (Vaswani et al., 2017) has become a
+backbone architecture in NLP to model the depen-
+dency of long-distance sequences via an attention
+mechanism based on a function that operates on
+queries, keys, and values. The attention function
+maps a query and a set of key-value pairs to an
+output, where the output is a weighted sum of the
+values. For each value, a weight is computed as
+a compatibility function of the query with the cor-
+responding key. The mechanism can be viewed
+as projecting the input sequences to multiple sub-
+spaces while concatenating the output of the scaled
+dot-product attention to the representation in each
+subspace afterward. Information embedded in the
+sequence of tokens can then be effectively absorbed.
+However, the existing attention mechanism mainly
+absorbs the information at the token-wise level
+and ignores the information at the feature-wise (or
+multi-dimensional) level (Sinha et al., 2018; Chen
+and Zhuge, 2018; Cao et al., 2018).
+In this paper, to further improve the informa-
+tion absorption, we propose a novel and simple
+plug-and-play module, Sequential Attention Mod-
+ule (SAM), on the token embeddings of the pre-
+trained language model. More speciﬁcally, our
+proposed SAM sequentially deploys two attention
+sub-modules, the feature-wise attention module
+(FAM) and the token-wise attention module (TAM).
+FAM can effectively identify the importance of fea-
+tures at each dimension to resolve the polysemy
+issue and promote the effect via dot-product on the
+original token embeddings for downstream NLP ap-
+plications. Meanwhile, TAM can further re-weight
+the features at the token-wise level while expanding
+the search space of the attention parameters. Hence,
+SAM can work as the procedure of sentence con-
+struction, building words from basic features and
+constructing sentences based on words. Moreover,
+we propose an adaptive ﬁlter on FAM to prevent
+noise impact and increase information absorption.
+After obtaining the re-weighted features via SAM,
+arXiv:2109.03009v1  [cs.AI]  7 Sep 2021
+we can feed them to a standard classiﬁer, e.g., soft-
+max, to solve the downstream classiﬁcation tasks.
+We highlight the contribution of our work in the
+following:
+• We propose a simple yet effective plug-and-
+play attention module, Sequential Attention
+Module (SAM), which can absorb the in-
+formation at both the feature-wise level and
+token-wise level.
+• We further design an adaptive ﬁlter on the
+feature-wise attention module prevent noise
+impact and increase information absorption.
+• We conduct extensive experiments to demon-
+strate the advantages and properties of our
+proposed SAM. We ﬁrst show how SAM
+plays a critical role in the champion solution
+of two subtasks of SemEval’21 Task 7. The
+results on sentiment analysis and three popu-
+lar NLP tasks show that SAM outperforms
+the state-of-the-art baselines signiﬁcantly and
+prove the generalization power of SAM. Our
+code is released and can publicly downloaded
+in
+https://www.dropbox.com/s/
+l0n39tvxjmq0k4l/SAM.zip?dl=0.
+2
+Related Work
+In the following, we review related work on pre-
+trained language models (PLM) and attention
+mechanisms on NLP applications.
+PLM. Recently, in natural language processing,
+large neural pre-trained language models, such
+as BERT, ELECTRA (Clark et al., 2020), XL-
+Net (Yang et al., 2019a), and open-GPT (Cohen
+and Gokaslan, 2020), have been developed to attain
+precise token (sub-words) representations, which
+are learned from a plethora of unlabeled text. After
+that, ﬁne-tuning is applied to update the pre-trained
+word representations for downstream tasks with
+a small number of task-speciﬁc parameters (De-
+vlin et al., 2019; Liu et al., 2019). Due to the
+heavy overhead of the pre-trained language mod-
+els, researchers have tried various ways to reduce
+the computation during inference. For example,
+distillation has been applied to compress a large
+teacher model to a small student while maintain-
+ing the model performance (Sanh et al., 2019; Jiao
+et al., 2020; Sun et al., 2020; Liu et al., 2020a).
+Interaction between tokens has been delayed to
+reduce the computation in the self-attention mech-
+anism (Humeau et al., 2020; Khattab and Zaharia,
+2020). However, little work has attempted to ex-
+plore the potential of utilizing the information em-
+bedded in the well-trained token representations.
+Attention mechanism has been largely deployed
+in many NLP applications and exploited in different
+ways: (1) weight calculation: Basic operations,
+such as dot-product, general weighting, and con-
+catenation with non-linear functions, have been at-
+tempted to compute the attention weight for neural
+machine translation (Bahdanau et al., 2015; Luong
+et al., 2015). (2) Information fusion: Several at-
+tention mechanisms, e.g., co-attention (Xiong et al.,
+2017), gated-attention (Dhingra et al., 2017), and
+bidirectional attention (Seo et al., 2017), have been
+attempted to enhance the performance of reading
+comprehension. (3) Structure leverage: Hierar-
+chical attention (Pappas and Popescu-Belis, 2017)
+has been designed to absorb both the word-level
+and the sentence-level information for text classiﬁ-
+cation. Two-stream self-attention mechanism has
+been invented in XLNETfor computing the target-
+aware representations (Yang et al., 2019b). Cou-
+pled multi-Layer attentions have been proposed to
+co-extract aspect and opinion terms (Wang et al.,
+2017). A self-attention mechanism has been ap-
+plied to obtain more precise sentence represen-
+tations (Lin et al., 2017). Multi-hop attentions
+have been applied to establish the interaction be-
+tween the question and the context (Gong and Bow-
+man, 2018). Directional Self-Attention Network
+(DiSAN) has been deployed on RNN/CNN to in-
+clude both directional and multi-dimensional infor-
+mation (Shen et al., 2018). However, the existing
+attention mechanisms have not been investigated
+to improve the token representations on the pre-
+trained language models.
+3
+Our Proposal
+In the following, we ﬁrst deﬁne the problem. Next,
+we present our proposed play-and-plug module, Se-
+quential Attention Module (SAM), which consists
+of two sequential attention modules, Feature-wise
+Attention Module (FAM) and Token-wise Atten-
+tion Module (TAM).
+3.1
+Notations and Problem Deﬁnition
+Notations. To make the notation consistent, we let
+lowercase denote a vector, a bold lowercase denote
+a sequence of vectors (stored as a matrix), and a
+bold uppercase denote a matrix or a tensor. To
+avoid notation redundancy, we deﬁne a fully con-
+nected feed-forward network, FFN, which consists
+Figure 1: The overview of sequential attention module.
+of two linear transformations with a ReLU activa-
+tion in between as in Transformer (Vaswani et al.,
+2017):
+FFN(x) = max(0, xW1 + b1)W2 + b2,
+(1)
+where W1 and W2 are the corresponding weight
+parameters, b1 and b2 and the corresponding bias
+parameters.
+Setting. In an NLP task, we are given a set of
+labeled sentences, D = {(vi, yi)}N
+i=1, where N is
+the number of training data, vi denotes the i-th sen-
+tence, which consists of a sequence of |vi| tokens
+(subwords or characters), or vi = vi1 vi2 . . . vi|vi|.
+The i-th response for vi is yi ∈Y, where Y =
+{−1, +1} for a binary classiﬁcation task and Y =
+{1, 2, . . . , K} for a K-class classiﬁcation task. vij
+(j = 1, . . . , |vi|) could be a one-hot vector whose
+dimension length equals the number of distinct to-
+kens in the dictionary. The sequence of v can be
+represented by x = g(v) ∈RD×|x|, where D is
+the embedding size and g yields the output of the
+token representation by
+• a pre-trained language model, e.g., BERT or
+RoBERTa;
+• the output of the pre-trained language model
+with additional operations, e.g., a Bidi-
+rectional Long Short-Term Memory (BiL-
+STM) (Zhou et al., 2016). This allows to cap-
+ture the high-level semantic information of
+tokens.
+Problem. Suppose the mini-batch size of the
+data is B, the maximum length of the sequence
+to L, we can represent the data by a tensor X ∈
+RB×L×D as shown in the input (the leftmost block)
+of Fig. 1. Our goal is to further utilize the informa-
+tion embedded in the tensor to improve the perfor-
+mance on the downstream tasks.
+3.2
+Feature-wise Attention Module (FAM)
+First, SAM infers a feature-wise attention map to
+identify the feature importance at each dimension:
+Mf(X) = σ(FFNf(MaxPoolf(X))
++ FFNf(AvgPoolf(X))),
+(2)
+where MaxPoolf and AvgPoolf are the feature-
+wise maximum pooling and average pooling on
+the input X, respectively. Hence, by the pooling
+operations, we obtain two tensors with the size of
+B × D × 1 and feed them to a shared feature-wise
+fully connected feed-forward network, FFNf, as
+deﬁned in Eq. (1), to identify the feature impor-
+tance.
+Adaptively ﬁltered feature-wise attention map
+(AF-FAM).
+To prevent noise effect, we pro-
+pose an adaptively ﬁltered feature-wise atten-
+tion map and derive the output as follows:
+Mδ
+f(X) = max(0, Mf(X) −δ),
+(3)
+X′ = Mδ
+f(X) ⊗X,
+(4)
+where δ ∈[0, 1] is a constant to mask the corre-
+sponding feature. When δ = 0, the output of X′
+is re-weighted by the feature-wise attention map,
+which is determined originally by Eq. (2). When
+δ = 1, since the output of Eq. (2) is in the range
+of 0 and 1, AF-FAM will mask out all of the fea-
+tures and prevent the information ﬂowing to the
+next step. If δ is a small constant, it allows AF-
+FAM to ﬁlter out the uncertain features, which can
+prevent the noise effect. δ can also play an effec-
+tive way to explain the importance of the hidden
+features (Danilevsky et al., 2020) or can be auto-
+matically tuned by adversarial training (Liu et al.,
+2020b; Zhang et al., 2020). We leave these investi-
+gation as future work.
+3.3
+Token-wise Attention Module (TAM)
+Second, SAM deﬁnes a token-wise attention map
+to identify the importance of X′ at the token-wise
+level:
+Mt(X′) =softmax(FFNt(MaxPoolt(X′))
++ FFNt(AvgPoolt(X′))),
+(5)
+where MaxPoolt and AvgPoolt are similar to
+MaxPoolf and AvgPoolf, but conduct the maxi-
+mum pooling and average pooling at the token-wise
+level and yield two other tensors with the size of
+B × L × 1, respectively. FFNt is similarly deﬁned
+in Eq. (1) at the token-wise level. The operation
+softmax is applied to normalize the weight.
+The ﬁnal output is then computed by
+X′′ = Mt(X′) ⊗X′.
+(6)
+Here, we do not conduct information ﬁltering on
+the softmax operation in Mt(X′) for ﬁdelity. The
+exploration of the effect ﬁltering softmax and other
+transformations, e.g., pooling, can be further inves-
+tigated in the future work.
+3.4
+Integration and Classiﬁcation
+As illustrated in Fig. 1, SAM sequentially inte-
+grates two attention modules, FAM and TAM. Ob-
+viously, these two modules can be swapped. Our
+experimental evaluation shows that FAM follows
+by TAM can attain better performance than the al-
+ternate one. We provide more discussions in Sec. 4.
+Hence, after we obtain the features via SAM
+in Eq. (6), we can integrate them into a classiﬁ-
+cation model, e.g., softmax, via minimizing the
+cross-entropy loss to train the model parameters
+for downstream classiﬁcation tasks. We leave the
+exploration of applying SAM on other tasks, e.g.,
+regression tasks, as future work.
+4
+Experiments
+In the following, we ﬁrst present the experimen-
+tal setup and the evaluation on two classiﬁcation
+subtasks on SemEval-2021 Task 7 (Meaney et al.,
+2021) because our proposed SAM is the main mod-
+ule of the champion solution 1. Next, we test SAM
+on sentiment analysis and three other popular NLP
+tasks to verify the generalization ability. After that,
+we conduct ablation study on SAM to test the effect
+of different modules and combinations. We also
+present sensitivity analysis on δ and deliver case
+study to exhibit the properties of SAM.
+1http://smash.inf.ed.ac.uk/tasks_
+results/hahackathon_results.html
+Dataset
+Train
+Dev
+Test
+Humor.
+8,000
+1,000
+1,000
+(binary)
+69/25.7/3
+79/23.9/3
+70/28.1/4
+Contro.
+4,935
+1,000
+1,000
+(binary)
+69/25.7/3
+79/23.9/3
+70/28.1/4
+SST
+8,544
+1,101
+2,210
+(5-class)
+52/21.4/2
+50/20.6/2
+57/20.7/2
+CR
+3,016
+755
+(binary)
+106/20.7/1
+112 /20.5/1
+SUBJ
+8,000
+2,000
+(binary)
+58/25.0/10
+59/25.2/10
+TREC
+5,452
+500
+(6-class)
+29/10.2/4
+22/7.8/4
+Table 1: Data statistics: each dataset consists of two
+rows; the ﬁrst row records the number of samples in
+the splitting sets while the second row records the max-
+imum, average, and minimum number of sub-words of
+each sentence in the corresponding sets. To save the
+space, we record the number of classes with the round
+bracket under the dataset name. For example, binary
+implies 2-class.
+4.1
+Experimental Setup
+RoBERTais adopted as the backbone language
+model because it is competitive and has been ap-
+plied to attain champion solutions for many NLP
+competitions. The AdamW optimizer (Loshchilov
+and Hutter, 2017) is adopted with a batch size of
+32. The lookahead mechanism (Zhang et al., 2019)
+is applied to help AdamW to accelerate the training.
+The weight decaying rate is 1e-2. The BiLSTM
+module consists of 2 layers with the size of the hid-
+den units being 256. All models are implemented
+with Pytorch and run on a single NVIDIA GeForce
+RTX 3090 graphic card.
+4.2
+SemEval-2021: HaHackathon
+The SemEval-2021 Task 7 (Meaney et al., 2021)
+consists of four subtasks to detect or rate humor
+and offense in different aspects: (1) Task 1a (Hu-
+mor.) is to predict if the text would be considered
+humorous for an average user. This is a binary clas-
+siﬁcation task. (2) Task 1b (Contro.) is to predict
+how humorous it is for an average user when the
+text is classed as humorous. This is a regression
+task to predict a value in the range of 0 and 5. (3)
+Task 1c is to predict if the humor rating would be
+considered controversial, i.e. the variance of the
+rating between annotators is higher than the me-
+dian, when the text is classed as humorous. It is
+also a binary classiﬁcation task. (4) Task 2 aims to
+predict how offensive a text would be for an aver-
+age user. It is a regression task to predict a value in
+the range of 0 and 5. Among these four tasks, we
+report the evaluation results on the binary classiﬁ-
+cation sub-tasks because we attain the champion
+on them. The statistics of the tasks are listed in the
+ﬁrst four rows of Table 1. A main challenge of the
+tasks is that humor detection is highly subjective.
+In the competition, we evaluation the following
+methods: (1) RoBERTa: RoBERTa is a competi-
+tive backbone language model; (2) RB: BiLSTM is
+deployed on top of the RoBERTa feature extractor;
+(3) RBA: Attention-based BiLSTM (Zhou et al.,
+2016) is applied on top of the RoBERTa feature
+extractor; (4) SAM: our proposed SAM is built
+on RB. Without specifying, δ is set to 0.0 for sim-
+plicity. All compared methods are ﬁne-tuned by
+optimizing the initial learning rate from 1.0e-5 to
+1.4e-5 with the step size of 0.1e-5 in the Humor.
+dataset and from 1.0e-5 to 1.3e-5 with the step
+size of 0.1e-5 in the Contro. dataset, respectively,
+while the dropout rate is tried from 0.2 to 0.4 with
+the step size of 0.1 in the Humor. dataset and from
+0.1 to 0.3 with the step size of 0.1 in the Contro.
+dataset for trial and error. The maximum number
+of epochs is set to 50. F1-score is the evaluation
+metric to determine the performance in the compe-
+tition.
+Methods
+Humor.
+Contro.
+F1
+T(s)
+F1
+T(s)
+RoBERTa
+95.42
+83
+59.29
+51
+RB
+95.48
+92
+59.06
+57
+RBA
+95.68
+92
+60.33
+57
+SAM
+96.41
+92
+62.89
+57
+Table 2: Experimental results on SemEval-2021: Ha-
+Hackathon. The F1-scores (F1) and the time trained at
+each epoch, denoted by T(s) in seconds, are averaged
+on 5-fold cross-validation.
+Table 2 reports the average F1-scores of 5-fold
+cross-validation on two subtasks, respectively. The
+results show that
+• RB and RBA consistently increase the per-
+formance gradually. This indicates the token
+representations extracted by RoBERTa can be
+further utilized.
+• SAM obtains signiﬁcant better improvement
+(p < 0.01 in paired t-test) than the compared
+methods. It is noted that the reported F1-
+scores are slightly lower than those in the
+counter parts, 98.54 at Task 1a and 63.02 at
+Task 1c, of the competition leaderboard. The
+reason lies that for the champion solution, we
+have conducted additional tricks, e.g., model
+ensemble(Forough and Momtazi, 2021) , label
+smoothing(Müller et al., 2019), and pseudo
+labeling(Mokrii et al., 2021). However, we
+argue that SAM is the main module to attain
+the exceptional performance.
+• By examining the recorded time cost of each
+epoch, we observe that SAM consumes the
+same time as RB and RBA, which implies the
+efﬁciency of SAM.
+4.3
+Sentiment Analysis
+Emotion is a high-level intelligent behavior of hu-
+mans (Strapparava, 2016; di Buono et al., 2017;
+Wu and Jiang, 2019). It aims at developing models
+to understand the emotional tendency of texts at
+the semantic level. The difﬁculty of sentiment anal-
+ysis lies in identifying the polysemous meaning
+of a word, which needs to absorb both the token-
+wise information and distinguish the ambiguity in
+different contexts.
+Stanford Sentiment Treebank (Socher et al.,
+2013) is a standard sentiment analysis dataset
+released by the NLP group of Stanford Univer-
+sity. It mainly used for sentiment classiﬁcation, in
+which each node of the sentence analysis tree has
+ﬁne-grained sentiment annotations. The standard
+train/dev/test sets are split into 8,544/1,101/2,210
+samples and the statistics of the dataset is recorded
+in the ﬁfth and sixth rows of Table 1.
+Methods
+Acc.
+T(s)
+RoBERTa
+59.10
+97
+RB
+59.30
+112
+RBA
+59.40
+112
+DiSAN
+59.20
+211
+SAM
+59.70
+112
+Table 3: Experimental results on the Stanford Senti-
+ment Tree-bank (SST). The accuracy (Acc.) is aver-
+aged of ﬁve runs on the test set and the time trained at
+each epoch, denoted by T(s) in seconds, is the average
+of ﬁve runs.
+Other than the four compared methods depicted
+in Sec. 4.2, we also conduct experiments on Di-
+rectional Self-Attention Network (DiSAN) (Shen
+et al., 2018), a light-weight network showing strong
+performance on RNNs/CNNs via includeing multi-
+dimensional (or feature-wise) information. We
+place DiSAN on top of RoBERTa. All compared
+methods are ﬁne-tuned by optimizing the initial
+learning rate from 1.0e-3 to 1.5e-3 with the step
+size of 1.0e-3 and the dropout rate is tried from 0.2
+to 0.5 with the step size of 0.1 for trial and error.
+The maximum number of epochs is set to 50. Fol-
+lowing, we evaluate the accuracy on the test set and
+report the time in seconds in Table 3. The results
+show that
+• The higher accuracy scores in RB, RBA, and
+DiSAN than RoBERTa imply the effective-
+ness of the compared methods in further ab-
+sorbing token embeddings from RoBERTa.
+• SAM can further improve the performance
+and beats RBA, the best baseline, at least 0.5%
+improvement.
+• Similarly, the time cost of each epoch for
+SAM is the same time as that in RB and RBA.
+On the contrary, DiSAN consumes nearly dou-
+ble time but yields worse than SAM.
+4.4
+Experiments on Other NLP Tasks
+To verify the generalization of our proposed SAM,
+we conduct experiments on three popular NLP
+tasks: (1) CR (Hu and Liu, 2004): Customer re-
+view of various products, e.g., cameras, which is
+to predict whether the review is positive or nega-
+tive; (2) SUBJ (Pang and Lee, 2004): Subjectivity
+dataset whose labels indicate whether each sen-
+tence is subjective or objective; (3) TREC (Li and
+Roth, 2002): The TREC dataset includes six dif-
+ferent types of questions. There are 5452 labeled
+questions in the training set and 500 questions in
+the test set. The last six rows of Table 1 record the
+corresponding data statistics. It is shown that we
+also include multi-class classiﬁcation in the evalua-
+tion.
+Here, we aim to test the effect of different atten-
+tion mechanisms. Hence, we apply RoBERTa as a
+feature extractor, i.e., freezing the RoBERTa param-
+eters without ﬁne-tuning. All compared methods
+are ﬁne-tuned by optimizing the initial learning
+rate from 1.25e-4 to 1.75e-4 with the step size of
+0.05e-4 in the CR dataset, from 1.0e-4 to 1.5e-4
+with the step size of 0.1e-4 in the SUBJ. dataset,
+and 1.0e-4 to 1.5e-4 with the step size of 0.1e-4 in
+the SUBJ. dataset, respectively, while the dropout
+rate is tried from 0.2 to 0.5 with the step size of 0.1
+in the CR dataset and from 0.2 to 0.4 with the step
+size of 0.1 in both the SUBJ dataset and the TREC
+dataset for trial and error. The maximum number
+of epochs is set to 50.
+Table 5 reports the average accuracy (Acc.) and
+the recorded time cost of 5-fold cross-validation
+and shows that
+• RB, RBA, DiSAN can further improve the
+classiﬁcation performance over RoBERTa ac-
+cordingly.
+• SAM beats the best baselines on the corre-
+sponding datasets and attains outperforms the
+baselines with at least 0.4% improvement
+(p < 0.01 in paired t-test).
+• The time cost by SAM is the same as RB and
+RBA while DiSAN costs double of the time.
+4.5
+Ablation Study
+We conduct detailed ablation study on SAM to thor-
+oughly investigate its properties. The evaluation
+settings include: (1) SAM (−FAM): we implement
+SAM by removing FAM to see its effect; (2) SAM
+(−TAM): we implement SAM by removing TAM
+to see its effect; (2) SAM (TAM+FAM): we im-
+plement SAM by swapping the order of FAM and
+TAM to see the effect of ; (3) SAM (δ = 0.1): we
+implement SAM by setting δ = 0.1; (4) SAM: we
+implement SAM by setting δ = 0.0. The imple-
+mentation on the corresponding datasets follows
+the same setup as that in Sec. 4.2, Sec. 4.3, and
+Sec. 4.4] accordingly.
+Table 4 reports the performance on all six tasks
+and shows that
+• By comparing the results on SAM (−FAM)
+and SAM (−TAM), we can see that SAM ob-
+tains worse performance than the complete
+one. The performance on SAM (−FAM) is
+slightly better than that on SAM (−TAM).
+The observation shows that retaining the
+token-wise information will help the classi-
+ﬁcation tasks.
+• Generally, swapping the order of FAM and
+TAM will decrease the performance slightly.
+We conjecture that a sentence is composed by
+several tokens, where a tokens are composed
+by some features in the embeddings. Hence,
+the token-wise information would be more
+helpful to determine the classiﬁcation perfor-
+mance. By swapping the attention order, we
+obtain the feature-wise information, which is
+weak for classiﬁcation.
+• By varying δ, we can further improve the
+model performance. For example, when δ
+is set to 0.1, we can obtain the best per-
+formance on the SUBJ and TREC datasets.
+Settings
+Humor.
+Contro.
+SST
+CR
+SUBJ
+TREC
+F1
+T(s)
+F1
+T(s)
+Acc. T(s)
+Acc. T(s)
+Acc. T(s)
+Acc. T(s)
+RoBERTa
+95.42 83
+59.29 51
+59.10 97
+87.56 14
+94.09 40
+91.90
+8
+SAM (−FAM)
+95.70 91
+60.50 58
+59.30 105
+89.77 16
+95.69 41
+92.60 10
+SAM (−TAM)
+95.50 91
+60.65 58
+59.10 105
+89.02 16
+94.99 41
+92.40 10
+SAM (TAM+FAM)
+95.98 92
+61.03 57
+58.45 112
+89.91 16
+95.83 43
+93.20 11
+SAM (δ = 0.1)
+96.12 93
+60.86 56
+59.40 114
+89.97 17
+95.84 45
+93.20 11
+SAM
+96.41 92
+61.22 57
+59.70 112
+90.03 16
+95.78 43
+93.40 11
+Table 4: Ablation study on SAM under different settings.
+RBA
+SAM
+RBA
+SAM
+RBA
+SAM
+RBA
+SAM
+RBA
+SAM
+Figure 2: Attention heatmap of RBA and SAM on ﬁve cases for Task 1a of SemEval-2021: HaHackathon. Detailed
+description can be referred to the main text.
+Methods
+CR
+SUBJ
+TREC
+Acc. T(s) Acc. T(s) Acc. T(s)
+RoBERTa 87.56 14 94.09 40 91.9
+8
+RB
+88.14 16 95.39 43 92.4 11
+RBA
+89.52 16 95.05 43 92.6 11
+DiSAN
+87.60 33 94.11 84 91.9 23
+SAM
+90.03 16 95.78 43 93.4 11
+Table 5: Experimental results on three popular NLP
+tasks: CR, SUBJ, and TREC. The accuracy (Acc.) and
+the time trained at each epoch, denoted by T(s) in sec-
+onds, are averaged on 5-fold cross-validation.
+More detailed investigation will be provided
+in Sec. 4.6.
+4.6
+Sensitivity Analysis on δ
+The parameter δ in Eq. (3) plays a key role to pre-
+vent noise effect. When δ increases, FAM will try
+to mask the information on the corresponding di-
+mension. We test the effect of δ by varying it from
+0.0 to 0.8 with the step size of 0.05. Figure 3 shows
+the results on the TREC dataset. Other datasets
+Figure 3: Sensitivity analysis on δ.
+follow similar characteristics. The experimental re-
+sults show that: (1) The best performance of SAM
+on the TREC dataset is attained when δ = 0.15.
+The accuracy of 93.8 is higher than 93.4, the one
+obtained by the default SAM reported in Table 5.
+(2) When δ becomes larger, the performance of
+SAM usually decreases accordingly.
+4.7
+Case Study
+To gain a closer view of what information can
+be captured by SAM, we visualize the attention
+heatmap with respect to the classiﬁcation model in
+Fig. 2, where dark color implies higher weight. In
+particular, we compare our SAM with RBA, the
+best attention-based baseline, and show ﬁve sen-
+tences (the ground-truth for the ﬁrst three sentences
+is +1, i.e., humorous, while the ground-truth for
+the last two sentences is −1, i.e., non-humorous). It
+is noted that among these ﬁve cases, our SAM cor-
+rectly predicts the labels while RBA mis-classiﬁes
+them. By observing the color intensity shown in
+Fig. 2, we can see that our SAM can further cap-
+ture the role of important information to suppress
+non-important information, thereby enhancing the
+ﬁnal effect.
+5
+Conclusion
+In this paper, we propose a simple yet effective
+plug-and-play attention module, i.e., SAM, to fur-
+ther improve the token representations learned from
+pre-trained language models. SAM follows a nat-
+ural setting of language representation, from ﬁne-
+grained features to high-level tokens. That is, it
+ﬁrst applies FAM to promote the feature impor-
+tance. After that, it applies TAM to enhance the
+search space of the attention mechanism. More-
+over, an adaptive ﬁlter is placed on FAM to pre-
+vent noise effect. Our experimental results show
+that the proposed SAM is the key module to attain
+the champion solution in Task 1a and Task 1c of
+SemEval’21 Task 7. Meanwhile, SAM exhibits
+its generalization power and consistently beats the
+state-of-the-art baselines on several popular NLP
+tasks, including sentiment analysis, customer re-
+view, subjective detection, question-answering se-
+lection. Our ablation study shows that (1) the per-
+formance under the order of FAM following TAM
+is better than that under the alternate one, which
+again conﬁrms the sentence construction procedure.
+(2) the threshold parameter in FAM can be further
+tuned to improve the model performance.
+In the future, several signiﬁcant problems are
+worthy of investigation on SAM: (1) How to au-
+tomatically determine δ through adversarial train-
+ing while enhancing the model explainability? (2)
+What are the potential ways to increase the effec-
+tiveness of information absorption in TAM? (3)
+What is the performance of SAM on other tasks,
+e.g., the regression task.
+References
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Ben-
+gio. 2015.
+Neural machine translation by jointly
+learning to align and translate.
+In 3rd Inter-
+national Conference on Learning Representations,
+ICLR 2015, San Diego, CA, USA, May 7-9, 2015,
+Conference Track Proceedings.
+Pengfei Cao, Yubo Chen, Kang Liu, Jun Zhao, and
+Shengping Liu. 2018.
+Adversarial transfer learn-
+ing for chinese named entity recognition with self-
+attention mechanism. In Proceedings of the 2018
+Conference on Empirical Methods in Natural Lan-
+guage Processing, Brussels, Belgium, October 31 -
+November 4, 2018, pages 182–192. Association for
+Computational Linguistics.
+Jingqiang Chen and Hai Zhuge. 2018. Abstractive text-
+image summarization using multi-modal attentional
+hierarchical RNN. In Proceedings of the 2018 Con-
+ference on Empirical Methods in Natural Language
+Processing, Brussels, Belgium, October 31 - Novem-
+ber 4, 2018, pages 4046–4056. Association for Com-
+putational Linguistics.
+Kevin Clark, Minh-Thang Luong, Quoc V. Le, and
+Christopher D. Manning. 2020.
+ELECTRA: pre-
+training text encoders as discriminators rather than
+generators. In ICLR.
+Vanya Cohen and Aaron Gokaslan. 2020. Opengpt-2:
+open language models and implications of generated
+text. XRDS, 27(1):26–30.
+Marina Danilevsky, Kun Qian, Ranit Aharonov, Yan-
+nis Katsis, Ban Kawas, and Prithviraj Sen. 2020. A
+survey of the state of explainable AI for natural lan-
+guage processing. In Proceedings of the 1st Confer-
+ence of the Asia-Paciﬁc Chapter of the Association
+for Computational Linguistics and the 10th Interna-
+tional Joint Conference on Natural Language Pro-
+cessing, AACL/IJCNLP 2020, Suzhou, China, De-
+cember 4-7, 2020, pages 447–459. Association for
+Computational Linguistics.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019.
+BERT: pre-training of
+deep bidirectional transformers for language under-
+standing. In NAACL-HLT, pages 4171–4186.
+Bhuwan
+Dhingra,
+Hanxiao
+Liu,
+Zhilin
+Yang,
+William W. Cohen,
+and Ruslan Salakhutdinov.
+2017. Gated-attention readers for text comprehen-
+sion.
+In Proceedings of the 55th Annual Meeting
+of the Association for Computational Linguistics,
+ACL 2017, Vancouver, Canada, July 30 - August
+4, Volume 1:
+Long Papers, pages 1832–1846.
+Association for Computational Linguistics.
+Maria Pia di Buono, Jan Snajder, Bojana Dalbelo
+Basic, Goran Glavas, Martin Tutek, and Natasa
+Milic-Frayling. 2017. Predicting news values from
+headline text and emotions.
+In Proceedings of
+the 2017 Workshop: Natural Language Processing
+meets Journalism, NLPmJ@EMNLP, Copenhagen,
+Denmark, September 7, 2017, pages 1–6. Associa-
+tion for Computational Linguistics.
+Javad Forough and Saeedeh Momtazi. 2021. Ensem-
+ble of deep sequential models for credit card fraud
+detection. Appl. Soft Comput., 99:106883.
+Yichen Gong and Samuel R. Bowman. 2018. Ruminat-
+ing reader: Reasoning with gated multi-hop atten-
+tion. In Proceedings of the Workshop on Machine
+Reading for Question Answering@ACL 2018, Mel-
+bourne, Australia, July 19, 2018, pages 1–11. Asso-
+ciation for Computational Linguistics.
+Minqing Hu and Bing Liu. 2004. Mining and summa-
+rizing customer reviews. In Proceedings of the Tenth
+ACM SIGKDD International Conference on Knowl-
+edge Discovery and Data Mining, Seattle, Wash-
+ington, USA, August 22-25, 2004, pages 168–177.
+ACM.
+Samuel Humeau, Kurt Shuster, Marie-Anne Lachaux,
+and Jason Weston. 2020. Poly-encoders: Architec-
+tures and pre-training strategies for fast and accurate
+multi-sentence scoring. In 8th International Confer-
+ence on Learning Representations, ICLR 2020, Ad-
+dis Ababa, Ethiopia, April 26-30, 2020. OpenRe-
+view.net.
+Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang,
+Xiao Chen, Linlin Li, Fang Wang, and Qun Liu.
+2020.
+Tinybert: Distilling BERT for natural lan-
+guage understanding. In Proceedings of the 2020
+Conference on Empirical Methods in Natural Lan-
+guage Processing: Findings, EMNLP 2020, Online
+Event, 16-20 November 2020, pages 4163–4174. As-
+sociation for Computational Linguistics.
+Omar Khattab and Matei Zaharia. 2020. Colbert: Ef-
+ﬁcient and effective passage search via contextual-
+ized late interaction over BERT. In Proceedings of
+the 43rd International ACM SIGIR conference on re-
+search and development in Information Retrieval, SI-
+GIR 2020, Virtual Event, China, July 25-30, 2020,
+pages 39–48. ACM.
+Xin Li and Dan Roth. 2002. Learning question classi-
+ﬁers. In 19th International Conference on Computa-
+tional Linguistics, COLING 2002, Howard Interna-
+tional House and Academia Sinica, Taipei, Taiwan,
+August 24 - September 1, 2002.
+Zhouhan Lin, Minwei Feng, Cícero Nogueira dos San-
+tos, Mo Yu, Bing Xiang, Bowen Zhou, and Yoshua
+Bengio. 2017.
+A structured self-attentive sen-
+tence embedding. In 5th International Conference
+on Learning Representations, ICLR 2017, Toulon,
+France, April 24-26, 2017, Conference Track Pro-
+ceedings. OpenReview.net.
+Weijie Liu, Peng Zhou, Zhiruo Wang, Zhe Zhao,
+Haotang Deng, and Qi Ju. 2020a. Fastbert: a self-
+distilling BERT with adaptive inference time.
+In
+Proceedings of the 58th Annual Meeting of the As-
+sociation for Computational Linguistics, ACL 2020,
+Online, July 5-10, 2020, pages 6035–6044. Associa-
+tion for Computational Linguistics.
+Xiaodong Liu, Hao Cheng, Pengcheng He, Weizhu
+Chen, Yu Wang, Hoifung Poon, and Jianfeng Gao.
+2020b.
+Adversarial training for large neural lan-
+guage models. CoRR, abs/2004.08994.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Roberta: A robustly optimized BERT pretraining ap-
+proach. CoRR, abs/1907.11692.
+Ilya Loshchilov and Frank Hutter. 2017.
+Fixing
+weight decay regularization in adam.
+CoRR,
+abs/1711.05101.
+Thang Luong, Hieu Pham, and Christopher D. Man-
+ning. 2015. Effective approaches to attention-based
+neural machine translation. In Proceedings of the
+2015 Conference on Empirical Methods in Natural
+Language Processing, EMNLP 2015, Lisbon, Portu-
+gal, September 17-21, 2015, pages 1412–1421. The
+Association for Computational Linguistics.
+J.A. Meaney, Steven R. Wilson, Luis Chiruzzo, and
+Walid Magdy. 2021.
+Semeval 2021 task7, ha-
+hackathon, detecting and rating humor and offense.
+In Proceedings of the 59th Annual Meeting of the
+Association for Computational Linguistics and the
+11th International Joint Conference on Natural Lan-
+guage Processing.
+Iurii Mokrii, Leonid Boytsov, and Pavel Braslavski.
+2021. A systematic evaluation of transfer learning
+and pseudo-labeling with bert-based ranking models.
+CoRR, abs/2103.03335.
+Rafael Müller, Simon Kornblith, and Geoffrey E. Hin-
+ton. 2019. When does label smoothing help?
+In
+Advances in Neural Information Processing Systems
+32: Annual Conference on Neural Information Pro-
+cessing Systems 2019, NeurIPS 2019, December
+8-14, 2019, Vancouver, BC, Canada, pages 4696–
+4705.
+Bo Pang and Lillian Lee. 2004. A sentimental educa-
+tion: Sentiment analysis using subjectivity summa-
+rization based on minimum cuts. In Proceedings of
+the 42nd Annual Meeting of the Association for Com-
+putational Linguistics, 21-26 July, 2004, Barcelona,
+Spain, pages 271–278. ACL.
+Nikolaos Pappas and Andrei Popescu-Belis. 2017.
+Multilingual hierarchical attention networks for doc-
+ument classiﬁcation. In Proceedings of the Eighth
+International Joint Conference on Natural Lan-
+guage Processing, IJCNLP 2017, Taipei, Taiwan,
+November 27 - December 1, 2017 - Volume 1: Long
+Papers, pages 1015–1025. Asian Federation of Nat-
+ural Language Processing.
+Victor Sanh, Lysandre Debut, Julien Chaumond, and
+Thomas Wolf. 2019. Distilbert, a distilled version
+of BERT: smaller, faster, cheaper and lighter. CoRR,
+abs/1910.01108.
+Min Joon Seo, Aniruddha Kembhavi, Ali Farhadi, and
+Hannaneh Hajishirzi. 2017. Bidirectional attention
+ﬂow for machine comprehension.
+In 5th Inter-
+national Conference on Learning Representations,
+ICLR 2017, Toulon, France, April 24-26, 2017, Con-
+ference Track Proceedings. OpenReview.net.
+Tao Shen, Tianyi Zhou, Guodong Long, Jing Jiang,
+Shirui Pan, and Chengqi Zhang. 2018. Disan: Di-
+rectional self-attention network for rnn/cnn-free lan-
+guage understanding. In Proceedings of the Thirty-
+Second AAAI Conference on Artiﬁcial Intelligence,
+(AAAI-18), the 30th innovative Applications of Arti-
+ﬁcial Intelligence (IAAI-18), and the 8th AAAI Sym-
+posium on Educational Advances in Artiﬁcial Intel-
+ligence (EAAI-18), New Orleans, Louisiana, USA,
+February 2-7, 2018, pages 5446–5455. AAAI Press.
+Koustuv Sinha, Yue Dong, Jackie Chi Kit Cheung, and
+Derek Ruths. 2018. A hierarchical neural attention-
+based text classiﬁer.
+In Proceedings of the 2018
+Conference on Empirical Methods in Natural Lan-
+guage Processing, Brussels, Belgium, October 31 -
+November 4, 2018, pages 817–823. Association for
+Computational Linguistics.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, Christopher D. Manning, Andrew Y. Ng,
+and Christopher Potts. 2013. Recursive deep mod-
+els for semantic compositionality over a sentiment
+treebank.
+In Proceedings of the 2013 Conference
+on Empirical Methods in Natural Language Process-
+ing, EMNLP 2013, 18-21 October 2013, Grand Hy-
+att Seattle, Seattle, Washington, USA, A meeting of
+SIGDAT, a Special Interest Group of the ACL, pages
+1631–1642. ACL.
+Carlo Strapparava. 2016. Emotions and NLP: future
+directions.
+In Proceedings of the 7th Workshop
+on Computational Approaches to Subjectivity, Senti-
+ment and Social Media Analysis, WASSA@NAACL-
+HLT 2016, June 16, 2016, San Diego, California,
+USA, page 180. The Association for Computer Lin-
+guistics.
+Zhiqing Sun, Hongkun Yu, Xiaodan Song, Renjie Liu,
+Yiming Yang, and Denny Zhou. 2020. Mobilebert:
+a compact task-agnostic BERT for resource-limited
+devices. In Proceedings of the 58th Annual Meet-
+ing of the Association for Computational Linguistics,
+ACL 2020, Online, July 5-10, 2020, pages 2158–
+2170. Association for Computational Linguistics.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In NIPS, pages 5998–6008.
+Wenya Wang, Sinno Jialin Pan, Daniel Dahlmeier, and
+Xiaokui Xiao. 2017. Coupled multi-layer attentions
+for co-extraction of aspect and opinion terms.
+In
+Proceedings of the Thirty-First AAAI Conference on
+Artiﬁcial Intelligence, February 4-9, 2017, San Fran-
+cisco, California, USA, pages 3316–3322. AAAI
+Press.
+Zhengxuan Wu and Yueyi Jiang. 2019. Disentangling
+latent emotions of word embeddings on complex
+emotional narratives. In Natural Language Process-
+ing and Chinese Computing - 8th CCF International
+Conference, NLPCC 2019, Dunhuang, China, Octo-
+ber 9-14, 2019, Proceedings, Part II, volume 11839
+of Lecture Notes in Computer Science, pages 587–
+595. Springer.
+Caiming Xiong, Victor Zhong, and Richard Socher.
+2017.
+Dynamic coattention networks for ques-
+tion answering.
+In 5th International Conference
+on Learning Representations, ICLR 2017, Toulon,
+France, April 24-26, 2017, Conference Track Pro-
+ceedings. OpenReview.net.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime G.
+Carbonell, Ruslan Salakhutdinov, and Quoc V. Le.
+2019a. Xlnet: Generalized autoregressive pretrain-
+ing for language understanding. In NeurIPS, pages
+5754–5764.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime G.
+Carbonell, Ruslan Salakhutdinov, and Quoc V.
+Le. 2019b.
+Xlnet:
+Generalized autoregressive
+pretraining for language understanding.
+CoRR,
+abs/1906.08237.
+Michael R. Zhang, James Lucas, Jimmy Ba, and Ge-
+offrey E. Hinton. 2019.
+Lookahead optimizer: k
+steps forward, 1 step back. In Advances in Neural
+Information Processing Systems 32: Annual Con-
+ference on Neural Information Processing Systems
+2019, NeurIPS 2019, December 8-14, 2019, Vancou-
+ver, BC, Canada, pages 9593–9604.
+Wei Emma Zhang, Quan Z. Sheng, Ahoud Abdul-
+rahmn F. Alhazmi, and Chenliang Li. 2020. Adver-
+sarial attacks on deep-learning models in natural lan-
+guage processing: A survey. ACM Trans. Intell. Syst.
+Technol., 11(3):24:1–24:41.
+Peng Zhou, Wei Shi, Jun Tian, Zhenyu Qi, Bingchen Li,
+Hongwei Hao, and Bo Xu. 2016. Attention-based
+bidirectional long short-term memory networks for
+relation classiﬁcation. In Proceedings of the 54th
+Annual Meeting of the Association for Computa-
+tional Linguistics, ACL 2016, August 7-12, 2016,
+Berlin, Germany, Volume 2: Short Papers. The As-
+sociation for Computer Linguistics.

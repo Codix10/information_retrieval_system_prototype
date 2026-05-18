@@ -1,0 +1,1197 @@
+Title: HugNLP: A Unified and Comprehensive Library for Natural Language Processing
+Source URL: http://arxiv.org/abs/2302.14286v1
+--------------------------------------------------
+
+HugNLP: A Uniﬁed and Comprehensive Library for
+Natural Language Processing
+Jianing Wang1, Nuo Chen1, Qiushi Sun1,4, Wenkang Huang2, Chengyu Wang3, Ming Gao1∗
+1 School of Data Science and Engineering, East China Normal University, Shanghai, China
+2 Ant Group, Shanghai, China 3 Alibaba Group, Hangzhou, China
+4 National University of Singapore, Singapore
+lygwjn@gmail.com, {nuochen,qiushisun}@stu.ecnu.edu.cn
+{wenkang.hwk,chengyu.wcy}@alibaba-inc.com, mgao@dase.ecnu.edu.cn
+Abstract
+In this paper, we introduce HugNLP, a uni-
+ﬁed and comprehensive library for natural
+language processing (NLP) with the preva-
+lent backend of HuggingFace Transformers,
+which is designed for NLP researchers to
+easily utilize off-the-shelf algorithms and de-
+velop novel methods with user-deﬁned models
+and tasks in real-world scenarios.
+HugNLP
+consists of a hierarchical structure includ-
+ing models, processors and applications that
+uniﬁes the learning process of pre-trained
+language models (PLMs) on different NLP
+tasks.
+Additionally, we present some fea-
+tured NLP applications to show the effec-
+tiveness of HugNLP, such as knowledge-
+enhanced PLMs, universal information extrac-
+tion, low-resource mining, and code under-
+standing and generation, etc.
+The source
+code will be released on GitHub (https://
+github.com/wjn1996/HugNLP).
+1
+Introduction
+Recently, pre-trained language models (PLMs)
+have become the imperative infrastructure in a se-
+ries of downstream natural language processing
+(NLP) tasks (Devlin et al., 2019; Liu et al., 2019;
+Yang et al., 2019), which bring substantial improve-
+ments by a two-stage training strategy, including
+pre-training and ﬁne-tuning. Beneﬁting from this
+strategy, a branch of PLM methods arises to im-
+prove the models’ effectiveness, promoting NLP’s
+development in both academia and industry (Liu
+et al., 2023; Hu et al., 2022b).
+Yet, many existing approaches follow different
+patterns and code architectures, it is not easy to
+obtain high-performing models and develop them
+easily for researchers. To ﬁll this gap, this pa-
+per presents HugNLP, a uniﬁed and comprehen-
+sive open-source library to allow researchers to
+develop and evaluate NLP models more efﬁciently
+∗Corresponding Author.
+and effectively. To reach this goal, we utilize Hug-
+gingFace Transformers 1 as the prevalent backend,
+which provides abundant backbones of different
+scale-sizes of PLMs. For training, we integrate a
+well-designed tracking toolkit MLFlow 2 into the
+backend, which is convenient to observe experi-
+mental progress and records. HugNLP consists of
+some well-designed components, such as Models,
+Processors, and Applications. Concretely, 1) for
+Models, we provide some popular PLMs, includ-
+ing BERT (Devlin et al., 2019), RoBERTa (Liu
+et al., 2019), DeBERTa (He et al., 2021), GPT-
+2 (Radford et al., 2019) and T5 (Raffel et al.,
+2020), etc. Based on these PLMs, we develop task-
+speciﬁc modules for pre-training (e.g., masked lan-
+guage modeling (MLM), casual language modeling
+(CLM)) and ﬁne-tuning (e.g., sequence classifying
+and matching, span extraction, text generation). We
+also provide some prompt-based ﬁne-tuning tech-
+niques which enable parameter-efﬁcient tuning for
+PLMs, including PET (Schick and Schütze, 2021),
+P-tuning (Liu et al., 2021b), Preﬁx-tuning (Li
+and Liang, 2021), Adapter-tuning (Houlsby et al.,
+2019). 2) In Processors, we develop relevant data
+processing tools 3 for some commonly used bench-
+mark datasets and business-speciﬁc corpora. 3) In
+Applications, we present core capacities to support
+the upper applications. Speciﬁcally, our proposed
+KP-PLM (Wang et al., 2022b) enables plug-and-
+play knowledge injection in model pre-training and
+ﬁne-tuning via converting structure knowledge into
+uniﬁed language prompts. We also develop HugIE,
+a universal information extraction toolkit through
+instruction-tuning with extractive modeling (e.g.,
+global pointer) (Su et al., 2022). HugNLP also in-
+tegrates some novel algorithms and applications,
+such as uncertainty-aware self-training (Mukher-
+1https://huggingface.co/.
+2https://www.mlflow.org/.
+3The Processor is related to the task format. For exam-
+ple, we tailor some benchmark datasets, such as Chinese
+CLUE (Xu et al., 2020), GLUE (Wang et al., 2018), etc.
+arXiv:2302.14286v1  [cs.CL]  28 Feb 2023
+jee and Awadallah, 2020; Wang et al., 2023), code
+understanding and generation (Feng et al., 2020;
+Wang et al., 2021c).
+Overall, HugNLP has the following features.
+• HugNLP offers a range of pre-built compo-
+nents and modules (i.e., Models, Processors,
+Applications) that can be used to speed up the
+development process and simplify the imple-
+mentation of complex NLP models and tasks.
+• HugNLP can also be easily integrated into
+existing workﬂows and customized to meet
+the speciﬁc needs of individual researchers or
+projects, ensuring the framework’s scalability
+and ﬂexibility.
+• HugNLP is equipped with some novel core
+capacities, such as knowledge-enhanced pre-
+training, prompt-based ﬁne-tuning, instruc-
+tion and in-context learning, uncertainty-
+aware self-training, and parameter-efﬁcient
+learning. We thus develop some featured prod-
+ucts or solutions on real-world application sce-
+narios, e.g., KP-PLM, and HugIE.
+• HugNLP is based on PyTorch and Hugging-
+Face, which are two widely used tools and
+platforms in the NLP community, allowing re-
+searchers to leverage their strengths and apply-
+ing it to different academics and industry sce-
+narios (Qiu et al., 2021; Wang et al., 2022a).
+2
+Background
+2.1
+Pre-trained Language Models
+The goal of the PLM is to learn semantic representa-
+tions over unsupervised corpora via well-designed
+self-supervised learning tasks in the pre-training
+stage. Notable PLMs can be divided into three
+main types, including encoder-only (Devlin et al.,
+2019; Liu et al., 2019; He et al., 2021; Yang et al.,
+2019; Lan et al., 2020), decoder-only (Radford
+et al., 2018; Brown et al., 2020; Zhang et al., 2022a)
+and encoder-decoder (Lewis et al., 2020; Raffel
+et al., 2020). However, these PLM may lack of
+background knowledge when applied to some task-
+speciﬁc scenarios. To solve this problem, a branch
+of knowledge-enhanced PLMs (Zhang et al., 2019;
+Wang et al., 2021a; Pan et al., 2022) have been pro-
+posed for capturing rich factual knowledge from
+external knowledge bases. In addition, some re-
+cent large-scale PLMs (e.g., GPT-3 (Brown et al.,
+2020)) can enable few/zero-shot in-context learn-
+ing with language prompts or instructions. Thus,
+we can leverage cross-task learning to unify seman-
+tics knowledge from different NLP tasks.
+2.2
+Fine-tuning for PLMs
+A large number of applications in real scenarios
+focus on how to ﬁne-tune the PLM to transfer the
+prior knowledge derived from the general domain
+to downstream task-speciﬁc domains (Xu et al.,
+2020; Wang et al., 2018). We integrate some task-
+orient ﬁne-tuning methods to allow users to develop
+and evaluate PLM on different NLP tasks. We
+also implement some popular tuning algorithms
+to enable tuning on low-resource scenarios, such
+as prompt-tuning (Liu et al., 2021b), in-context
+learning (Brown et al., 2020), etc.
+3
+HugNLP
+3.1
+Overview
+HugNLP is an open-sourced library with a hier-
+archical structure. As shown in Figure 1. The
+backend is the prevalent HuggingFace Transform-
+ers platform that provides multiple transformer-
+based models and task trainers. In other words,
+HugNLP can be seen as a customized NLP plat-
+form for efﬁciently training and evaluating. In addi-
+tion, HugNLP integrates MLFlow, which is a novel
+tracking callback toolkit for model training and
+experiment result analysis. Users can simply add
+one conﬁgure parameter tracking_uri in the
+training script, and observe the tracking records
+after running MLFlow server.
+HugNLP consists of three key components, in-
+cluding Models, Processors, and Applications.
+Users can directly select the pre-built settings
+for some common tasks, or develop special user-
+deﬁned training solutions in real-world application
+scenarios. We will provide a detailed description
+in the following sections.
+3.2
+Library Architecture
+Models.
+In Models, we provide some popular
+transformer-based models as backbones, such as
+BERT, RoBERTa, GPT-2, etc. We also release our
+pre-built KP-PLM, a novel knowledge-enhanced
+pre-training model which leverages knowledge
+prompting (Wang et al., 2022b) paradigm to in-
+ject factual knowledge and can be easily used for
+arbitrary PLMs. Apart from basic PLMs, we also
+implement some task-speciﬁc models, involving
+           Tracking Callback
+       HuggingFace Transformers
+Backend
+Callback
+Language
+Modeling
+Models & Processors
+Sequence
+Classification
+Sequence
+Matching
+Sequence
+Labeling
+Span
+Extraction
+Multi-choice
+Text
+Generation
+Masked LM, Causal LM,
+NSP, ......
+Head-based CLS, 
+Prompt-based CLS, ......
+Head-based CLS, 
+Prompt-based CLS, ......
+NER, Spell Checking,
+Part-of-Speech, ......
+MRC, Global Pointer
+......
+CHID
+......
+Summarization, Translation
+......
+Benchmark Tuning
+Applications
+Chinese CLUE, GLUE,
+Unified Information
+Extraction
+HugIE,
+Few-shot NER, ...
+Core Capacities
+Few-shot
+Learning Model
+NNShot, Prototypical
+Network, ......
+Knowledge-
+enhanced PLMs
+Fine-tuning &
+Prompt-tuning
+Uncertainty-aware
+Self-training
+Parameter-Efficient
+Learning
+...
+Parameter
+Freezing
+Uncertainty
+Estimation
+Prediction
+Calibration
+......
+Instruction & In-
+Context Learning
+Plug-and-Play Utils
+Low-resource
+Mining
+Semi-supervised CLS,
+...
+Code NLU & NLG
+Clone Detection, Defect, 
+Code Translation, ...
+...
+Figure 1: An overview of the HugNLP library.
+sequence classiﬁcation, matching, labeling, span
+extraction, multi-choice, and text generation. Par-
+ticularly, we develop standard ﬁne-tuning (based
+on CLS Head 4) and prompt-tuning models 5 that
+enable PLM tuning on classiﬁcation tasks. For
+few-shot learning settings, HugNLP provides a
+prototypical network (Snell et al., 2017) in both
+few-shot text classiﬁcation and named entity recog-
+nition (NER).
+In addition, we also incorporate some plug-and-
+play utils in HugNLP. 1) Parameter Freezing. If we
+want to perform parameter-efﬁcient learning (Mao
+et al., 2022), which aims to freeze some parameters
+in PLMs to improve the training efﬁciency, we can
+set the conﬁgure use_freezing and freeze the
+backbone. A use case is shown in Code 1. 2) Uncer-
+tainty Estimation aims to calculate the model cer-
+tainty when in semi-supervised learning (Mukher-
+jee and Awadallah, 2020). 3) We also design Pre-
+diction Calibration, which can be used to further
+4For standard ﬁne-tuning, we need to add a classiﬁcation
+head (CLS head) on the PLM and obtain the probability dis-
+tribution of each class. The parameters of the CLS head are
+randomly initialized.
+5Different from ﬁne-tuning, prompt-tuning can reuse the
+pre-training objective (e.g., MLM, CLM) to perform classi-
+fying on the masked token. It requires a task-orient template
+(e.g., “It was [MASK].”) and the label word mapping (e.g.,
+“great” maps to “positive” class in sentiment analysis task.)
+from tools.model_utils.parameter_freeze import
+ParameterFreeze
+freezer = ParameterFreeze()
+class BertForSequenceClassification(BertPreTrained
+Model):
+def __init__(self, config):
+super().__init__(config)
+self.num_labels = config.num_labels
+self.config = config
+self.bert = BertModel(config)
+# freeze the backbone
+if self.config.use_freezing:
+self.bert = freezer.freeze_lm(self.bert)
+self.classifier = torch.nn.Linear(
+config.hidden_size, config.num_labels)
+self.init_weights()
+Code 1: A model case of parameter freezing.
+improve the accuracy by calibrating the distribution
+and alleviating the semantics bias problem (Zhao
+et al., 2021).
+Processors.
+HugNLP aims to load the dataset
+and process the task examples in a pipeline, con-
+taining sentence tokenization, sampling, and tensor
+generation. Speciﬁcally, users can directly obtain
+the data through load_dataset, which can di-
+rectly download it from the Internet or load it from
+the local disk. For different tasks, users should
+deﬁne a task-speciﬁc data collator, which aims to
+transform the original examples into model input
+tensor features.
+Applications.
+It provides rich modules for users
+to build real-world applications and products by se-
+lecting among an array of settings from Models and
+Processors. More details are shown in Section 3.4.
+3.3
+Core Capacities
+To further improve the effectiveness of HugNLP,
+we design multiple core capacities in the following.
+Knowledge-enhanced
+Pre-training.
+Conven-
+tional pre-training methods lack factual knowledge
+(Zhang et al., 2022b; Pan et al., 2022). To deal with
+this issue, we present KP-PLM (Wang et al., 2022b)
+with a novel knowledge prompting paradigm for
+knowledge-enhanced pre-training.
+Speciﬁcally,
+we construct a knowledge sub-graph for each
+input text by recognizing entities and aligning
+with the knowledge base (e.g., Wikidata5M 6)
+and decompose this sub-graph into multiple
+relation paths, which can be directly transformed
+into language prompts. KP-PLM can be easily
+applied to other PLMs without introducing extra
+parameters as knowledge encoders.
+Prompt-based Fine-tuning.
+Prompt-based ﬁne-
+tuning aims to reuse the pre-training objective (e.g.,
+MLM) and utilizes a well-designed template and
+verbalizer to make predictions, which has achieved
+great success in low-resource settings. We inte-
+grate some novel approaches into HugNLP, such
+as PET (Schick and Schütze, 2021), P-tuning (Liu
+et al., 2021b), etc.
+Instruction-tuning and In-Context Learning.
+Instruction-tuning (Wei et al., 2022) and in-context
+learning (Brown et al., 2020) enable few/zero-shot
+learning without parameter update, which aims to
+concatenate the task-aware instructions or example-
+based demonstrations to prompt GPT-style PLMs
+to generate reliable responses. So, all the NLP
+tasks can be uniﬁed into the same format and can
+substantially improve the models’ generalization.
+Inspired by this idea, we extend it into other two
+paradigms: 1) extractive-style paradigm: we unify
+various NLP tasks into span extraction, which is
+the same as extractive question answering (Keskar
+et al., 2019), and 2) inference-style paradigm: all
+the tasks can be viewed as natural language in-
+ference to match the relations between inputs and
+outputs (Wang et al., 2021b).
+6https://deepgraphlearning.github.io/
+project/wikidata5m.
+python3 hugnlp_runner.py \
+--model_name_or_path=$path \
+--data_dir=$data_path \
+--output_dir=./outputs/glue/$glue_task \
+--seed=42 \
+--max_seq_length=$len \
+--max_eval_seq_length=$len \
+--do_train \
+--do_eval \
+--per_device_train_batch_size=8 \
+--per_device_eval_batch_size=4 \
+--gradient_accumulation_steps=1 \
+--evaluation_strategy=steps \
+--learning_rate=1e-5 \
+--num_train_epochs=10 \
+--task_name=clue \
+--task_type=head_cls \
+--model_type=bert \
+--user_defined="data_name=rte" \
+Code 2: An application case of sequence classiﬁcation
+for GLUE benchmark.
+Figure 2: An application case of HugIE.
+Uncertainty-aware Self-training.
+Self-training
+can address the labeled data scarcity issue by lever-
+aging the large-scale unlabeled data in addition to
+labeled data, which is one of the mature paradigms
+in semi-supervised learning (Qi and Luo, 2022;
+Chawla and Karakoulas, 2005; Amini et al., 2022).
+However, the standard self-training may generate
+too many noises, inevitably degrading the model
+performance due to the conﬁrmation bias. Thus,
+we present uncertainty-aware self-training. Speciﬁ-
+cally, we train a teacher model on few-shot labeled
+data, and then use Monte Carlo (MC) dropout tech-
+nique in Bayesian neural network (BNN) (Gal and
+Ghahramani, 2016) to approximate the model cer-
+tainty, and judiciously select the examples that have
+a higher model certainty of the teacher.
+Parameter-efﬁcient Learning.
+To improve the
+training efﬁciency of HugNLP, we also implement
+parameter-efﬁcient learning, which aims to freeze
+some parameters in the backbone so that we only
+tune a few parameters during model training. We
+develop some novel parameter-efﬁcient learning
+approaches, such as Preﬁx-tuning (Li and Liang,
+2021), Adapter-tuning (Houlsby et al., 2019), Bit-
+Fit (Zaken et al., 2022) and LoRA (Hu et al.,
+2022a), etc.
+Install HugNLP
+git clone xxx
+pip install xxx
+Prepare Dataset
+Directly download:
+load_dataset()
+Obtain json/txt/csv
+files on the disk.
+Customize User-
+defined Processor
+Select Existing
+Processor
+Choose task name
+e.g., glue.
+Create a new file,
+ build the processor.
+Select Existing
+Model
+Customize New
+Model
+Choose task type
+e.g., prompt_cls.
+Create a new file,
+ build the model.
+Define Application
+Create and use the
+application script to
+run the HugNLP.
+bash run_glue.sh
+Progress
+Workflow
+Notes
+Figure 3: The development workﬂow of HugNLP.
+PLMs
+AFQMC
+CMNLI
+CSL
+IFLYTEK
+OCNLI
+TNEWS
+WSC
+Avg.
+BERT-base
+72.30
+75.91
+80.83
+60.11
+78.52
+57.18
+75.89
+72.04
+BERT-large
+72.91
+77.62
+81.30
+60.77
+78.71
+57.77
+78.28
+72.60
+RoBERTa-base
+73.33
+81.05
+80.17
+60.81
+80.88
+57.69
+86.74
+74.10
+RoBERTa-large
+74.66
+80.50
+82.60
+61.37
+82.19
+58.54
+87.53
+75.33
+MacBERT-base
+74.23
+80.65
+81.63
+61.14
+80.65
+57.65
+80.26
+73.80
+MacBERT-large
+74.66
+81.19
+83.70
+62.05
+81.92
+59.03
+86.74
+75.46
+Table 1: Accuracy (%) of different tasks in the CLUE benchmark.
+3.4
+Featured Applications
+Benchmark Tuning.
+We develop the training
+application for some popular benchmarks, such
+as Chinese CLUE and GLUE. We use both stan-
+dard ﬁne-tuning and prompt-based ﬁne-tuning
+paradigms to tune PLMs over these benchmarks.
+The case of this application is shown in Code 2.
+Universal Information Extraction based on
+Extractive Instruction.
+We develop HugIE, a
+novel universal information extraction toolkit based
+on HugNLP. Speciﬁcally, we collect multiple Chi-
+nese NER and event extraction datasets from Mod-
+elScope 7 and QianYan 8. Then, we use the core ca-
+pacity of extractive-style instruction with a global
+pointer (Su et al., 2022) to pre-train a universal
+information extraction model. We also upload the
+trained model to HuggingFace 9. An example of
+using HugIE is shown in Figure 2.
+Low-resource Tuning for PLMs.
+For low-
+resource settings, we have integrated two core ca-
+pacities of prompt-tuning and uncertainty-aware
+self-training to further improve the performance
+with limited labeled data. In other words, prompt-
+tuning can fully reuse the prior knowledge derived
+from PLMs to achieve high grades with few ex-
+amples, while self-training can augment unlabeled
+data to enhance effectiveness.
+7https://modelscope.cn/datasets
+8https://www.luge.ai
+9https://huggingface.co/wjn1996/
+wjn1996-hugnlp-hugie-large-zh.
+Code Understanding and Generation.
+In addi-
+tion to traditional NLP tasks, we also consider
+the scenario of code understanding and generation,
+such as clone detection, defect detection, and code
+summarization (Lu et al., 2021).
+3.5
+Development Workﬂow
+HugNLP is easy to use and develop. We draw a
+workﬂow in Figure 3 to show how to develop a new
+running task. It consists of ﬁve main steps, includ-
+ing library installation, data preparation, processor
+selection or design, model selection or design, and
+application design. This illustrates that HugNLP
+can simplify the implementation of complex NLP
+models and tasks.
+4
+Experimental Performances
+In this section, we empirically examine the effec-
+tiveness and efﬁciency of the HugNLP toolkit on
+some public datasets.
+4.1
+Performance of Benchmarks
+To validate the effectiveness of HugNLP on both
+ﬁne-tuning and prompt-tuning, we choose Chi-
+nese CLUE (Xu et al., 2020) and GLUE bench-
+marks (Wang et al., 2018). For Chinese CLUE,
+we choose different sizes of BERT, RoBERTa and
+MacBERT (Cui et al., 2020) and report the accu-
+racy over the development sets of each task in Ta-
+bles 1. For GLUE, we perform full-resource ﬁne-
+tuning (FT-full), few-shot prompt-tuning (PT-few),
+and zero-shot prompt-tuning (PT-zero) based on
+Paradigms
+Methods
+SST-2
+SST-5
+MR
+CR
+MPQA
+Subj
+TREC
+CoLA
+Avg.
+(acc)
+(acc)
+(acc)
+(acc)
+(acc)
+(acc)
+(acc)
+(matt.)
+PT-Zero
+RoBERTa
+82.57
+29.46
+65.10
+82.15
+49.90
+69.20
+20.80
+-4.89
+49.29
+KP-PLM
+84.15
+30.67
+64.15
+81.60
+53.80
+68.70
+24.80
+-2.99
+50.61
+PT-Few
+RoBERTa
+86.35±1.3
+36.79±2.0
+83.35±0.9
+88.85±1.4
+66.40±1.9
+89.25±2.6
+76.80±5.0
+6.61±6.9
+66.80
+KP-PLM
+90.71±1.0
+44.21±2.9
+82.00±1.5
+85.35±0.4
+67.30±1.2
+91.45±0.4
+81.00±3.3
+24.28±11.3
+70.79
+FT-Full
+RoBERTa
+94.90
+56.90
+89.60
+88.80
+86.30
+96.50
+97.10
+63.90
+84.25
+KP-PLM
+95.30
+57.63
+89.20
+89.10
+87.40
+96.20
+97.10
+64.87
+84.60
+Table 2: The comparison between KP-PLM and RoBERTa-base over multiple natural language understanding
+(NLU) tasks in terms of acc/f1/matt. (%) and standard deviation with three paradigms, such as zero-shot prompt-
+tuning (PT-Zero), few-shot prompt-tuning (PT-Few), and full-data ﬁne-tuning (FT-Full).
+Methods
+Params.
+Java to C#
+C# to Java
+Reﬁne Small
+Reﬁne Medium
+(bleu)
+(em)
+(bleu)
+(em)
+(bleu)
+(em)
+(bleu)
+(em)
+CodeT5
+Fine-Tuning
+224M
+84.15
+65.30
+79.12
+66.40
+77.39
+21.35
+91.04
+7.82
+BitFit
+0.001M
+0.25
+0.00
+0.24
+0.00
+1.28
+0.00
+5.14
+0.00
+Adapter
+14.22M
+75.43
+52.40
+73.10
+57.70
+77.41
+18.58
+91.01
+3.61
+P-Tuning V2
+0.633M
+59.86
+33.70
+57.10
+41.00
+78.99
+4.56
+91.02
+0.79
+PLBART
+Fine-Tuning
+139M
+77.05
+62.60
+79.29
+62.80
+73.32
+12.71
+83.88
+4.24
+BitFit
+0.126M
+16.48
+0.10
+17.43
+0.90
+74.08
+1.45
+85.41
+0.42
+Adapter
+7.11M
+66.72
+42.10
+68.70
+51.00
+73.58
+10.90
+84.72
+3.12
+P-Tuning V2
+0.329M
+22.87
+1.00
+48.08
+33.80
+73.87
+2.07
+73.58
+0.03
+Table 3: Performance (%) on Code Translation & Code Reﬁnement Tasks.
+Methods
+Params.
+Defect
+Clone
+(acc)
+(f1)
+CodeT5
+Fine-Tuning
+224M
+64.35
+94.97
+BitFit
+1.183M
+55.05
+69.52
+Adapter
+15.40M
+59.74
+94.47
+P-Tuning V2
+1.182M
+54.61
+79.83
+PLBART
+Fine-Tuning
+139M
+62.27
+92.85
+BitFit
+1.308M
+56.30
+92.42
+Adapter
+8.29M
+61.60
+92.74
+P-Tuning V2
+1.182M
+53.81
+75.88
+Table 4: Performance (%) on Code Clone
+Detection & Code Defect Detection Tasks.
+our proposed KP-PLM. We select RoBERTa as the
+strong baseline and report the accuracy results with
+standard deviation in Table 2. The obtained com-
+parable performance has shown the reliability of
+HugNLP in both full and low-resource scenarios,
+which achieves similar performance compared to
+other open-source frameworks and their original
+implementations (Wang et al., 2022a).
+4.2
+Evaluation of Code-related Tasks
+We use HugNLP to evaluate the performance
+on multiple code-related tasks, such as code
+clone detection, defection, translation, and reﬁne-
+ment.
+We ﬁne-tune two widely used models:
+CodeT5 (Wang et al., 2021c) and PLBART (Ahmad
+et al., 2021), and then compare them with competi-
+tive parameter-efﬁcient learning methods, includ-
+ing BitFit, Adapter, and P-tuning V2 (Liu et al.,
+2021a). Results in Table 3 and Table 4 demonstrate
+the effectiveness and efﬁciency of HugNLP.
+4.3
+Effectiveness of Self-training
+We end this section with an additional validation on
+the self-training. We choose some recent methods
+(using uncertainty estimation) to evaluate the imple-
+mentations of HugNLP, including UST (Mukherjee
+and Awadallah, 2020), CEST (Tsai et al., 2022),
+Methods
+RTE
+CB
+AGNews
+Avg.
+Few Labeled Data (16-shot)
+Fine-Tuning
+54.4±3.9
+74.5±2.6
+88.9±2.7
+72.60
+Few Labeled Data (16-shot) + Unlabeled Data
+UST
+55.6±2.6
+76.0±3.1
+89.3±3.5
+73.63
+CEST
+57.0±1.9
+78.1±2.7
+88.5±2.2
+74.53
+LiST
+60.8±2.5
+79.7±2.9
+90.3±2.5
+76.93
+Table 5: Accuracy (%) of uncertain-aware self-training
+with only 16 labeled examples per class.
+and LiST (Wang et al., 2022c). Results in Table 5
+show that self-training can make substantial im-
+provements in low-resource scenarios.
+5
+Conclusion
+In this paper, we introduce HugNLP, a uniﬁed and
+comprehensive library based on PyTorch and Hug-
+gingFace, allowing researchers to apply it to dif-
+ferent academics and industry scenarios. HugNLP
+consists of three key components (i.e., Processors,
+Models and Applications) and multiple pre-built
+core capacities and plug-and-play utils. Finally, we
+perform some evaluation of different aspects of ap-
+plications, and the results demonstrate its efﬁciency
+and effectiveness. We think HugNLP can promote
+research and development for NLP applications.
+Ethics Statement
+Our contribution in this work is to construct a uni-
+ﬁed and comprehensive library for NLP research
+and application. However, transformer-based mod-
+els may have some negative impacts, such as gen-
+der and social bias. Our work would unavoidably
+suffer from these issues. We suggest that users
+should carefully address potential risks when mod-
+els trained using the HugNLP library are deployed
+online.
+Acknowledgements
+This work has also been supported by the National
+Natural Science Foundation of China under Grant
+No. U1911203, Alibaba Group through the Al-
+ibaba Innovation Research Program, and the Na-
+tional Natural Science Foundation of China un-
+der Grant No. 61877018, the Research Project
+of Shanghai Science and Technology Commis-
+sion (20dz2260300) and the Fundamental Research
+Funds for the Central Universities.
+References
+Wasi Ahmad, Saikat Chakraborty, Baishakhi Ray, and
+Kai-Wei Chang. 2021. Uniﬁed pre-training for pro-
+gram understanding and generation. In NAACL, On-
+line. Association for Computational Linguistics.
+Massih-Reza Amini, Vasilii Feofanov, Loïc Pauletto,
+Emilie Devijver, and Yury Maximov. 2022.
+Self-
+training: A survey. CoRR, abs/2202.12040.
+Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie
+Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind
+Neelakantan, Pranav Shyam, Girish Sastry, Amanda
+Askell,
+Sandhini Agarwal,
+Ariel Herbert-Voss,
+Gretchen Krueger, Tom Henighan, Rewon Child,
+Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu,
+Clemens Winter, Christopher Hesse, Mark Chen,
+Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin
+Chess, Jack Clark, Christopher Berner, Sam Mc-
+Candlish, Alec Radford, Ilya Sutskever, and Dario
+Amodei. 2020. Language models are few-shot learn-
+ers. In NeurIPS.
+Nitesh V. Chawla and Grigoris I. Karakoulas. 2005.
+Learning from labeled and unlabeled data: An em-
+pirical study across techniques and domains. JAIS,
+23:331–366.
+Yiming Cui, Wanxiang Che, Ting Liu, Bing Qin, Shi-
+jin Wang, and Guoping Hu. 2020. Revisiting pre-
+trained models for chinese natural language process-
+ing. In EMNLP (Findings), pages 657–668.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019.
+BERT: pre-training of
+deep bidirectional transformers for language under-
+standing. In NAACL, pages 4171–4186.
+Zhangyin Feng, Daya Guo, Duyu Tang, Nan Duan, Xi-
+aocheng Feng, Ming Gong, Linjun Shou, Bing Qin,
+Ting Liu, Daxin Jiang, and Ming Zhou. 2020. Code-
+BERT: A pre-trained model for programming and
+natural languages.
+In EMNLP, pages 1536–1547,
+Online. Association for Computational Linguistics.
+Yarin Gal and Zoubin Ghahramani. 2016. Dropout as a
+bayesian approximation: Representing model uncer-
+tainty in deep learning. In ICML, volume 48, pages
+1050–1059.
+Pengcheng He, Xiaodong Liu, Jianfeng Gao, and
+Weizhu Chen. 2021. Deberta: decoding-enhanced
+bert with disentangled attention. In ICLR. OpenRe-
+view.net.
+Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski,
+Bruna Morrone, Quentin de Laroussilhe, Andrea
+Gesmundo, Mona Attariyan, and Sylvain Gelly.
+2019. Parameter-efﬁcient transfer learning for NLP.
+In ICML, volume 97 of Proceedings of Machine
+Learning Research, pages 2790–2799.
+Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan
+Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang,
+and Weizhu Chen. 2022a. Lora: Low-rank adapta-
+tion of large language models. In The Tenth Inter-
+national Conference on Learning Representations,
+ICLR 2022, Virtual Event, April 25-29, 2022. Open-
+Review.net.
+Linmei Hu, Zeyi Liu, Ziwang Zhao, Lei Hou, Liqiang
+Nie, and Juanzi Li. 2022b. A survey of knowledge-
+enhanced pre-trained language models.
+CoRR,
+abs/2211.05994.
+Nitish Shirish Keskar, Bryan McCann, Caiming Xiong,
+and Richard Socher. 2019.
+Unifying question an-
+swering and text classiﬁcation via span extraction.
+CoRR, abs/1904.09286.
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+Kevin Gimpel, Piyush Sharma, and Radu Soricut.
+2020.
+ALBERT: A lite BERT for self-supervised
+learning of language representations. In ICLR.
+Mike
+Lewis,
+Yinhan
+Liu,
+Naman
+Goyal,
+Mar-
+jan Ghazvininejad, Abdelrahman Mohamed, Omer
+Levy, Veselin Stoyanov, and Luke Zettlemoyer.
+2020. BART: denoising sequence-to-sequence pre-
+training for natural language generation, translation,
+and comprehension. In ACL, pages 7871–7880.
+Xiang Lisa Li and Percy Liang. 2021. Preﬁx-tuning:
+Optimizing continuous prompts for generation. In
+ACL, pages 4582–4597. Association for Computa-
+tional Linguistics.
+Pengfei Liu, Weizhe Yuan, Jinlan Fu, Zhengbao Jiang,
+Hiroaki Hayashi, and Graham Neubig. 2023. Pre-
+train, prompt, and predict: A systematic survey of
+prompting methods in natural language processing.
+ACM Comput. Surv., 55(9):195:1–195:35.
+Xiao Liu, Kaixuan Ji, Yicheng Fu, Zhengxiao Du,
+Zhilin Yang, and Jie Tang. 2021a.
+P-tuning
+v2:
+Prompt tuning can be comparable to ﬁne-
+tuning universally across scales and tasks.
+CoRR,
+abs/2110.07602.
+Xiao Liu, Yanan Zheng, Zhengxiao Du, Ming Ding,
+Yujie Qian, Zhilin Yang, and Jie Tang. 2021b. GPT
+understands, too. CoRR, abs/2103.10385.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Roberta: A robustly optimized BERT pretraining ap-
+proach. CoRR, abs/1907.11692.
+Shuai Lu, Daya Guo, Shuo Ren, Junjie Huang, Alexey
+Svyatkovskiy, Ambrosio Blanco, Colin B. Clement,
+Dawn Drain, Daxin Jiang, Duyu Tang, Ge Li, Li-
+dong Zhou, Linjun Shou, Long Zhou, Michele Tu-
+fano, Ming Gong, Ming Zhou, Nan Duan, Neel Sun-
+daresan, Shao Kun Deng, Shengyu Fu, and Shujie
+Liu. 2021. Codexglue: A machine learning bench-
+mark dataset for code understanding and generation.
+CoRR, abs/2102.04664.
+Yuning Mao, Lambert Mathias, Rui Hou, Amjad Alma-
+hairi, Hao Ma, Jiawei Han, Scott Yih, and Madian
+Khabsa. 2022.
+Unipelt: A uniﬁed framework for
+parameter-efﬁcient language model tuning. In ACL,
+pages 6253–6264. Association for Computational
+Linguistics.
+Subhabrata Mukherjee and Ahmed Hassan Awadallah.
+2020. Uncertainty-aware self-training for few-shot
+text classiﬁcation.
+In Advances in Neural Infor-
+mation Processing Systems 33: Annual Conference
+on Neural Information Processing Systems 2020,
+NeurIPS 2020, December 6-12, 2020, virtual.
+Xiaoman Pan, Wenlin Yao, Hongming Zhang, Dian Yu,
+Dong Yu, and Jianshu Chen. 2022. Knowledge-in-
+context: Towards knowledgeable semi-parametric
+language models. CoRR, abs/2210.16433.
+Guo-Jun Qi and Jiebo Luo. 2022.
+Small data chal-
+lenges in big data era: A survey of recent progress on
+unsupervised and semi-supervised methods. IEEE
+Trans. Pattern Anal. Mach. Intell., 44(4):2168–2187.
+Minghui Qiu, Peng Li, Chengyu Wang, Haojie Pan,
+Ang Wang, Cen Chen, Xianyan Jia, Yaliang Li, Jun
+Huang, Deng Cai, and Wei Lin. 2021. Easytransfer:
+A simple and scalable deep transfer learning plat-
+form for NLP applications. In CIKM, pages 4075–
+4084. ACM.
+Alec Radford, Karthik Narasimhan, Tim Salimans, Ilya
+Sutskever, et al. 2018. Improving language under-
+standing by generative pre-training.
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan,
+Dario Amodei, Ilya Sutskever, et al. 2019.
+Lan-
+guage models are unsupervised multitask learners.
+OpenAI blog, 1(8):9.
+Colin Raffel, Noam Shazeer, Adam Roberts, Katherine
+Lee, Sharan Narang, Michael Matena, Yanqi Zhou,
+Wei Li, and Peter J. Liu. 2020. Exploring the limits
+of transfer learning with a uniﬁed text-to-text trans-
+former. J. Mach. Learn. Res., 21:140:1–140:67.
+Timo Schick and Hinrich Schütze. 2021. Exploiting
+cloze-questions for few-shot text classiﬁcation and
+natural language inference.
+In EACL, pages 255–
+269.
+Jake Snell, Kevin Swersky, and Richard S. Zemel.
+2017. Prototypical networks for few-shot learning.
+In NIPS, pages 4077–4087.
+Jianlin Su, Ahmed Murtadha, Shengfeng Pan, Jing
+Hou, Jun Sun, Wanwei Huang, Bo Wen, and Yun-
+feng Liu. 2022. Global pointer: Novel efﬁcient span-
+based approach for named entity recognition. CoRR,
+abs/2208.03054.
+Austin Cheng-Yun Tsai, Sheng-Ya Lin, and Li-Chen
+Fu. 2022. Contrast-enhanced semi-supervised text
+classiﬁcation with few labels.
+In AAAI, pages
+11394–11402.
+Alex Wang, Amanpreet Singh, Julian Michael, Fe-
+lix Hill, Omer Levy, and Samuel R. Bowman.
+2018. GLUE: A multi-task benchmark and analy-
+sis platform for natural language understanding. In
+EMNLP Workshop BlackboxNLP.
+Chengyu Wang, Minghui Qiu, Taolin Zhang, Tingting
+Liu, Lei Li, Jianing Wang, Ming Wang, Jun Huang,
+and Wei Lin. 2022a. Easynlp: A comprehensive and
+easy-to-use toolkit for natural language processing.
+CoRR, abs/2205.00258.
+Jianing Wang, Wenkang Huang, Minghui Qiu, Qi-
+uhui Shi, Hongbin Wang, Xiang Li, and Ming Gao.
+2022b.
+Knowledge prompting in pre-trained lan-
+guage model for natural language understanding. In
+EMNLP, pages 3164–3177. Association for Compu-
+tational Linguistics.
+Jianing Wang, Chengyu Wang, Jun Huang, Ming Gao,
+and Aoying Zhou. 2023.
+Uncertainty-aware self-
+training for low-resource neural sequence labeling.
+CoRR, abs/2302.08659.
+Ruize Wang, Duyu Tang, Nan Duan, Zhongyu Wei, Xu-
+anjing Huang, Jianshu Ji, Guihong Cao, Daxin Jiang,
+and Ming Zhou. 2021a. K-adapter: Infusing knowl-
+edge into pre-trained models with adapters. In ACL,
+pages 1405–1418.
+Sinong Wang, Han Fang, Madian Khabsa, Hanzi Mao,
+and Hao Ma. 2021b. Entailment as few-shot learner.
+CoRR, abs/2104.14690.
+Yaqing Wang, Subhabrata Mukherjee, Xiaodong Liu,
+Jing Gao, Ahmed Hassan Awadallah, and Jianfeng
+Gao. 2022c. List: Lite prompted self-training makes
+parameter-efﬁcient few-shot learners.
+In NAACL,
+pages 2262–2281.
+Yue Wang, Weishi Wang, Shaﬁq R. Joty, and Steven
+C. H. Hoi. 2021c. Codet5: Identiﬁer-aware uniﬁed
+pre-trained encoder-decoder models for code under-
+standing and generation. In EMNLP, pages 8696–
+8708. Association for Computational Linguistics.
+Jason Wei, Maarten Bosma, Vincent Y. Zhao, Kelvin
+Guu, Adams Wei Yu, Brian Lester, Nan Du, An-
+drew M. Dai, and Quoc V. Le. 2022. Finetuned lan-
+guage models are zero-shot learners. In ICLR. Open-
+Review.net.
+Liang Xu, Hai Hu, Xuanwei Zhang, Lu Li, Chenjie
+Cao, Yudong Li, Yechen Xu, Kai Sun, Dian Yu,
+Cong Yu, Yin Tian, Qianqian Dong, Weitang Liu,
+Bo Shi, Yiming Cui, Junyi Li, Jun Zeng, Rongzhao
+Wang, Weijian Xie, Yanting Li, Yina Patterson,
+Zuoyu Tian, Yiwen Zhang, He Zhou, Shaoweihua
+Liu, Zhe Zhao, Qipeng Zhao, Cong Yue, Xinrui
+Zhang, Zhengliang Yang, Kyle Richardson, and
+Zhenzhong Lan. 2020. CLUE: A chinese language
+understanding evaluation benchmark. In COLING,
+pages 4762–4772.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime G. Car-
+bonell, Ruslan Salakhutdinov, and Quoc V. Le. 2019.
+Xlnet: Generalized autoregressive pretraining for
+language understanding. In NeurIPS, pages 5754–
+5764.
+Elad Ben Zaken, Yoav Goldberg, and Shauli Ravfogel.
+2022. Bitﬁt: Simple parameter-efﬁcient ﬁne-tuning
+for transformer-based masked language-models. In
+ACL, pages 1–9. Association for Computational Lin-
+guistics.
+Susan Zhang, Stephen Roller, Naman Goyal, Mikel
+Artetxe, Moya Chen, Shuohui Chen, Christopher
+Dewan, Mona T. Diab, Xian Li, Xi Victoria Lin,
+Todor Mihaylov, Myle Ott, Sam Shleifer, Kurt Shus-
+ter, Daniel Simig, Punit Singh Koura, Anjali Srid-
+har, Tianlu Wang, and Luke Zettlemoyer. 2022a.
+OPT: open pre-trained transformer language models.
+CoRR, abs/2205.01068.
+Taolin Zhang, Chengyu Wang, Nan Hu, Minghui
+Qiu, Chengguang Tang, Xiaofeng He, and Jun
+Huang. 2022b. DKPLM: decomposable knowledge-
+enhanced pre-trained language model for natural lan-
+guage understanding. In AAAI, pages 11703–11711.
+AAAI Press.
+Zhengyan Zhang, Xu Han, Zhiyuan Liu, Xin Jiang,
+Maosong Sun, and Qun Liu. 2019.
+ERNIE: en-
+hanced language representation with informative en-
+tities. In ACL, pages 1441–1451.
+Zihao Zhao, Eric Wallace, Shi Feng, Dan Klein, and
+Sameer Singh. 2021.
+Calibrate before use: Im-
+proving few-shot performance of language models.
+In ICML, volume 139 of Proceedings of Machine
+Learning Research, pages 12697–12706. PMLR.

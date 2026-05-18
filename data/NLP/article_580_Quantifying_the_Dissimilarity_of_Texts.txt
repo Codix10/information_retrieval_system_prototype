@@ -1,0 +1,1862 @@
+Title: Quantifying the Dissimilarity of Texts
+Source URL: http://arxiv.org/abs/2305.02457v1
+--------------------------------------------------
+
+Quantifying the Dissimilarity of Texts
+Benjamin Shade and Eduardo G. Altmann
+School of Mathematics and Statistics, The University of Sydney, Sydney, NSW 2006, Australia
+Quantifying the dissimilarity of two texts is an important aspect of a number of natural language
+processing tasks, including semantic information retrieval, topic classiﬁcation, and document cluster-
+ing. In this paper, we compared the properties and performance of diﬀerent dissimilarity measures
+D using three diﬀerent representations of texts—vocabularies, word frequency distributions, and
+vector embeddings—and three simple tasks—clustering texts by author, subject, and time period.
+Using the Project Gutenberg database, we found that the generalised Jensen–Shannon divergence
+applied to word frequencies performed strongly across all tasks, that D’s based on vector embedding
+representations led to stronger performance for smaller texts, and that the optimal choice of ap-
+proach was ultimately task-dependent. We also investigated, both analytically and numerically, the
+behaviour of the diﬀerent D’s when the two texts varied in length by a factor h. We demonstrated
+that the (natural) estimator of the Jaccard distance between vocabularies was inconsistent and com-
+puted explicitly the h-dependency of the bias of the estimator of the generalised Jensen–Shannon
+divergence applied to word frequencies. We also found numerically that the Jensen–Shannon diver-
+gence and embedding-based approaches were robust to changes in h, while the Jaccard distance was
+not.
+I.
+INTRODUCTION
+Measuring the dissimilarity between texts quantita-
+tively is a key aspect of a number of prominent natu-
+ral language processing (NLP) tasks, including document
+matching [1], topic modelling [2], automatic question-
+answering [3], machine translation [4], and document
+clustering [5].
+It has also been used in a number of
+broader applications and empirical studies, with exam-
+ples ranging from the evaluation of the similarity and
+evolution of scientiﬁc disciplines [6, 7], to understanding
+user behaviour in social networks [8–10]. While a num-
+ber of surveys [11–14] highlight the plethora of available
+methods for capturing such dissimilarity, many studies
+and applications such as the ones above adopt only few
+dissimilarity measures (often only one), preventing them
+from providing useful comparisons and justiﬁcation of
+choices. Furthermore, research involving the quantitative
+comparison of multiple measures will typically focus on
+speciﬁc tasks [15–18], meaning that results are not gen-
+eralisable to other areas and applications. In addition,
+the widespread adoption of complex neural network and
+deep learning models for text representation has reduced
+interpretability, meaning that dissimilarity measures are
+often only evaluated based on numerical performance.
+These trends motivate us to explore the problem of text
+dissimilarity in a more holistic and task-agnostic manner.
+In order to obtain meaningful comparisons within
+this vast problem, we restrict our investigation to mea-
+sures D that are symmetric D(p, q) = D(q, p), positive
+D(p, q) ≥0, with D(p, q) = 0 ⇔p = q. This aligns
+with the deﬁnition of a particular class of dissimilarity
+functions called dissimilarity coeﬃcients [19]. We further
+limit our scope to measures that depend only on the two
+texts under consideration (i.e., D(p, q) is independent
+of the remaining corpus).
+This excludes, for instance,
+topic modelling approaches [20]. Our focus is on a com-
+parative study of the properties of diﬀerent dissimilarity
+measures D independent of speciﬁc tasks, since the choice
+of D underlies many diﬀerent applications, and for each
+application there are multiple measures that may be ap-
+propriate. It is also worth noting that the list of possible
+expressions of D used in our work is not intended to be
+exhaustive, and further investigation should involve the
+use of alternative functions.
+Measuring the dissimilarity of texts depends not only
+on the choice of D but also fundamentally on the choice
+of representation of the texts p and q. Since there are no
+explicit features in text, much work has aimed at devel-
+oping eﬀective text representations. Perhaps the simplest
+way to represent a text is through its vocabulary, the set
+of unique words present in the text. A second approach
+is the bag-of-words model [21], whereby grammar and
+word order are disregarded, and the text is represented
+as a word frequency distribution. Many empirical studies
+of natural language databases have found their vocabu-
+laries and word frequency distributions to exhibit cer-
+tain statistical regularities. One such property is Zipf’s
+law, which asserts that the rank-frequency distribution
+of words in a text can be modelled by a power law
+f(r) ∼r−γ,
+(1)
+where f(r) denotes the frequency of the rth most fre-
+quent word, and γ ≥1. A second useful regularity is
+Heaps’ law, which postulates that the number of unique
+words in a text, V , grows sublinearly as a power of the
+length of the text N as
+V ∼N β.
+(2)
+It has been shown that under certain assumptions,
+Heaps’ law can be interpreted as a direct consequence of
+the Zipﬁan rank-frequency distribution, where γ = 1/β
+[22].
+Recent developments in the area of text representation
+have generally involved the use of contextual information
+arXiv:2305.02457v1  [cs.CL]  3 May 2023
+2
+together with simple neural network models to obtain
+vector space representations of words and phrases [23–
+25]. These ideas have been extended to enable the learn-
+ing of semantic vector space representations of sentences
+or documents. Some popular early approaches include
+Doc2Vec [26], FastSent [27], and Word Mover’s Embed-
+ding [28]. Many more recent approaches are inspired by
+the transformer model [29], including Bidirectional En-
+coder Representations from Transformers (BERT) [30]
+and Generative Pre-trained Transformer (GPT) [31].
+In this paper,
+we consider three representations
+of texts—vocabularies, word frequency distributions,
+and dense vector embeddings. For each representation,
+we analyse and numerically evaluate a number of appro-
+priate dissimilarity measures. We obtain new analytical
+results about estimators of D and report on their depen-
+dence on both the length of documents N and on the
+proportional diﬀerence h in the length of the two texts.
+These results are expected to guide users on their choice
+of measures. While our analysis is far from exhaustive,
+both in terms of measures D and representations, it pro-
+vides a general framework and code repository that can
+be expanded to include new cases of interest.
+The paper is divided as follows.
+We start, in Sec-
+tion II, by introducing the dissimilarity measures D and
+the methods used for evaluating them in speciﬁc settings.
+In Section III, we show our analytical calculations on the
+statistical properties of estimators of D under a Zipﬁan
+bag-of-words model. The numerical results obtained us-
+ing the Project Gutenberg database are reported in Sec-
+tion IV. Finally, the discussion of our main ﬁndings ap-
+pears in Section V. Details of our calculations and data
+analysis pipeline appear as Appendices, and the code
+used for our analysis can be found in the repository [32].
+II.
+MATERIALS AND METHODS
+A.
+Dissimilarity Measures
+Suppose we have two texts, p and q. Let Sp and Sq
+denote the vocabularies, i.e., the sets of unique words
+of these two texts, respectively.
+A common approach
+for quantifying the dissimilarity between such sets is the
+Jaccard distance:
+DJ(Sp, Sq) = 1 −|Sp ∩Sq|
+|Sp ∪Sq|.
+(3)
+A potential drawback of the Jaccard distance is that it
+has no sensitivity to the relative sizes of the two sets being
+compared. Thus, we also considered a second measure,
+which we referred to as overlap dissimilarity:
+DO(Sp, Sq) = 1 −
+|Sp ∩Sq|
+min(|Sp|, |Sq|).
+(4)
+Here, the term being subtracted is often referred to as
+the overlap coeﬃcient [13].
+Next, we represented texts through their word fre-
+quency distributions. Let p = (p1, p2, ..., pM) and q =
+(q1, q2, ..., qM) denote two distributions, deﬁned over the
+same set of word tokens i = 1, 2, ..., M. Note that this
+does not necessarily imply that the vocabularies of p and
+q are identical—there may exist words j such that pj > 0
+but qj = 0, or vice versa. From an information theory
+perspective, a natural measure to quantify the dissimilar-
+ity between p and q is the Jensen–Shannon divergence
+(JSD) [33],
+DJS(p, q) = H
+p + q
+2
+
+−1
+2H(p) −1
+2H(q),
+(5)
+where H is the Shannon entropy [34]
+H(p) = −
+M
+X
+i=1
+pi log pi,
+(6)
+and p + q = PM
+i=1(pi + qi).
+The JSD has a number
+of properties that are useful for its interpretation as a
+distance. It is symmetric, non-negative, and equal to 0 if
+and only if p = q. Furthermore,
+p
+DJS(p, q) satisﬁes the
+triangle inequality and is thus a metric [35]. Additionally,
+the JSD between distributions p and q is equivalent to
+the mutual information of variables sampled from p and
+q. This means that DJS(p, q) is equal to the average
+amount of information in one randomly sampled word
+token about which of the two distributions it was sampled
+from [36].
+In this paper, we predominately considered a generali-
+sation of the JSD whereby H in Equation (6) is replaced
+by the generalised entropy of order α [37]
+Hα(p) =
+1
+1 −α
+ M
+X
+i=1
+pα
+i −1
+!
+.
+(7)
+This generalisation, ﬁrst introduced in Ref. [38], yields a
+spectrum of divergence measures Dα parameterised by α.
+When α = 1, we recover the usual Jensen–Shannon diver-
+gence DJS. As with DJS, we have that Dα(p, q) is non-
+negative. Furthermore,
+p
+Dα(p, q) is a metric for any
+α ∈(0, 2] [39]. When applied to word frequency distri-
+butions, increasing (decreasing) α increases (decreases)
+the weight given to the most frequent words in the cal-
+culation of the entropy (and thus the JSD) [36].
+Finally, we represented texts using document embed-
+dings, which we denoted by up and vq, respectively.
+The aim of all these approaches was to construct em-
+beddings of texts such that semantically similar texts
+were close to each other in the vector space.
+To do
+this, we used the open-access Sentence-BERT (SBERT)
+pretrained model [40]. Speciﬁcally, we used the general-
+purpose all-MiniLM-L6-v2 model, a ﬁne-tuned version of
+the Microsoft MiniLM-L12-H384-uncased model [41]. It
+maps to a 384-dimensional dense vector space and was
+tuned on 1.17B training pairs. We used a smaller model
+3
+TABLE I. Summary of dissimilarity measures described in Section II A. Sp, Sq denote vocabularies, p, q denote word frequency
+distributions, and up, vq denote vector embeddings.
+Representation
+Name
+Expression
+Vocabulary
+Jaccard distance
+DJ(Sp, Sq) = 1 −|Sp∩Sq|
+|Sp∪Sq|
+Overlap dissimilarity
+DO(Sp, Sq) = 1 −
+|Sp∩Sq|
+min(|Sp|,|Sq|)
+Word frequency
+Jensen–Shannon divergence of
+order α
+DJS(p, q) = H
+  p+q
+2
+
+−1
+2H(p) −1
+2H(q),
+Hα(p) =
+1
+1−α
+PM
+i=1 pα
+i −1
+
+Embedding
+Euclidean distance
+DE(up, vq) =
+pPn
+i=1(ui −vi)2
+Manhattan distance
+DM(up, vq) = Pn
+i=1 |ui −vi|
+Angular distance
+DA(up, vq) = 1
+π arccos
+
+up·vq
+||up|| ||vq||
+
+to reduce computation time, but we encourage the appli-
+cation of our techniques and code to larger and more com-
+plex embedding approaches. One alternative approach
+that would be of particular interest is the Longformer
+model [42].
+An unfortunate shortcoming of pretrained models is
+that there is a limit on the size of the text that can be
+embedded.
+The all-MiniLM-L6-v2 model has a maxi-
+mum sequence length of 256 word tokens. To create an
+embedding of the whole text, we divided the text into
+consecutive sequences each of length 256 and computed a
+vector embedding of each sequence independently. These
+embeddings were then combined using mean pooling,
+whereby we took the elementwise average of all the vec-
+tors.
+When evaluating dissimilarity using these dense em-
+beddings, we can utilise typical methods for quantifying
+distance between ﬁnite-dimensional vectors. In particu-
+lar, we examine the Euclidean distance, Manhattan (taxi-
+cab) distance, and angular distance, which is deﬁned as
+the arccosine of the cosine similarity of two vectors, nor-
+malised by π to bound values between 0 and 1.
+The dissimilarity measures introduced in this section
+and used in this paper are summarised in Table I.
+B.
+Data, Preprocessing, and Analysis
+For our numerical analysis, we used the Project Guten-
+berg (PG) database [43], an online library of over
+60,000 copyright-free eBooks that has been used for
+the statistical analysis of language for three decades.
+Speciﬁcally, we used the Standardised Project Guten-
+berg Corpus (SPGC) [44] and repository [45], created
+by M. Gerlach and F. Font-Clos and described as “an
+open science approach to a curated version of the com-
+plete PG database”.
+The particular version of the
+PG corpus used in our research contained 55,905 books,
+and was last updated on 18 July 2018. For reproducibil-
+ity purposes, these data are available for download at
+https://doi.org/10.5281/zenodo.2422560.
+A detailed description of metadata, ﬁltering, and pre-
+processing can be found in Appendix VI A.
+An im-
+portant limitation of the metadata is that they do not
+include the year of the ﬁrst publication of each book.
+As done in Ref. [44], we approximated this value by as-
+suming that all authors published their books after the
+age of 20 and before their death. More speciﬁcally, we
+said a book was published in the year t if the author’s
+year of birth satisﬁed tbirth + 20 < t and the author’s
+year of death satisﬁed t < tdeath.
+Each text in the PG corpus has three key features that,
+among many others, will aﬀect its content and construc-
+tion, namely, author, subject, and the time period in
+which it was written. As a result, we can expect that any
+reasonable dissimilarity measure should, in some way, re-
+ﬂect these diﬀerences. Thus, we can evaluate the perfor-
+mance of our dissimilarity measures by determining how
+well they distinguish between books in the same group—
+i.e., same author, same subject, or same time period—
+and books in a diﬀerent group.
+Suppose we take a subcorpus of books and, using one
+of our dissimilarity measures, compute all dissimilarity
+scores between pairs of books of the same group (same au-
+thor, same subject, or same time period). These “within-
+group” values form a distribution, which we denote by the
+random variable X. In a similar manner, let Y be a ran-
+dom variable denoting the distribution of all the pairwise
+“between-group” dissimilarity values. If the measure is
+capturing dissimilarity between texts in diﬀerent groups
+eﬀectively, then we would expect the within-group scores
+to be generally smaller than the between-group scores
+(this intuition is validated by the analysis in Ref. [44]).
+Thus, we quantiﬁed the extent to which the dissimilar-
+ity measure depends on the grouping under consideration
+by computing
+P(X < Y ) ≡probability that a within-group pair has
+smaller D than a between-group pair.
+(8)
+Note that 0 ≤P(X < Y ) ≤1, P(X < Y ) = 0.5 in the
+case when D is independent of the grouping, and larger
+values of P(X < Y ) correspond to better performance
+(stronger separation, i.e., less overlap, between the dis-
+tributions X and Y ). The use of P(X < Y ) to evaluate
+4
+TABLE II. Summary of analytical results for the Jensen–Shannon divergence, where h∗denotes the critical value of h for which
+the bias of Dα is minimised. See Appendix VI D for a full derivation.
+Range
+Bias[Dα(ˆp, ˆq)]
+h∗
+α > 1 + 1/γ
+cα
+2N
+
+1
+2h + 1
+2 −
+1
+h+1
+
+1 +
+√
+2
+α < 1 + 1/γ
+cα
+2
+
+N −α+1/γ 
+1
+2h−α+1/γ + 1
+2 −(h + 1)−α+1/γ
+2
+γ
+1−γ−αγ
+1−2
+γ
+1−γ−αγ
+the dissimilarity measures is equivalent to formulating
+the problem as a binary classiﬁcation task (Do two given
+texts belong to the same group?) and using the area under
+a receiver operating characteristic (ROC) curve as a per-
+formance score for D. For a full derivation of the relation-
+ship between the two formulations, see Appendix VI B.
+Thus, we created 30 subcorpora, 10 for each task (au-
+thor, subject, and time period).
+Each subcorpus con-
+sisted of 1000 randomly sampled pairs of same-group
+books, and 1000 pairs of diﬀerent-group books. For each
+dissimilarity measure, the quantity P(X < Y ) was com-
+puted on each of the 30 subcorpora.
+The results of
+this analysis are presented and interpreted in Section IV,
+and details about the speciﬁc texts present in each sub-
+corpus are available in our repository [32].
+III.
+ANALYTICAL RESULTS
+Suppose that texts p and q have lengths Np and Nq,
+respectively, where Np ̸= Nq. We are interested in exam-
+ining how this diﬀerence in text length aﬀects the mea-
+sures described in Section II A.
+Now, from an information theory perspective, we say
+that p and q are actually ﬁnite-size realisations of the
+generative processes P and Q underlying the construc-
+tion of the two texts [46]. Speciﬁcally, we say that P
+and Q correspond to independent sampling from a Zip-
+ﬁan power law distribution. Thus, in this section, we let
+ˆp and ˆq denote ﬁnite-size samples from this generative
+process. As a result, we have that D(ˆp, ˆq) is a ﬁnite-size
+estimator of the dissimilarity of the underlying generative
+processes, D(P , Q).
+We investigated how the size of the samples ˆp and
+ˆq, and the relative diﬀerence in their sizes, aﬀected the
+estimation of D(P , Q). More formally, let Nˆq = N and
+Nˆp = hN, where h is a positive constant not equal to
+one. Without loss of generality, we assumed that h > 1,
+i.e., that Nˆp > Nˆq.
+A.
+Jaccard Distance
+By approximating the vocabulary size using Heaps’ law
+ V ∼N β
+, we obtained the following inequality (see Ap-
+pendix VI C for details):
+hβ −1
+hβ + 1 ≤DJ(Sˆp, Sˆq) ≤1.
+(9)
+Thus, we found that the Jaccard distance DJ(Sˆp, Sˆq)
+was bounded from below by an increasing function of h.
+For simplicity, we denote this function by g,
+g(h) = hβ −1
+hβ + 1 = 1 −
+2
+hβ + 1
+(10)
+We see that g(1) = 0, and that g(h) →1 as h →∞.
+Interestingly, g(h) is not dependent on N. This tells us
+that the lower bound of the estimator DJ(Sˆp, Sˆq) is not
+aﬀected by the lengths of the two texts, but only their
+proportional diﬀerence in length.
+In addition, we see that this lower bound makes
+DJ(Sˆp, Sˆq) an inconsistent estimator of DJ(SP , SQ).
+Suppose that P = Q, i.e., that the two texts ˆp and ˆq
+were sampled from the same underlying generative pro-
+cess. For DJ(Sˆp, Sˆq) to be consistent in this case, a nec-
+essary but not suﬃcient condition is that DJ(Sˆp, Sˆq) →
+DJ(SP , SQ) = 0, since DJ(SP , SQ) = DJ(SP , SP ) = 0.
+However, g(h) > 0 if h > 1, implying that DJ(Sˆp, Sˆq) >
+0. Hence, if the two texts are of unequal lengths, the es-
+timator DJ(Sˆp, Sˆq) is strictly larger than zero, even if
+the underlying generative processes are identical and
+N →∞. Thus, DJ(Sˆp, Sˆq) is not a consistent estimator
+of the underlying D = 0 dissimilarity of the vocabularies.
+The overlap dissimilarity is not restricted by such a
+bound. It is straightforward to show that DO(Sˆp, Sˆq) = 0
+if either Sˆp ⊆Sˆq or Sˆq ⊆Sˆp, and that DO(Sˆp, Sˆq) = 1
+if Sˆp and Sˆq are disjoint.
+B.
+Jensen–Shannon Divergence
+In Ref. [47], the bias of the estimator D(ˆp, ˆq) is com-
+puted for texts of identical length.
+We extended this
+analysis by generalising it to allow for unequal sample
+sizes (speciﬁcally, when Nˆq = N and Nˆp = hN, as stated
+previously).
+As in Ref. [47], we see that the expression of the bias
+varies depending on whether α is larger or smaller than
+1+1/γ (recall that γ is the exponent of the Zipﬁan word-
+frequency distribution). In both cases, we found that the
+bias was a decreasing function of h when h ∈(1, h∗),
+and increasing when h > h∗. This means that for a ﬁxed
+N, there exists an optimal relation between text lengths,
+h∗, for which the bias is minimised. The bias formula-
+tions and corresponding h∗values are displayed in Ta-
+ble II, with a full derivation presented in Appendix VI D.
+5
+TABLE III. Performance of vocabulary dissimilarity measures. The quantity P(X < Y ) is displayed for each measure, and the
+given p-values are from paired t-tests and are two-sided.
+Task
+Jaccard
+Overlap
+p-Value
+Author
+0.796 ± 0.013
+0.670 ± 0.007
+2.656 × 10−9
+Subject
+0.633 ± 0.013
+0.504 ± 0.012
+7.153 × 10−8
+Time period
+0.595 ± 0.009
+0.478 ± 0.007
+9.227 × 10−10
+From the above formulations, we can also observe
+how the bias decays as the text length N
+grows.
+When α > 1 + 1/γ, the decay of the bias is 1/N,
+and Bias[Dα(ˆp, ˆq)] →0 as N →∞. When 1/γ < α <
+1 + 1/γ, the bias again decays to zero, but does so sub-
+linearly.
+Finally, when α < 1/γ, the bias diverges as
+N →∞, and thus, the estimator Dα(ˆp, ˆq) also diverges.
+IV.
+NUMERICAL RESULTS
+We begin with a numerical performance comparison of
+our dissimilarity measures, before conducting an investi-
+gation into the eﬀect of varying text lengths.
+A.
+Numerical Performance Comparison
+1.
+Vocabularies
+We compared the Jaccard distance and overlap dissim-
+ilarity, and found that the Jaccard distance led to signiﬁ-
+cantly higher P(X < Y ) values in all three tasks (p-value
+< 10−7, using two-sided paired t-tests). Based on these
+results, we chose to focus on the Jaccard distance in the
+subsequent analysis. These results are displayed in Ta-
+ble III.
+2.
+Word Frequencies
+Since the choice of parameter α in the generalised
+Jensen–Shannon divergence aﬀects how diﬀerent fre-
+quency ranges are weighted, we sought to identify which
+value optimised performance across our three tasks. Fig-
+ure 1a–c show the performance of the generalised JSD
+across the parameter space α ∈[0, 2] for each of our three
+tasks. All three plots indicate a clear global maximum,
+at α = α∗= 0.65 for the author task, α∗= 0.6 for sub-
+jects, and α∗= 0.8 for time periods. The curves also
+exhibit largely similar structure, with the main notable
+exception being the emergence of a second, local maxi-
+mum in the region α ∈[1.4, 2] for some iterations of the
+subject task evaluation. Figure 1d compares the perfor-
+mance between tasks.
+It is worth noting the diﬀerence in performance be-
+tween the optimal α values, denoted by α∗, and the
+value α = 1, which recovers the standard JSD in Equa-
+tion (5). Table IV provides the p-values for the paired
+t-tests between the P(X < Y ) calculations for the two
+α values. When using the Bonferroni adjusted thresh-
+old 0.05/3 = 1.6 × 10−2, we see that all three results
+are signiﬁcant, acknowledging that the signiﬁcance for
+the time period task is marginal. These results indicate
+the value of considering entropies other than the pop-
+ular and widely used Shannon entropy when using the
+Jensen–Shannon divergence, as it may potentially lead
+to improved performance depending on the application.
+A surprising result in the above analysis is that the
+optimal performance occurred at very similar values of
+the parameter α.
+We might have expected that dif-
+ferent ranges on the frequency spectrum would have
+been emphasised for the diﬀerent tasks.
+For example,
+the distribution of high-frequency words may have indi-
+cated stylometry and thus authorship variations, while
+low-frequency keywords may have been more useful for
+distinguishing between subjects. Our results, however,
+suggest that in general, penalising common words and
+emphasising low-frequency words improves our ability
+to distinguish between documents.
+This aligns with
+Ref. [24], where the authors found that subsampling com-
+mon words led to practical beneﬁts, including acceler-
+ated model learning and an improved accuracy of the
+learned vectors of rare words. Their heuristic subsam-
+pling strategy—Equation (5) in Ref. [24]—resulted in
+an eﬀective reduction of the diﬀerence between the fre-
+quency of words, with words with frequency f appear-
+ing with frequency proportional to √f after subsampling.
+This is eﬀectively what is achieved using JSD with α < 1
+(with α = 0.5 reproducing their square-root heuristic)
+and our ﬁnding of α∗< 1 can be seen as an information-
+theoretic justiﬁcation for this proposed heuristic.
+Another possible explanation for the position of α∗
+is the inﬂuence of the critical value of α discussed in
+Ref. [46].
+There, it is shown that if word frequencies
+follow Zipf’s law, then for all α < αc = 1/γ, Hα and
+Dα diverge as the vocabulary size increases. When us-
+ing the parameter estimates found in Ref. [48], we ob-
+tained αc ≈1/1.77 ≈0.56, which was close to our op-
+timal α∗values. Due to the ﬁnite number of words in
+our database, we could not increase the vocabulary size
+without bound, and thus we did not empirically observe
+Hα, Dα →∞. However, there was still a ﬁnite-size eﬀect
+that depended on the lengths of the texts being used,
+and this may have been inﬂuencing our results.
+A third factor potentially causing the surprising sim-
+ilarity between our optimal α values is a confounding
+between the three diﬀerent features—author, subject,
+6
+0.0
+0.5
+1.0
+1.5
+2.0
+α
+0.7
+0.8
+0.9
+P(X < Y )
+a
+Author
+0.0
+0.5
+1.0
+1.5
+2.0
+α
+0.55
+0.60
+0.65
+0.70
+P(X < Y )
+b
+Subject
+0.0
+0.5
+1.0
+1.5
+2.0
+α
+0.50
+0.52
+0.54
+0.56
+0.58
+P(X < Y )
+c
+Time
+0.0
+0.5
+1.0
+1.5
+2.0
+α
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+P(X < Y )
+d
+Author
+Subject
+Time
+FIG. 1. Performance P(X < Y ) (Equation (8)) of the Jensen–Shannon divergence for diﬀerent values of the parameter α
+(as deﬁned in Equation (7)).
+(a–c) Results for author, subject, and time period tasks, respectively.
+Each line shows the
+performance obtained on a unique subcorpus, see Section II B for details. (d) Performance comparison between tasks, with the
+lines indicating average performance across the 10 subcorpora and shaded regions indicating standard error.
+TABLE IV. Performance comparison of the generalised JSD for α = 1 and α = α∗. The quantity P(X < Y ) is displayed for
+each measure, and the given p-values are from paired t-tests and are two-sided.
+Task
+JSD, α = 1
+JSD, α = α∗
+p-Value
+Author
+0.8288 ± 0.0035
+0.8743 ± 0.0038
+1.901 × 10−10
+Subject
+0.6408 ± 0.0038
+0.6749 ± 0.0048
+1.862 × 10−5
+Time period
+0.5664 ± 0.0030
+0.5712 ± 0.0026
+1.630 × 10−2
+and time period. To investigate this, we repeated our
+analysis on controlled subcorpora that sought to miti-
+gate confounding. For the author task, each corpus was
+limited to one subject within a 50-year period. For distin-
+guishing between subjects, we again limited to a 50-year
+period, and for the time period tasks, we restricted the
+corpora to one subject (see our repository [32] for further
+details about these ﬁltered subcorpora). We found that
+controlling the subcorpora led to a much greater vari-
+ability in the curves of α against P(X < Y ), with local
+maximums occurring at diﬀerent points on the α spec-
+trum. Importantly, however, we found that when we av-
+eraged over our 10 subcorpora, the peaks were very close
+to those we computed on the uncontrolled corpora. We
+found that for the author task, the maximum occurred
+at α∗= 0.7, while the strongest performance for both
+the subject and time period tasks was at α∗= 0.6.
+3.
+Embeddings
+Across all three tasks, the diﬀerence in performance
+between the Euclidean and Manhattan distances was not
+statistically signiﬁcant, with p-value > 0.3 for all three
+paired t-tests.
+The angular distance led to a stronger
+performance in the author and subject tasks, and this
+improvement was statistically signiﬁcant (p-value < 10−5
+for comparisons with both Manhattan and Euclidean dis-
+tances).
+Conversely, the angular distance resulted in
+a signiﬁcantly reduced performance in the time period
+task (p-value < 10−3 when comparing with either Man-
+hattan or Euclidean distance). Thus, we conclude that
+the angular distance is the optimal distance measure
+7
+TABLE V. Performance comparison of vector embedding approaches. The quantity P(X < Y ) is displayed for each measure,
+and the given p-values are from paired t-tests and are two-sided.
+Task
+Euclidean
+Manhattan
+Angular
+Author
+0.8448 ± 0.0026
+0.8447 ± 0.0026
+0.8599 ± 0.0025
+Subject
+0.6847 ± 0.0042
+0.6846 ± 0.0043
+0.6966 ± 0.004
+Time period
+0.5354 ± 0.0034
+0.5357 ± 0.0034
+0.5293 ± 0.0035
+TABLE VI. Two-sided, paired t-tests comparing the performance of embedding distance measures.
+Task
+Metric Pair
+p-Value
+Euclidean–Manhattan
+0.3185
+Author
+Angular–Manhattan
+1.316 × 10−8
+Angular–Euclidean
+2.002 × 10−8
+Euclidean–Manhattan
+0.4101
+Subject
+Angular–Manhattan
+4.065 × 10−6
+Angular–Euclidean
+3.110 × 10−6
+Euclidean–Manhattan
+0.3221
+Time period
+Angular–Manhattan
+2.202 × 10−4
+Angular–Euclidean
+3.972 × 10−4
+for distinguishing between both authors and subjects.
+The Manhattan distance was optimal for the time pe-
+riod task, but its average performance increase over the
+Euclidean distance was marginal (0.5357 ± 0.0034 com-
+pared to 0.5354±0.0034). The full results can be found in
+Table V, and the p-values described above are available
+in Table VI.
+4.
+Overall Comparison
+Figure 2 displays the performance of the optimal mea-
+sures for each representation across our three tasks. Here,
+we see that the generalised Jensen–Shannon divergence
+with optimal parameter α = 0.65 had the strongest
+performance when distinguishing between texts written
+by diﬀerent authors.
+Furthermore, the diﬀerence in
+performance between the optimal JSD and the second-
+strongest dissimilarity measure, the angular distance,
+was statistically signiﬁcant (p = 2.951 × 10−4).
+The
+Jaccard distance, which compares vocabularies, showed
+the weakest performance. It is perhaps surprising that a
+measure based on the simple bag-of-words model outper-
+formed those based on vector embeddings. This suggests
+that the choices of words and their usage throughout a
+text are particularly useful for identifying stylistic dif-
+ferences between authors. It may also suggest that our
+vector embeddings were not fully capturing certain struc-
+tural aspects of the texts that may be helpful for distin-
+guishing between authors. Furthermore, we see that just
+comparing vocabularies is not suﬃcient; we also need to
+understand the distribution of those words throughout
+the text.
+When evaluating the ability of our measures to dis-
+tinguish between subjects, we see that the approaches
+based on vector embeddings were the strongest perform-
+ers. This advantage over the second-strongest performer,
+the JSD with optimal parameter α = 0.6, was again sta-
+tistically signiﬁcant (p = 6.665×10−4). As in the author
+task, we see that the measures based on vocabularies
+had the weakest performance. It is worth noting, how-
+ever, that the average performance of the Jaccard dis-
+tance (0.6326 ± 0.0041) was not far below that of the
+standard JSD (0.6408 ± 0.0038). The diﬀerence between
+them was still statistically signiﬁcant (p = 1.306×10−3),
+but this signiﬁcance was marginal if we adjusted for mul-
+tiple testing. Thus, we see that the embedding approach
+was the best approach for capturing textual diﬀerences
+between subjects. Clearly, a better representation of the
+semantic meaning of a text, rather than just the chosen
+words, leads to an improved ability to identify topical
+diﬀerences. Furthermore, vector embeddings are able to
+identify words and phrases that are synonymous, while
+the bag-of-words model cannot.
+Rather surprisingly, the Jaccard distance had the
+strongest performance when distinguishing between time
+periods, despite its relative simplicity.
+Furthermore,
+the diﬀerence in performance between the Jaccard dis-
+tance and the second-strongest measure, the JSD with
+α
+=
+0.8, was highly signiﬁcant, with a p-value of
+5.374 × 10−8. The measures based on vector embeddings
+performed relatively poorly and were only just above the
+baseline of 0.5.
+Languages change, develop, and grow
+over time, so it is reasonable to expect that the vocabu-
+lary of a text written today will diﬀer from that of one
+written 200 years ago. What is surprising in these re-
+sults, however, is that the JSD, which captures both
+vocabularies and word frequencies, underperformed the
+Jaccard distance. The poor performance of the embed-
+ding approaches suggests that while language may change
+8
+Jaccard
+JSD, α = 0.65
+Angular
+Jaccard
+JSD, α = 0.6
+Angular
+Jaccard
+JSD, α = 0.8
+Manhattan
+0.50
+0.55
+0.60
+0.65
+0.70
+0.75
+0.80
+0.85
+0.90
+P(X < Y )
+Author
+Subject
+Time period
+Vocabulary
+Word frequency
+Embedding
+FIG. 2. Performance P(X < Y ) (Equation (8)) of strongest measures for each text representation across the three tasks.
+The optimal measures for each text representation (vocabulary, word frequency, and embedding) and task (author, subject,
+time) are identiﬁed in Section IV A 4. The boxplots show the distribution of P(X < Y ) values for the 10 subcorpora.
+over time, similar ideas and topics are being conveyed,
+and thus semantic meaning is not as useful for identify-
+ing temporal diﬀerences.
+Additionally, Figure 2 visualises the inherent diﬃculty
+of each of our three tasks. Distinguishing between au-
+thors was the easiest of the three, with performance val-
+ues typically ranging between 0.75 and 0.9. By compar-
+ison, it was very challenging for any of our dissimilarity
+measures to distinguish eﬀectively between books written
+in diﬀerent time periods. For this task, P(X < Y ) rarely
+exceeded 0.6, and was typically close to the baseline of
+0.5. This underperformance is likely due to the overlap
+between the time periods caused by our estimation of the
+publication date. For the task of distinguishing between
+diﬀerent subjects, we see that P(X < Y ) typically lay
+between 0.6 and 0.75.
+B.
+Dependence on Text Length
+We ﬁrst observed the impact of text length on perfor-
+mance, with the aim of determining the optimal measure
+for particular ranges of N. For each task, we selected the
+optimal dissimilarity measure for each of the three text
+9
+101
+102
+103
+104
+105
+N
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+P(X < Y )
+a
+Author
+Vocabulary
+Word frequency
+Embedding
+101
+102
+103
+104
+105
+N
+0.4
+0.5
+0.6
+0.7
+P(X < Y )
+b
+Subject
+101
+102
+103
+104
+105
+N
+0.4
+0.5
+0.6
+P(X < Y )
+c
+Time period
+FIG. 3. Performance P(X < Y ) (Equation (8)) of our optimal measures as a function of text length N. (a) Author task; (b)
+subject task; (c) time period task. The optimal measures for each representation and task are identiﬁed in Section IV A 4 and
+displayed in Figure 2. The solid lines indicate average performance across the 10 subcorpora, and the shaded regions indicate
+standard error. The dashed lines indicate the average performance of these measures computed using the original texts (see
+Section IV A), and the grey line indicates the performance baseline of 0.5. In each iteration, texts were resampled to a ﬁxed
+length N before computing P(X < Y ).
+representations—vocabularies, word frequencies and em-
+beddings. For details of which measures were selected,
+refer to Section IV A.
+In Figure 3, we see that in both the author and subject
+tasks, the embedding approach led to a stronger perfor-
+mance for small text lengths, i.e., when N ∈[101, 103].
+Thus, while our vocabulary or frequency measures may
+be appropriate for quantifying dissimilarity between large
+texts such as books, embedding approaches are more suit-
+able for comparing short texts such as tweets or articles.
+Interestingly, in both the author and subject tasks,
+the performance of the Jaccard distance appeared to peak
+at around N = 104. When generating a sample of size
+N, we generally expect to sample words that have fre-
+quency 1/N or greater. Thus, when resampling vocab-
+ularies, N is eﬀectively a frequency cutoﬀ—words with
+frequency greater than 1/N are likely to enter the vo-
+cabulary, while those with frequency less than 1/N likely
+will not. The peaks in our results seem to suggest that
+there exists an optimal N ∗such that if we only include
+10
+words in our vocabulary with a frequency greater than
+1/N ∗, our performance will be maximised.
+The results on the time period task were less conclu-
+sive. We see that there was no clear optimal approach
+when comparing small texts.
+Importantly, the perfor-
+mance of all three approaches was very close to the base-
+line of 0.5. While this may indicate the innate diﬃcultly
+of distinguishing between time periods when comparing
+small texts, it is likely also resulting from our approxi-
+mation of publication date.
+C.
+Impact of Unequal Text Length
+From Figure 4, we see that the JSD and embedding-
+based approaches were robust against unbalanced text
+lengths, with performance remaining almost unchanged
+across all chosen h values (recall from Section III that
+Nq = N and Np = hN). The ﬁnding regarding the JSD
+may be connected to the bias computed analytically in
+Section III B—while the bias is dependent on h, it is neg-
+ligible for large values of N, and thus the impact of un-
+balanced text length should be minimal. In contrast, the
+Jaccard distance was not robust, with all three represen-
+tations showing a decreasing performance with increasing
+values of h. Again, this may be related to our analytical
+result in Section III A regarding the lower bound of the
+Jaccard distance. Due to this bound, books that vary
+signiﬁcantly in text length will receive high dissimilarity
+scores regardless of how fundamentally diﬀerent they are,
+which in turn will inﬂuence the calculation of P(X < Y ).
+However, in both cases, further investigation is required
+to fully establish causality.
+Now, a possible way to extend the Jensen–Shannon
+divergence to account for unequal text lengths is by giv-
+ing diﬀerent weightings to the two distributions being
+compared [33, 47]. Speciﬁcally, we say
+Dα(p, q) = Hα(π(p)p + π(q)q) −π(p)Hα(p) −π(q)Hα(q),
+(11)
+where π(p) = Np/(Np + Nq) and π(q) = Nq/(Np + Nq)
+(recall that Np and Nq denote the lengths of texts p
+and q, respectively). We found, however, that the use of
+these weightings led to a decreased performance across
+all α ∈[0, 2] for all three tasks. This result is likely ex-
+plained by the variability in text length in our PG data;
+if Np ≫Nq, then π(p) ≈1 and π(q) ≈0, meaning that
+Dα(p, q) ≈0. Thus, when comparing a large text with
+a comparatively small text, the weighted JSD will ap-
+proach zero regardless of how diﬀerent the two word fre-
+quencies are.
+V.
+DISCUSSION
+A number of key results emerged from our numerical
+performance comparison of the chosen dissimilarity mea-
+sures. One such observation was the consistently strong
+performance of the Jensen–Shannon divergence (JSD)
+across the three tasks. Importantly, we saw an improve-
+ment in performance over the standard JSD when using
+the generalised divergence Dα based on the α-entropy
+(see Equation (7)), with the best results in all three
+tasks obtained when α ∈[0.6, 0.8].
+As with the stan-
+dard JSD (recovered when α = 1), Dα can be written
+as a sum over word types, thus providing a clear inter-
+pretation of the dissimilarity between texts. Other po-
+tentially important aspects of this family of dissimilarity
+measures are that they satisfy the triangular inequality
+for α ∈[0, 2] [39], and that the properties of their esti-
+mators can be computed explicitly for the simple bag-
+of-words process, as done previously in Ref. [47] and ex-
+tended here for the case of texts with diﬀerent lengths.
+Further studies, particularly into how the parameter α
+weights particular groups of words on the word frequency
+spectrum, are needed to fully understand the appropri-
+ateness of diﬀerent parameter choices for particular tasks
+and to interpret our ﬁnding that α < 1 is typically pre-
+ferred (higher weight to low-frequency words [36]).
+Ultimately, the choice of dissimilarity measure depends
+on the task, the texts being compared, the statistical and
+mathematical properties of the measures and their esti-
+mators, and the extent to which it is important to have
+interpretable dissimilarity measures. For instance, while
+the Jaccard distance between vocabularies is arguably
+the measure with the simplest interpretation, we found
+analytically and empirically that the eﬀectiveness of the
+Jaccard distance was hindered when the two texts var-
+ied signiﬁcantly in length (while, in contrast, the gener-
+alised JSD and embedding-based distances were all ro-
+bust). Focusing only on performance, the results we ob-
+tained indicate that the optimal dissimilarity measure is
+task-dependent, with all three approaches—vocabularies,
+word frequency distributions, and vector embeddings—
+exhibiting optimal performance on a particular task.
+In addition, the length of texts in the corpus must be
+considered; measures based on vector embeddings con-
+sistently outperformed other approaches on small texts,
+with a likely explanation for this being that small sam-
+ples were not suﬃciently representative of the underly-
+ing vocabularies or word frequency distributions. When
+deciding on the appropriateness of a particular mea-
+sure for research or application, one should weigh up
+the performance increase of embedding approaches with
+the more limited interpretability and control of statisti-
+cal properties when compared to vocabulary and word
+frequency techniques.
+Further research in this area would involve extending
+our analysis to other dissimilarity measures, and explor-
+ing additional properties, both analytically and numeri-
+cally, of such measures. Through this more holistic and
+standardised approach, researchers may gain a better un-
+derstanding of why particular measures are suitable for
+certain tasks, as well as which measures are most appli-
+cable for new and emerging NLP areas. Our work may
+also help to inform decisions made by industry or other
+11
+2
+4
+6
+8
+10
+h
+0.6
+0.7
+0.8
+0.9
+P(X < Y )
+a
+Jaccard distance
+Author
+Subject
+Time
+2
+4
+6
+8
+10
+h
+0.6
+0.7
+0.8
+0.9
+P(X < Y )
+b
+Vector embedding
+2
+4
+6
+8
+10
+h
+0.6
+0.7
+0.8
+0.9
+P(X < Y )
+c
+Jensen-Shannon (α = 1)
+2
+4
+6
+8
+10
+h
+0.6
+0.7
+0.8
+0.9
+P(X < Y )
+d
+Jensen-Shannon (α = α∗)
+FIG. 4. Impact of h parameter (proportional diﬀerence in text length) on performance P(X < Y ) (Equation 8)) of dissimilarity
+measures. (a) Jaccard distance; (b) optimal embedding measure for each representation; (c) standard JSD based on Shannon
+entropy; (d) generalised JSD with α = α∗. For each dissimilarity calculation, one text is resampled to length N, and the other
+to length hN, where N = 10,000 is ﬁxed. The solid lines indicate average performance across the 10 subcorpora, and the
+shaded regions indicate standard error.
+users who may not have the time or resources to conduct
+extensive comparisons.
+ACKNOWLEDGMENTS
+We are grateful to Martin Gerlach for insightful sug-
+gestions.
+VI.
+APPENDICES
+A.
+Metadata, Filtering and Preprocessing
+The SPGC provides the PG corpus on three diﬀerent
+levels of granularity: raw text, time series of word tokens,
+and counts of individual words [44]. Texts are tokenized
+using the “TreebankWordTokenizer” from the Natural
+Language Toolkit (NLTK) [49]. Only tokens consisting of
+alphabetic characters are kept, meaning that words con-
+taining numbers or other symbols are removed. While
+this processing removes any mentions of numerical ob-
+jects such as years or ages, it is done to ensure that page
+and chapter numbers are not erroneously included. Ad-
+ditionally, all tokens are lowercased, as this ensures that
+words capitalised after full stops or within dialogues are
+not considered diﬀerent words to their standard lower-
+case forms.
+PG also provides useful metadata on the texts in the
+corpus. These metadata provide the title and language
+of the book, as well as the author’s name, their year
+of birth, and their year of death. It also indicates the
+number of times that a text has been downloaded from
+the PG website, which in our case was correct as of 18
+July 2018. Furthermore, the metadata contain two sets
+of manually annotated topical labels for each text: “sub-
+ject” labels and “bookshelf” labels. The subject labels
+were obtained from the Library of Congress Classiﬁcation
+(LCC) or Subject Headings (LCSH) thesauri [50], while
+the bookshelf labels were created by PG volunteers [43].
+For ease of interpretation and application, we decided
+to only use English texts in our analysis. To ensure the
+quality and relevance of the texts used in the analysis,
+we only included books that were published after 1800,
+and that had been downloaded at least 20 times. Fur-
+thermore, since we wished to use the subject, author’s
+12
+year of birth, and author’s year of death variables in our
+analysis, any rows with null values in these columns were
+removed. The resulting corpus consisted of 13,524 books,
+containing approximately 1.05 × 109 word tokens.
+B.
+Connecting P (X < Y ) to ROC Curves
+We provide a useful link between our performance
+measure P(X < Y ) and receiver operating character-
+istic (ROC) curves. To see this, we consider the task of
+separating the distributions X and Y as described ear-
+lier but reformulate it as a binary classiﬁcation prob-
+lem. Given a pair of texts, we compute the dissimilarity
+and use a threshold to predict whether those texts come
+from the same group or diﬀerent groups.
+If the score
+is below the threshold, we classify it as a within-group
+value, and if it is above, we label it a between-group
+value.
+If the dissimilarity measure was able to perfectly diﬀer-
+entiate between within-group pairwise comparisons and
+between-group comparisons, then all X values would be
+smaller than all Y values, and the distributions of X and
+Y would not overlap. In this optimal case, the threshold
+for classiﬁcation would lie between the two distributions.
+However, when our measure cannot perfectly discrimi-
+nate between the two distributions, they overlap, and the
+optimal threshold value is not obvious. An ROC anal-
+ysis can be used to not only locate this optimal thresh-
+old but also provide an overall performance evaluation
+across a range of thresholds.
+In an ROC analysis, we
+iterate over possible threshold values, and for each one
+compute the sensitivity (true positive rate, or TPR) and
+speciﬁcity (true negative rate, or TNR) of the resulting
+classiﬁcation model.
+In our case, the “positives” were
+the within-group values X, and the “negatives” were the
+between-group values Y .
+ROC curves plot TPR against 1−TNR and convey the
+trade-oﬀbetween TPR and TNR for diﬀerent choices
+of the threshold value. The shape and position of the
+curve indicates the overall performance of the metric—
+the closer the curve is to the top-left corner, the better
+the metric is at discriminating between the within-group
+and between-group dissimilarity values. The line TPR
+= 1−TNR represents the baseline model, whereby we
+are simply ﬂipping a coin to decide whether to classify
+samples as a within-group or between-group value.
+The overall performance of the classiﬁcation model can
+be quantiﬁed by computing the area under the ROC
+curve (AUC). An area of 1 represents perfect separation
+between X and Y , while 0.5 is the expected area if the
+distributions overlapped completely.
+To establish the connection between P(X < Y ) and
+the AUC, we note the equivalence of the AUC and the
+Mann–Whitney U test statistic [51]. The Mann–Whitney
+U test is a nonparametric test of the null hypothesis that,
+for randomly selected values X and Y from two popula-
+tions,
+P(X < Y ) = P(Y < X).
+Let X1, ..., Xn be an i.i.d. sample from X, and Y1, ..., Ym
+an i.i.d. sample from Y .
+The corresponding Mann–
+Whitney U statistic is deﬁned as
+U =
+n
+X
+i=1
+m
+X
+j=1
+S(Xi, Yj),
+(12)
+where
+S(X, Y ) =
+
+
+
+
+
+1,
+if X < Y,
+1
+2,
+if X = Y,
+0,
+if X > Y.
+(13)
+As stated earlier, we have that X is a random variable
+representing the pairwise within-group dissimilarity val-
+ues, and Y denotes the pairwise between-group dissimi-
+larity values. Since these values are continuous, we have
+P(X = Y ) = 0, so we may ignore the X = Y case in
+the piecewise function S(X, Y ) in Equation (13). Thus,
+the Mann–Whitney U statistic in Equation (12) can be
+interpreted as the number of instances where Xi < Yj for
+i = 1, ..., n, j = 1, ..., m.
+Now, it can be shown that [52, 53]
+AUC = U
+nm.
+Thus, since there are nm total pairings of Xi and Yj
+values, the AUC can be interpreted as the proportion
+of sample pairings where Xi < Yj for i = 1, ..., n, j =
+1, ..., m. Hence, the AUC represents the probability that
+X < Y given a random within-group dissimilarity score
+X and a random between-group dissimilarity score Y ,
+i.e., P(X < Y ).
+C.
+Derivation of the Jaccard Distance Lower
+Bound (Equation (9))
+Let Vˆp = |Sˆp| and Vˆq = |Sˆq| denote the respective
+sizes of the vocabularies Sˆp and Sˆp. Using Heaps’ law,
+we have that
+Vˆp ∼N β
+ˆp = hβN β,
+Vˆq ∼N β
+ˆq = N β.
+(14)
+Since h > 1, we conclude that Vˆp > Vˆq, i.e., that |Sˆp| >
+|Sˆq|. Thus, since |Sˆq| ≥|Sˆp ∩Sˆq| and |Sˆp| ≤|Sˆp ∪Sˆq|,
+we have
+|Sˆq| ≥|Sˆp ∩Sˆq| =⇒−|Sˆq| ≤−|Sˆp ∩Sˆq|
+=⇒|Sˆp| −|Sˆq| ≤|Sˆp ∪Sˆq| −|Sˆp ∩Sˆq|,
+Therefore, since |Sˆp ∩Sˆq| ≥0, we have
+|Sˆp| −|Sˆq| ≤|Sˆp ∪Sˆq| −|Sˆp ∩Sˆq| ≤|Sˆp ∪Sˆq|.
+13
+Dividing by |Sˆp ∪Sˆq| gives
+|Sˆp| −|Sˆq|
+|Sˆp ∪Sˆq| ≤DJ(Sˆp, Sˆq) ≤1.
+We can use the relation |Sˆp ∪Sˆq| ≤|Sˆp| + |Sˆq| to create
+a more relaxed but also more practical lower bound:
+|Sˆp| −|Sˆq|
+|Sˆp| + |Sˆq| ≤DJ(Sˆp, Sˆq) ≤1.
+By substituting Equation (14) and cancelling the com-
+mon factor N β, we obtain
+Vˆp −Vˆq
+Vˆp + Vˆq
+≤DJ(Sˆp, Sˆq) ≤1 =⇒hβ −1
+hβ + 1 ≤DJ(Sˆp, Sˆq) ≤1.
+D.
+Derivation of the Bias of the Jensen–Shannon
+Divergence (Table II)
+We say that ˆp = (ˆp1, ˆp2, ..., ˆpV ˆ
+p) is the estimated
+word frequency distribution based on sample ˆp, while
+P = (p1, p2, ...) is the true distribution of words in P .
+We approximate Hα(ˆp), an estimator of Hα(P ), using
+its second-order Taylor expansion around the true prob-
+abilities pi:
+Hα(ˆp) ≈Hα(p) +
+X
+i:ˆpi>0
+(ˆpi −pi)
+α
+1 −αpα−1
+i
+−1
+2
+X
+i:ˆpi>0
+(ˆpi −pi)2αpα−2
+i
+,
+where we used that ∂Hα
+∂pi = α/(1 −α)pα−1
+i
+and
+∂2Hα
+∂pi∂pj =
+−αpα−2
+i
+δi,j.
+We can then calculate E[Hα(ˆp)] by averaging over the
+diﬀerent realisations of the random variables ˆpi. Here,
+we assume that the absolute frequency of each word i is
+drawn from an independent binomial with probability pi
+such that E[ˆpi] = pi and V[ˆpi] = pi(1 −pi)/N ≈pi/N.
+[47] shows that this yields
+E[Hα(ˆp)] =
+1
+1 −α
+
+V (α+1)
+ˆp
+−1
+
+−
+α
+2Nˆp
+V (α)
+ˆp
+.
+(15)
+where V (α)
+ˆp
+denotes the vocabulary size of order α,
+V (α)
+ˆp
+=
+X
+i∈⟨V ˆ
+p⟩
+pα−1
+i
+.
+(16)
+Here, the notation P
+i∈⟨V ˆ
+p⟩indicates that we are sum-
+ming only over the expected number of observed words
+⟨Vˆp⟩in samples ˆp.
+We are particularly interested in the dependence of
+V (α)
+ˆp
+on Nˆp. Equation (16) indicates that if we sample
+Nˆp words, we expect to observe Vˆp = Vˆp(Nˆp) ≡V (α=1)
+ˆp
+unique words.
+Using the fact that Vˆp grows as N 1/γ
+ˆp
+(Heaps’ Law), Ref. [47] shows that V (α)
+ˆp
+scales for large
+Nˆp as
+V (α)
+ˆp
+∝
+(
+N −α+1+1/γ
+ˆp
+,
+α < 1 + 1/γ
+constant,
+α > 1 + 1/γ.
+(17)
+Here, γ > 1 is the Zipf exponent (recall that f(r) ∼r−γ),
+and α is the order of the generalised entropy.
+Since Dα is a linear combination of entropies, we can
+use Equation (15) to determine the expected value of its
+estimator. Suppose we have two samples ˆp and ˆq of sizes
+Nˆp and Nˆq, respectively. If we introduce the notation
+ˆpˆq = 1
+2(ˆp + ˆq), the expected generalised JSD is
+E[Dα(ˆp, ˆq)] = E[Hα(ˆpˆq)] −1
+2E[Hα(ˆp)] −1
+2E[Hα(ˆq)]
+=
+1
+1 −α
+
+V (α+1)
+ˆpˆq
+−1
+2V (α+1)
+ˆp
+−1
+2V (α+1)
+ˆq
+
++
+α
+2Nˆq
+1
+2V (α)
+ˆp
+
++
+α
+2Nˆq
+1
+2V (α)
+ˆq
+
+−
+α
+2(Nˆp + Nˆq)V (α)
+ˆpˆq ,
+where V (α)
+ˆpˆq denotes the generalised vocabulary of order α
+(Equation (16)) for the combined sequence ˆpˆq = 1
+2(ˆp+ˆq),
+which is of length Nˆp + Nˆq.
+By noting that V (α+1)
+ˆp
+= P
+i∈⟨V ˆ
+p⟩pα
+i , we see that for
+large Nˆp, Nˆq,
+E[Dα(ˆp, ˆq)] = E[Dα(p, Q)]
++
+ α
+2Nˆp
+1
+2V (α)
+ˆp
+
++
+α
+2Nˆq
+1
+2V (α)
+ˆq
+
+−
+α
+2(Nˆp + Nˆq)V (α)
+ˆpˆq
+
+,
+indicating that the estimator Dα(ˆp, ˆq) is biased. We now
+wish to study this bias, which we deﬁne as
+Bias[Dα(ˆp, ˆq)] = α
+2Nˆp
+1
+2V (α)
+ˆp
+
++
+α
+2Nˆq
+1
+2V (α)
+ˆq
+
+(18)
+−
+α
+2(Nˆp + Nˆq)V (α)
+ˆpˆq .
+(19)
+As we deﬁned in Section III, let Nˆq = N and Nˆp =
+hN, where h > 1.
+We examine the behaviour of
+Bias[Dα(ˆp, ˆq)] for a large N by considering the two ways
+that V (α)
+ˆp
+can scale according to Equation (16).
+Case 1: α > 1 + 1/γ
+We begin with the case V (α)
+ˆp
+= c, where c is a constant.
+In this case, the bias becomes
+Bias[Dα(ˆp, ˆq)] =
+α
+2(hN)
+ c
+2
+
++ α
+2N
+ c
+2
+
+−
+α
+2(hN + N)(c)
+= cα
+2N
+ 1
+2h + 1
+2 −
+1
+h + 1
+
+.
+14
+Thus, we see that the decay of the bias is 1/N. Impor-
+tantly, Bias[Dα(ˆp, ˆq)] →0 as N →∞, so Dα(ˆp, ˆq) is
+asymptotically unbiased. A perhaps unexpected result is
+the dependence on the constant h. For simplicity, deﬁne
+gα(h) = 1
+2h + 1
+2 −
+1
+h + 1.
+We see that gα(h) is a decreasing function of h when
+h ∈(1, 1 +
+√
+2), and is increasing when h > 1 +
+√
+2.
+Thus, since gα(1) = 0.5 and gα(h) →0.5 as h →∞, we
+can conclude that gα(h) ≤0.5 for all h ≥1. Interestingly,
+for a ﬁxed N there is an optimal relation between text
+lengths, h∗= 1 +
+√
+2, for which the bias is minimised.
+The corresponding minimal value is gα(h∗) =
+√
+2 −1 ≈
+0.4142.
+Case 2: α < 1 + 1/γ
+In this case, we have that V (α)
+ˆp
+= cN −α+1+1/γ
+ˆp
+, where
+c is again a constant. The bias now becomes
+Bias[Dα(ˆp, ˆq)] =
+α
+2(hN)
+1
+2(hN)−α+1+1/γ
+
++ α
+2N
+1
+2N −α+1+1/γ
+
+−
+α
+2(hN + N)(N + hN)−α+1+1/γ
+= cα
+2
+
+N −α+1/γ 1
+2h−α+1/γ + 1
+2 −(h + 1)−α+1/γ
+
+When α < 1/γ, the bias diverges with N →∞or h →∞,
+and thus, the estimator Dα(ˆp, ˆq) also diverges. When
+1/γ < α < 1+1/γ, a sublinear decay with N is observed.
+Hence, Bias[Dα(ˆp, ˆq)] →0 as N →∞, so Dα(ˆp, ˆq) is
+again asymptotically unbiased. Similar to before, we de-
+ﬁne the function
+gα(h) = 1
+2h−α+1/γ + 1
+2 −(h + 1)−α+1/γ.
+As in Case 1, we see that gα(h) is decreasing when h ∈
+(1, h∗) and increasing when h > h∗, but in this case,
+h∗=
+2
+γ
+1−γ−αγ
+1 −2
+γ
+1−γ−αγ
+We also have that gα(h) →0.5 as h →∞.
+[1] Pham, H.; Luong, M.T.; Manning, C.D. Learning dis-
+tributed representations for multilingual text sequences.
+In Proceedings of the 1st Workshop on Vector Space
+Modeling for Natural Language Processing, Denver, CO,
+USA, 5 June 2015; pp. 88–94.
+[2] Steyvers, M.; Griﬃths, T. Probabilistic Topic Models. In
+Handbook of Latent Semantic Analysis; Landauer, T.K.,
+McNamara, D.S., Dennis, S., Kintsch, W., Eds.; Psychol-
+ogy Press: New York, USA, 2007; pp. 427–448.
+[3] Jiang, N.; de Marneﬀe, M.C. Do you know that Florence
+is packed with visitors? Evaluating state-of-the-art mod-
+els of speaker commitment. In Proceedings of the 57th
+Annual Meeting of the Association for Computational
+Linguistics, Florence, Italy, 28 July–2 August 2019; pp.
+4208–4213.
+[4] Wang, Q.; Li, B.; Xiao, T.; Zhu, J.; Li, C.; Wong, D.F.;
+Chao, L.S. Learning deep transformer models for ma-
+chine translation. arXiv 2019, arXiv:1906.01787.
+[5] Taghva, K.; Veni, R. Eﬀects of Similarity Metrics on
+Document Clustering. In Proceedings of the Seventh In-
+ternational Conference on Information Technology: New
+Generations, Las Vegas, NV, USA, 12–14 April 2010; pp.
+222–226.
+[6] Zheng, L.; Jiang, Y. Combining dissimilarity measures
+for quantifying changes in research ﬁelds. Scientometrics
+2022, 127, 3751–3765.
+[7] Dias, L.; Gerlach, M.; Scharloth, J.; Altmann, E.G. Us-
+ing text analysis to quantify the similarity and evolu-
+tion of scientiﬁc disciplines. R. Soc. Open Sci. 2018, 5,
+171545.
+[8] Tommasel, A.; Godoy, D. Inﬂuence and performance of
+user similarity metrics in followee prediction. J. Inf. Sci.
+2022, 48, 600–622.
+[9] Singh, K.; Shakya, H.K.; Biswas, B. Clustering of people
+in social network based on textual similarity. Perspect.
+Sci. 2016, 8, 570–573.
+[10] Tang, X.; Miao, Q.; Quan, Y.; Tang, J.; Deng, K. Pre-
+dicting individual retweet behavior by user similarity: A
+multi-task learning approach. Know. Based Syst. 2015,
+89, 681–688.
+[11] Gomaa, W.H.; Fahmy, A.A. A Survey of Text Similarity
+Approaches. Int. J. Comput. Appl. 2013, 68, 13–18.
+[12] Wang, J.; Dong, Y. Measurement of Text Similarity: A
+Survey. Information 2020, 11, 421.
+[13] Vijaymeena, M.K.; Kavitha, K. A Survey on Similarity
+Measures in Text Mining. Mach. Learn. Appl. 2016, 3,
+19-–28.
+[14] Prakoso, D.W.; Abdi, A.; Amrit, C. Short text similarity
+measurement methods: A review. Soft Comput. 2021,
+25, 4699–4723.
+[15] Magalh˜aes, D.; Pozo, A.; Santana, R. An empirical com-
+parison of distance/similarity measures for Natural Lan-
+guage Processing. In Proceedings of the National Meeting
+of Artiﬁcial and Computational Intelligence, Salvador,
+Brazil, 15–18 October 2019; pp. 717–728.
+15
+[16] Boukhatem, N.M.; Buscaldi, D.; Liberti, L. Empirical
+Comparison of Semantic Similarity Measures for Techni-
+cal Question Answering. In Proceedings of the European
+Conference on Advances in Databases and Information
+Systems, Turin, Italy, 5–8 September 2022; pp. 167–177.
+[17] Upadhyay, A.; Bhatnagar, A.; Bhavsar, N.; Singh, M.;
+Motlicek, P. An Empirical Comparison of Semantic Simi-
+larity Methods for Analyzing down-streaming Automatic
+Minuting task. In Proceedings of the Paciﬁc Asia Con-
+ference on Language, Information and Computation, Vir-
+tual, 20–22 October 2022.
+[18] Al-Anazi, S.; AlMahmoud, H.; Al-Turaiki, I. Finding
+similar documents using diﬀerent clustering techniques.
+In Proceedings of the Symposium on Data Mining Ap-
+plications, Riyadh, Saudi Arabia, 30 March 2016; pp.
+28–34.
+[19] Webb, A.R. Statistical Pattern Recognition, 2nd ed.;
+John Wiley & Sons, Inc.: Chichester, UK, 2003; p. 419.
+[20] Blei, D.M.; Ng, A.Y.; Jordan, M.I. Latent Dirichlet Al-
+location. J. Mach. Learn. Res. 2003, 3, 993–1022.
+[21] Salton, G.; Buckley, C. Term-weighting approaches in
+automatic text retrieval. Inf. Process. Manag. 1988, 24,
+513–523.
+[22] Herdan, G. Type-Token Mathematics:
+A Textbook of
+Mathematical Linguistics, 1st ed.; Mouton & Co.: The
+Hague, The Netherlands, 1960.
+[23] Bengio, Y.; Ducharme, R.; Vincent, P.; Jauvin, C. A neu-
+ral probabilistic language model. J. Mach. Learn. Res.
+2003, 3, 1137–1155.
+[24] Mikolov, T.; Chen, K.; Corrado, G.; Dean, J. Eﬃcient
+Estimation of Word Representations in Vector Space.
+arXiv 2013, arXiv:1301.3781.
+[25] Pennington, J.; Socher, R.; Manning, C. GloVe: Global
+Vectors for Word Representation. In Proceedings of the
+Conference on Empirical Methods in Natural Language
+Processing, Doha, Qatar, 25–29 October 2014; pp. 1532–
+1543.
+[26] Le, Q.; Mikolov, T. Distributed Representations of Sen-
+tences and Documents. In Proceedings of the 31st In-
+ternational Conference on Machine Learning, Beijing,
+China, 21–26 June 2014; pp. 1188–1196.
+[27] Hill, F.; Cho, K.; Horhonen, A. Learning Distributed
+Representations of Sentences from Unlabelled Data. In
+Proceedings of the Conference of the North American
+Chapter of the Association for Computational Linguis-
+tics:
+Human Language Technologies, San Diego, CA,
+USA, 12–17 June 2016; pp. 1367–1377.
+[28] Wu, L.;
+Yen, I.E.;
+Xu, K.;
+Xu, F.;
+Balakrishnan,
+A.; Chen, P.Y.; Ravikumar, P.; Witbrock, M.J. Word
+Mover’s Embedding: From Word2Vec to Document Em-
+bedding. In Proceedings of the Conference on Empirical
+Methods in Natural Language Processing, Brussels, Bel-
+gium, 31 October–4 November 2018; pp. 4524–4534.
+[29] Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.;
+Jones, L.; Gomez, A.N.; Kaiser, L.; Polosukhin, I. At-
+tention is All you Need. In Proceedings of the 31st Con-
+ference on Neural Information Processing Systems, Long
+Beach, CA, USA, 4–9 December 2017; pp. 6000–6010.
+[30] Devlin, J.; Chang, M.-W.; Lee, K.; Toutanova, K. BERT:
+Pre-training of Deep Bidirectional Transformers for Lan-
+guage Understanding. In Proceedings of the Conference
+of the North American Chapter of the Association for
+Computational Linguistics: Human Language Technolo-
+gies, Volume 1 (Long and Short Papers), Minneapolis,
+MN, USA, 2–7 June 2019; pp. 4171–4186.
+[31] Radford, A.; Narasimhan, K.; Salimans, T.; Sutskever, I.
+Improving Language Understanding by Generative Pre-
+Training; Technical Report; OpenAI: San Francisco, CA,
+USA, June 2018.
+[32] Shade,
+B.;
+Repository
+with
+the
+Code
+Used
+in
+This
+Paper;
+Static
+Version
+in
+Zen-
+odo:
+https://doi.org/10.5281/zenodo.7861675;
+Dynamic
+Version
+in
+Github:
+https://github.com/benjaminshade/quantifying-
+dissimilarity; 2023.
+[33] Lin, J. Divergence measures based on the Shannon en-
+tropy. IEEE Trans. Inf. Theory 1991, 37, 145–151.
+[34] Cover, T.M.; Thomas, J.A. Elements of Information
+Theory, 1st ed.; John Wiley & Sons, Inc.: Hoboken, NJ,
+USA, 2005.
+[35] Endres, D.M.; Schindelin, J.E. A new metric for proba-
+bility distributions. IEEE Trans. Inf. Theory 2003, 49,
+1858–1860.
+[36] Gerlach, M.; Font-Clos, F.; Altmann, E.G. Similarity of
+Symbol Frequency Distributions with Heavy Tails. Phys.
+Rev. X 2016, 6, 021109.
+[37] Havrda, J.; Charv´at, F. Quantiﬁcation Method of Classi-
+ﬁcation Processes. Concept of Structural α-Entropy. Ky-
+bernetika 1967, 3, 30–35.
+[38] Burbea, J.; Rao, C. On the convexity of some divergence
+measures based on entropy functions. IEEE Trans. Inf.
+Theory 1982, 28, 489–495.
+[39] Bri¨et, J.; Harremo¨es, P. Properties of classical and quan-
+tum Jensen-Shannon divergence. Phys. Rev. A 2009, 79,
+052311.
+[40] Reimers, N.; Gurevych, I. Sentence-BERT: Sentence Em-
+beddings using Siamese BERT-Networks. In Proceedings
+of the 2019 Conference on Empirical Methods in Natu-
+ral Language Processing and the 9th International Joint
+Conference on Natural Language Processing, Hong Kong,
+China, 3–7 November 2019; pp. 3982–3992.
+[41] Wang, W.; Wei, F.; Dong, L.; Bao, H.; Yang, N.; Zhou,
+M. MiniLM: Deep Self-Attention Distillation for Task-
+Agnostic Compression of Pre-Trained Transformers. In
+Proceedings of the 34th Conference on Neural Informa-
+tion Processing Systems, Virtual, 6–12 December 2020;
+pp. 5776–5788.
+[42] Beltagy,
+I.;
+Peters,
+M.E.;
+Cohan,
+A. Longformer:
+The
+Long-Document
+Transformer.
+arXiv
+2020,
+arXiv:2004.05150.
+[43] Project Gutenberg. Available online:
+https://www.
+gutenberg.org (accessed on 8 February 2022).
+[44] Gerlach, M.;
+Font-Clos, F. A Standardized Project
+Gutenberg Corpus for Statistical Analysis of Natural
+Language and Quantitative Linguistics. Entropy 2020,
+22, 126.
+[45] Gerlach, M.; Font-Clos, F. Standardized Project Guten-
+berg Corpus, Github Repository. 2018. Available online:
+https://github.com/pgcorpus/gutenberg (accessed on 14
+February 2022).
+[46] Altmann, E.G.; Dias, L.; Gerlach, M. Generalized en-
+tropies and the similarity of texts. J. Stat. Mech.: Theory
+Exp. 2017, 2017, 014002.
+[47] Gerlach, M. Universality and Variability in the Statis-
+tics of Data with Fat-Tailed Distributions: The Case of
+Word Frequencies in Natural Languages. Ph.D. Thesis,
+Max Planck Institute for the Physics of Complex Sys-
+tems, Dresden, Germany, 2015.
+16
+[48] Gerlach, M.; Altmann, E.G. Stochastic Model for the
+Vocabulary Growth in Natural Languages. Phys. Rev. X
+2013, 3, 021006.
+[49] Bird, S.; Klein, E.; Loper, E. Natural Language Process-
+ing with Python: Analyzing Text with the Natural Lan-
+guage Toolkit, 1st ed.; O’Reilly Media, Inc.: Sebastopol,
+CA, USA, 2009.
+[50] Egloﬀ, M.; Adamou, A.; Picca, D. Enabling Ontology-
+Based Data Access to Project Gutenberg. In Proceedings
+of the Third Workshop on Humanities in the Semantic
+Web, Heraklion, Crete, Greece, 2 June 2020; pp. 21-32.
+[51] Mann, H.B.; Whitney, D.R. On a Test of Whether one
+of Two Random Variables is Stochastically Larger than
+the Other. Ann. Math. Stat. 1947, 18, 50–60.
+[52] Mason, S.J.; Graham, N.E. Areas beneath the relative
+operating characteristics (ROC) and relative operating
+levels (ROL) curves: Statistical signiﬁcance and inter-
+pretation. Q. J. R. Meteorol. Soc. 2002, 128, 2145–2166.
+[53] Hanley, J.A.; McNeil, B.J. The meaning and use of
+the area under a receiver operating characteristic (ROC)
+curve. Radiology 1982, 143, 29–36.

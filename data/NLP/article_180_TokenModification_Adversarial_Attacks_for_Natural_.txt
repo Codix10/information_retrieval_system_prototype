@@ -1,0 +1,1090 @@
+Title: Token-Modification Adversarial Attacks for Natural Language Processing: A Survey
+Source URL: http://arxiv.org/abs/2103.00676v3
+--------------------------------------------------
+
+Token-Modification Adversarial Attacks for
+Natural Language Processing: A Survey
+Tom Roth a,b, Yansong Gao b, Alsharif Abuadbba b, Surya Nepal b and Wei Liu a
+a University of Technology Sydney, NSW, Australia
+E-mails: thomas.p.roth@student.uts.edu.au, wei.liu@uts.edu.au
+b CSIRO’s Data61, Sydney, NSW, Australia
+E-mails: garrison.gao@data61.csiro.au, sharif.abuadbba@data61.csiro.au, surya.nepal@data61.csiro.au
+Abstract. Many adversarial attacks target natural language processing systems, most of which succeed through modifying the
+individual tokens of a document. Despite the apparent uniqueness of each of these attacks, fundamentally they are simply a
+distinct configuration of four components: a goal function, allowable transformations, a search method, and constraints. In this
+survey, we systematically present the different components used throughout the literature, using an attack-independent framework
+which allows for easy comparison and categorisation of components. Our work aims to serve as a comprehensive guide for
+newcomers to the field and to spark targeted research into refining the individual attack components.
+Keywords: text adversarial attacks, security, robustness, natural language processing
+1. Introduction
+Adversarial machine learning investigates the susceptibility of machine learning models to manipulations by an
+adversary through an adversarial attack [1]. While the majority of adversarial machine learning research has focused
+on image processing, there has been rapidly increasing interest in the natural language processing (NLP) domain,
+motivated by the unique challenges and opportunities presented by textual data. In this work, we survey the recent
+advancements in adversarial attacks within the NLP domain.
+An adversarial example is a carefully crafted instance created by introducing a perturbation to an original exam-
+ple. This perturbation is designed in such a way that the attacked victim model processes the original example as
+expected but fails on the adversarial example in a manner predetermined by the attacker. To illustrate this concept,
+[2] have aimed to perturb a document reading “Save me it’s over 100F” to introduce a specific token “22C” into the
+output of an English-to-German translation model (see Figure 1). Their attack algorithm achieved this by replacing
+“100F” with “102F”. While the model translates the original example correctly as “Rette mich, es ist über 100F”,
+it now translates the adversarial example as “Rette mich, es ist über 22C”, thereby introducing the specific token,
+and in turn, effectively demonstrating the potential potency of adversarial attacks.
+Usually text adversarial examples must also meet a set of constraints. For example, one constraint might specify
+that the semantic meaning of the original example is maintained. In this case, “Save me it’s above 100F” would be
+valid, but not the proposed “Save me it’s over 102F”. A second constraint might require that the adversarial example
+appear non-suspicious to a human. This rules out “Save MySeLFFFFF it’s xxoverxx 100F”, but our example “Save
+me it’s over 102F” would pass.
+Many methods have been developed to create text adversarial examples, with the literature predominantly focus-
+ing on what we term token-modification attacks. These attacks strategically modify individual document tokens at
+various granularities (e.g., words, characters) to achieve the desired adversarial effect. (Our above example illus-
+trates a token-modification attack, and Table 1 gives more examples.) In these attacks, the adversary maintains the
+syntactic structure of the document, unlike, say, a paraphrase or style-transfer model. Token-modification attacks
+arXiv:2103.00676v3  [cs.CL]  7 Jan 2024
+Save me it’s over 100°F
+Original Text
+English-to-German
+Translator
+Rette mich, es ist über 100°F
+Translated Text
+Save me it’s over 102°F
+Adversarial Text
+Rette mich, es ist über 22°C
+Translated Target Text
+Fig. 1. Example of a token-modification adversarial attack on a machine translation model.
+treat the document as an ordered set of tokens and systematically apply transformations to individual tokens. These
+transformations can include operations such as replacing a word with its synonym, deleting a character, or inserting
+a phrase into the document. The attack process continues iteratively until the adversary achieves its predefined goal
+or until a specific stopping criterion is met. This results in a controlled and targeted manipulation of the text that can
+“fool” the victim model.
+Previous surveys, such as those conducted by [3] and [4], categorise text attacks based on various criteria: token
+granularity, adversary goal, model access, targeted NLP task, and so forth. While this categorisation scheme provides
+a structured overview, it tends to over-emphasise the differences between attacks. In reality, many attack algorithms
+may only differ in their use of a single component, leading to a situation where algorithms can shift between cat-
+egories with only trivial modifications. Recognising this limitation, in this survey, we adopt a novel perspective by
+categorising based on the individual attack components, rather than the attacks themselves. This approach offers a
+more nuanced understanding of the underlying mechanisms and commonalities across different attacks. To the best
+of our knowledge, we are the first survey to adopt this component-centric approach.
+Granularity
+Example
+Original
+The movie was absolutely fantastic and I loved it!
+Character-level
+The movie was absolutely f4ntastic and I loved it!
+Subword-level
+The movie was absolutely fantastical and I loved it!
+Word-level
+The film was absolutely fantastic and I loved it!
+Phrase-level
+The cinematic experience was absolutely fantastic and I loved it!
+Table 1
+Another example of a token-modification adversarial attack on a sentiment classifier. The original example is categorised as positive, and the
+adversarial attack attempts to change the predicted label to negative through changing its tokens, which can be at a range of granularities.
+2. Attack framework
+Recently, [5] introduced a comprehensive framework that defines four essential components of a textual adver-
+sarial attack: (a) a goal function, which determines the success criteria of the attack; (b) a set of transformations,
+outlining the specific actions that the adversary can undertake; (c) a search method, dictating the sequence in which
+transformations are applied; and (d) a set of constraints, establishing the boundaries for a valid adversarial example.
+This formulation casts each text attack as a constrained search problem, defined by its unique combination of these
+components.
+Inspired by the work of [5], who also used their framework to develop a software library for rapidly implementing
+text adversarial attacks, we extend this framework and conduct a systematic survey of the various attack components.
+Our focus is specifically on token-modification attacks, as they represent the predominant attack type in the current
+landscape. While the framework could theoretically be extended to other attack classes, its application is not straight-
+forward for methods such as those that train a model to generate adversarial examples. Therefore, we restrict our
+survey to this prevalent and well-defined category of attacks. Our categorisation, along with an exploration of the
+range and nuances of attack components, is summarised in Figure 2.
+Fig. 2. This example, from the TextAttack [5] documentation, neatly demonstrates how token-modification attacks ([6] and [7] here) are made up
+of a combination of four components. For an easy comparison, the TextAttack paper [5] also provides a table that summarises the combinations
+of a number of popular attacks. We cover the individual components in detail in Sections 3, 4, 5, and 6.
+Victim model architectures. The model targeted by an adversarial attack is called the victim model, which
+in this context are models that perform various NLP tasks. The majority of modern NLP models follow a neural
+network-based architecture, including convolutional neural networks (CNNs), recurrent neural networks (RNNs),
+long short-term memory networks (LSTMs), and transformers. This class of models currently achieve the state-of-
+the-art performance across many NLP tasks and are hence widely used.
+While many adversarial attacks are agnostic to the model’s architecture, some techniques assume the victim pos-
+sesses specific architectural features, such as embedding layers, attention modules, or gradient information. Simpler
+models, such as a bag-of-words classifier, might not possess these features and the attack will not work. However,
+it’s arguable that these simpler models also inherently possess a multitude of ’adversarial’ examples, due to their
+basic nature and lower performance on legitimate inputs. As such, the assumption is usually made that the victim
+models targeted are neural network-based.
+Notation. Let Ex be the original example with label ytrue. All examples are documents, and each document is made
+up of a set of tokens {t1, · · · , tn}, for which a token ti has the numeric representation eti (e.g. word embeddings). The
+document Ex is transformed to a numeric representation x and then acted on by a model f. Likewise, the adversarial
+example is Ex′ (also with label ytrue), its numeric representation is x′, and we denote its output f(x′) by y′. We use
+l to represent a generic loss function that acts on a single example.
+3. Adversary goals
+The adversary goal defines what the adversary aims to achieve. Many tasks in NLP, ranging from sentiment
+analysis and spam detection to more complex tasks like question answering and machine translation, can be broadly
+classified as having either classification goals or sequence-to-sequence (seq2seq) goals, depending on the task the
+victim model addresses.
+3.1. Classification
+Attacks on text classifiers, which include tasks such as document categorisation and sentiment analysis, can be
+broadly considered as either targeted or untargeted attacks. Targeted attacks attempt to induce the model to classify
+Ex′ as a specific class ytarget different from ytrue by minimising l(f(x′), ytarget). Untargeted attacks only require that
+Ex is misclassified, and their algorithms typically aim to maximise l(f(x′), ytrue). The two are equivalent for binary
+classification, and for multiclass classification, converting between the two is usually straightforward.1
+There also exist alternate goal functions. For example, [8] propose an availability attack goal function that aims
+to maximise the model processing time.
+1For example, instead of perturbing x towards a specific decision boundary, an untargeted attack perturbs x towards the nearest decision
+boundary.
+3.2. Sequence-to-sequence
+The seq2seq tasks in NLP cover a wide spectrum, including machine translation, text summarisation, paraphrase
+generation, speech recognition, speech synthesis, and image generation from captions. These tasks often involve
+complex transformations and mappings between input and output sequences. Unlike classification tasks, where the
+adversary goals are more standardised, seq2seq tasks do not have a uniform set of adversary goals. Consequently,
+we adopt a broad classification for seq2seq attacks, categorising them as either untargeted or targeted, to capture the
+range of possible adversarial objectives within this domain.
+Untargeted attacks: Untargeted attacks in the seq2seq context aim to degrade the quality of the output sequence
+as much as possible, as measured by a specific metric. The objective is to disrupt the model’s performance without
+necessarily guiding the output towards a particular target. This form of attack is prevalent in seq2seq tasks and has
+been employed in various contexts [e.g. 9–14].
+Targeted attacks: Targeted attacks, on the other hand, seek to induce specific alterations in the output sequence.
+The goals can be diverse, ranging from changing a particular output token to any other token [13, 15, 16], altering
+every output token from its original value [17], modifying a set of specific output tokens to another set of specific
+tokens [2, 13], to introducing a set of specific output tokens anywhere in the output sequence [9, 16, 17], or even
+finding an incorrect input sequence that generates a specific output sequence [2, 18]. These attacks necessitate the
+careful formulation of an attack-dependent loss function, which is then optimised to either maximise or minimise,
+depending on the specific adversarial goal.
+4. Transformations
+A transformation is a function that alters one ordered set of tokens into another. These transformations can be
+grouped into several broad categories, referred to here as transformation types. Common transformation types in-
+clude replacing one token with another, inserting a token, deleting a token, changing token ordering, and merging
+two tokens [e.g. 19]. Among these, replacing a token is the most prevalent transformation type, and thus, we give it
+special emphasis in the following discussion.
+When executing a token replacement, where a token t is substituted with a replacement tr, the attack algorithm
+must select tr from a set of replacements, denoted by S(t), with the parameterisation indicating its dependence on
+t. The method for constructing S(t) is a core component of many attack algorithms. Typically, the process involves
+generating an initial set of candidates and then applying constraints to filter the set. For instance, an algorithm
+might use a dictionary to generate a set of synonyms for t and then filter out candidates that do not share the same
+part-of-speech (POS) tag with t.
+Below, we categorise methods that have been employed to generate the initial set of replacement candidates, while
+deferring the discussion of filtering constraints to Section 6. Attacks can, and do, employ a combination of these
+methods, and have devised a wide range of nuanced strategies to effectively deceive the victim model.
+4.1. Any replacement
+The adversary may replace token t with any token of the same granularity. While this approach is straightforward
+and can be highly effective in degrading the victim model’s performance, it often results in ungrammatical con-
+structions and loss of semantic meaning. Effectively, these attacks are prioritising minimising the perturbation size
+without attempting to maintain semantics, and consequently, this method is rarely employed, except in character-
+level attacks that permit any alphanumeric character (upper or lower case) or punctuation as a valid replacement
+[13, 20–22].
+Transform type
+Example
+Sample references
+Any token replacement
+dog →!og
+[13, 20–22]
+Adjacent keyboard typos
+achieve →axhieve
+[23, 24]
+Common misspellings
+achieve →acheive
+[23]
+Number to word form
+12 →twelve
+[25]
+Leetspeak conversions
+leet →l33t
+[26]
+Vowel removal, letter shuffling, etc
+letters →ltetrs
+[27]
+Phonetic replacements
+fair →fare
+[28, 29]
+Homograph adjective manipulation
+short lead →hot lead
+[30]
+Unicode-based replacements
+a →à
+[31]
+Visual character mapping
+cl →d
+[32, 33]
+Invisible characters
+abc →abc<U+200B>
+[8]
+Inflectional perturbations
+run →running
+[34]
+Thesaurus-based synonyms
+happy →joyful
+[35–37]
+Word to emoji
+love →♡
+[38]
+Word embedding-based
+fast →swift
+[24, 39, 40]
+Counter-fitted synonyms
+happy →content
+[6, 41]
+Context-aware embeddings
+bank →credit union
+[42]
+Masked language model infill
+go [MASK](here) fast →go very fast
+[6, 19, 42–45]
+Phrase replacements
+quickly run →swiftly sprint
+[38, 45, 46]
+Predefined parse template filling
+[Noun] runs [Adverb] →The dog runs quickly
+[46]
+Derived rule-based
+What NOUN →Which NOUN
+[47]
+Table 2
+Examples of different transformation types, and some examples of methods where they were used.
+4.2. Human errors
+The adversary may replace token t with a token that simulates an innocent human-made mistake, such as a
+typographical error. These transformations leverage the natural imperfections in human writing to craft adversarial
+examples that blend seamlessly into genuine text, making detection more challenging.
+Several transformation types fall under this category:
+• Typos: Mimicking keyboard typos by replacing letters with adjacent characters on a QWERTY keyboard [23,
+24].
+• Common misspellings: Substituting a word with a commonly-misspelled variant, using resources like
+Wikipedia or corpora tracking document edit history [23].
+• Number expansion: Expanding numbers into their word form [25].
+• Leetspeak: Converting characters to their "leetspeak" equivalents [26].
+• Other simple transformations: Examples include removing vowels, shuffling letters, inserting symbols, joining
+or truncating words, and using phonetic or visually-similar words [27].
+• Phonetic similarity: Choosing replacements that are phonetically similar. This can be done with algorithms like
+the SOUNDEX algorithm [48] or using the Pinyin equivalents for Chinese characters [28, 29].
+• Homograph adjectives: Homographs are words with the same spelling as another but with a different meaning.
+[30] constructed an attack where they inserted or replaced the adjectives in front of homographs, with the intent
+to mimic word sense ambiguity errors.
+Table 2 provides examples and references for each of these transformation types.
+4.3. Visually similar
+The adversary may replace token t with a visually similar token, intending that a human reader overlooks the
+discrepancy. These transformations can be applied at the character level, including many-to-one or one-to-many
+character replacements (e.g., replacing cl with d). The effectiveness of these attacks may vary depending on the font
+used and the specific replacements chosen.
+Several methods have been proposed to achieve visually similar transformations:
+• Manual mapping: Creating a mapping between each token in the vocabulary and a manually chosen replace-
+ment [24, 31]. For instance, characters may be replaced with versions that include diacritics (e.g., c to ˇc) [31].
+Unicode descriptions of characters can also be used to find replacements of the same character and case. In
+languages like Chinese, characters may be replaced with those sharing partial pictographs [29].
+• Visual embeddings: Representing each character as a grid of pixels and numerically encoding them, either with
+raw pixel vectors [31] or dense representations from the intermediate layers of a CNN [e.g. 32, 33]. The set of
+replacements S(t) can be constructed by selecting the closest points to the character in the latent space.
+• Imperceptible characters: Designing attacks that are truly imperceptible to the human eye by using invisible
+characters, homoglyphs, reordering characters, or deletion characters [8].
+These visually similar transformations present a unique challenge in adversarial attacks, as they exploit the human
+tendency to overlook subtle visual discrepancies. The diversity of methods employed reflects the complexity of
+crafting attacks that are both effective against machine learning models and inconspicuous to human readers.
+4.4. Synonyms
+Adversarial attacks may replace a token t with a synonym that maintains the same meaning. This can be achieved
+through various methods, including using predefined synonym lists or pre-trained token embedding spaces. Both
+approaches aim to maintain the semantic content of the original text, while keeping perturbations small and local.
+4.4.1. Predefined list
+The adversary replaces t with a replacement tr taken from a predefined list of tokens that share the same meaning.
+Various lists can be used:
+• Thesaurus, lexical database, or knowledge database, such as WordNet [35, 36], HowNet [37, 49], or DrugBank
+[50] for biomedical data [25].
+• Inflectional perturbations of words with the same base meaning [34]. Inflectional perturbations modify a word’s
+form while retaining its core meaning, such as changing run to running.
+• Emoji equivalents for words [38].
+This method often struggles to distinguish the sense in which a word is used, leading to replacements that may read
+strangely or not fit well in context. Some attacks add constraints to mitigate this issue, but the problem often persists
+[e.g. 37].
+4.4.2. Embedding space
+The adversary replaces token t with a token tr corresponding to a nearby point in a token embedding space. This
+approach assumes that tokens with similar meanings cluster together in embedding space, forming a natural set of
+synonyms. Different embedding spaces can be used:
+• Using word embeddings like GloVe [24, 39, 40], though this may include related words like antonyms or words
+with similar concepts but different meanings. Example of antonyms (e.g. east and west, or fast and slow) or
+words with similar concepts but different meanings (e.g. English, American, and Australian).
+• Using counter-fitted embeddings [41] as a post-processing step for word embeddings. This technique pushes
+together similar words while also pushing apart related words, resulting in an embedding space where proximity
+indicates synonymy. It enhances the precision of synonym selection in adversarial attacks [6, 7, 42, 51].
+• Considering contextual embeddings such as BERT [52] to provide context-aware token representations. Tradi-
+tional token embeddings represent a token with a single point, leading to replacements that may not match the
+token’s sense in a specific context. Contextual embeddings like BERT mitigate this issue by considering the
+surrounding text, enabling more accurate and contextually relevant replacements [9].
+Different methods have been used to define “closeness” in embedding space, to identify the set of replacements.
+Techniques have included:
+• K-nearest neighbours (KNN): This approach identifies the k closest tokens to the original in the embedding
+space, based on distance metrics such as Euclidean distance or cosine similarity [e.g. 24, 40].
+• Distance thresholding: Tokens within a specific distance δ to the original token are considered. The distance
+can be measured using various metrics, providing flexibility in defining semantic closeness [e.g. 43].
+• Hybrid approach: Methods can combine the KNN and distance thresholding methods, attempting to ensure
+that the chosen substitutes are both close and relevant [e.g. 6, 7, 9].
+• Synonym clustering: Creating clusters of synonyms in the embedding space allows for the replacement of a
+“central” word with any word in the cluster [51].
+• Continuous algorithms: In many image-based adversarial attacks, the algorithm iteratively perturbs the input
+image in a continuous space to cross the decision boundary of the classifier, effectively fooling the model. In
+the text domain, this concept can be adapted to select the synonyms that move the adversarial example closer
+to the victim model’s decision boundary in the embedding space. For example, [53] adapted the DeepFool
+algorithm [54] for this purpose. Generally, without modification these methods struggle to maintain semantic
+coherence [55], as Figure 3 illustrates. [56] attempt to circumvent this by mapping the text to continuous space
+and back with tree-based autoencoders and decoders.
+Fig. 3. Continuous perturbations in a numerical space work for image adversarial attacks, where the human eye cannot pick up subtle colour
+changes, but in the text domain, will be very conspicuous. In other words: while x∗fools the model, its text form Ex′ may not be semantically
+valid. The red arrow shows the problematic step.
+4.5. Language model predictions
+Language models (LMs) can be used by adversaries to find replacements for tokens, often through masked lan-
+guage modeling. The typical process involves replacing the target token with a mask, obtaining predictions from the
+LM, and using the top predictions as the set of replacements. Variations on this approach are common [6, 19, 42–
+45]. For example, consider the sentence “The technology accelerates rapidly”. The token accelerates is masked
+and then replaced with a top LM prediction, such as evolves, resulting in “The technology evolves rapidly”. The
+advantages of this approach class include higher-quality replacements, as context is considered, and a tendency to
+avoid rare tokens, which appear suspicious [57]. Drawbacks include the need for complex and memory-intensive
+LMs, slower replacement generation, and the inability to cache synonyms between documents (as they depend on
+document context). Some approaches mitigate these by combining both LMs and word embeddings [6, 43].
+Related techniques have included occlusion and language models (OLM) [58]; a method from the interpretability
+literature that identifies relevant words to replace [59], or Dropout Substitution [60]; a technique that applies dropout
+to internal embeddings of target words to enhance candidate quality [26].
+4.6. Phrase manipulations
+Attacks have been developed that identify and manipulate whole phrases, rather than tokens. The motivation is
+to create more linguistically diverse and rich adversarial examples than is possible through a series of individual
+token-level transforms. We show some examples in Table 3.
+To add a phrase into the sentence, a number of approaches can be taken. Another option is to make use of a parse
+template, which in this context can be thought of as a predefined format or structure for a sentence. For example,
+say the adversary wishes to add an adverb phrase to a sentence. The adversary would first identify the examples
+that it would makes make to add an adverb phrase too, perhaps by comparing the example to the template. Then the
+adversary would identify an adverb phrase that makes sense in the sentence context, perhaps by using a language
+model. This is the method used by [46].
+For a controllable phrase replacement process, [45] propose using two stages to the attack process: identifying
+phrases in the original sentence suitable to attack, and proposing adversarial replacements that still keep the textual
+quality.
+To identify the phrase chunks from the original sentence, one approach is to use a syntactic parser, such as the
+Stanford Parser [61]. Parsers like this one identify phrases by first tokenising the text and then tagging each token
+with its part-of-speech (e.g. noun, verb), dependent on its role in the sentence. It then applies a parsing algorithm
+to construct a hierarchical syntactic tree that represents the grammatical structure of the sentence. From this tree,
+phrases can be identified. To identify which phrase to attack, any of the methods in 5 can be used.
+To find a suitable replacement phrase, a number of methods can be used. A simple approach is to replace individual
+words with their dictionary definitions, maintaining the same part-of-speech [38]. While this does add a phrase in,
+it is easy to introduce a phrase that does not make sense in the overall sentence context. A second approach is to use
+the mask-infill models described in Section 4.5, where the phrase is masked and then infilled by a language model.
+The language model chooses the replacement to best suit the context that it is used in the original sentence [45].
+4.7. Set of rules
+One broad approach is to create a set of rules that, when applied, successfully create adversarial examples. These
+rules are derived from patterns found among successful adversarial examples. [62] is one example, selecting rules
+that maximise semantic similarity and have broad applicability. Extending this idea, [47] crafted rules by identifying
+adversarial example patterns effective against many different types of models.
+Manipulation and Method
+Example
+Add a phrase using parse template and language
+model
+Original: “Birds fly.”
+Template: “Birds fly [ADVP].”
+Adversarial: “Birds fly quickly and quietly.”
+Replace a phrase with its dictionary definition
+Original: “White beaches surrounded by azure seas. ”
+Definition: “azure: bright blue in color like a cloudless sky”
+Adversarial: “White beaches surrounded by bright blue in color like a cloudless
+sky seas”
+Replace a phrase using a mask-infill model
+Original: “The cat sat on the mat.”
+Masked infill: “The cat [MASK] the mat.”
+Adversarial: “The cat lay down on the mat.”
+Table 3
+Examples of some phrase-level manipulation techniques.
+4.8. Homographs
+[30] have devised an attack that makes use of homographs in the document. Homographs are words that are spelled
+the same, but have different meanings in different contexts, and also might be pronounced differently. This particular
+attack targets the words in front of the homograph to subtly change the context of the sentence. For example, the
+attack might change “They were discussing a strike in the meeting.” to “They were discussing a lightning strike in
+the meeting.” Originally, the sentence might suggest a discussion about a labour protest, but the addition of lightning
+changes the context to a weather-related incident. As not every sentence contains targetable homographs in this way,
+the attack will carefully select examples they can attack, and will leave the rest.
+5. Search methods
+The search method, also referred to as the optimisation method, aims to identify an effective sequence of trans-
+formations that satisfies the given constraints of the adversarial problem. The search process terminates either upon
+achieving the adversarial goal, after a specified number of queries, or when further exploration is restricted by the
+constraints.
+Search methods typically rank each transformation with a scoring function, also known as an objective or fitness
+function, that evaluates the quality of the solution in the search space. In the context of adversarial attacks, the
+scoring function quantifies or estimates the effect of the transformation on the adversarial loss function.
+5.1. Preliminaries
+5.1.1. Gradient approximations
+The simplest scoring function calculates the increase in loss directly due to the transformation. While exact, this
+method is computationally expensive because it requires a forward and backward pass through the model for each
+candidate transformation, which becomes prohibitive for large models.
+A widely-used alternative is to use a gradient-based scoring function [e.g. 63, 64], which employs the gradient of
+the loss with respect to the input, denoted as ∂l/∂x. This gradient serves as a first-order approximation of how the
+loss l changes when elements of x are altered.2 The transformations are then ranked based on their dot product with
+the gradient, ∂l/∂x · (g(x) −x), where g(x) −x represents the relative change in the input due to the transformation
+g.
+This gradient-based approach is faster, requiring only a single backward pass, but it assumes the adversary has
+access to the model parameters (white-box attack). It also rests on two assumptions: that the loss function l is nearly
+linear around x, and that other features remain constant when evaluating a single feature’s importance [65]. While
+these assumptions may not always hold, the method is generally effective in finding successful adversarial examples.
+2Some attacks [e.g. 15] instead use the Jacobian matrix ∂f(x)/∂x and directly change model predictions.
+As a compromise, [2] use a hybrid approach which has advantages of both approaches: the speed of the gradient
+approximation, and the accuracy of direct-checking. They first use the gradient approximation to create a shortlist
+of the top k transformations across all tokens in Ex. They then find the best transformation by directly checking the
+loss change of each.
+5.1.2. Proxy models
+In black-box adversarial attacks, where direct access to the target model’s architecture or parameters is unavail-
+able, attacks may use proxy models, also known as substitute or replacement models, to aid their attack. The proxy
+model is intended to mimic the characteristics of the target model, including its gradients, predictions, and con-
+fidence values. The attacker usually trains a proxy model on the same dataset as the victim model, or at least, a
+dataset from a similar domain. The attack can then use the proxy model’s gradients or outputs to identify promising
+replacements for a token, or select where to attack next. This approach has been used in various works, such as
+[66–68].
+5.2. Algorithms
+A variety of optimisation algorithms have been proposed in the literature, which we categorise and present below.
+5.2.1. Simple heuristics
+The most straightforward is to apply transforms according to a simple heuristic. This is simple to understand but
+may not find as good a solution as a more advanced algorithm. Some heuristics include
+Batch application: This method applies a transformation to all eligible tokens in the example Ex at once. Em-
+ployed by [34] and [13], it replaces each applicable word w ∈Ex. Variants include multiple runs with each selecting
+a different transformation [23] or replacing each token with a probability p [31].
+Sequential application: Tokens are transformed in the order they appear in the document. The algorithm iterates
+through document tokens from start to finish and applying the best transformation for each token until the attack
+succeeds, cycling if necessary. [43] use this method but select transformations based on predefined probabilities,
+rather than selecting always the best one.
+Random application: Tokens are randomly selected and transformed. Used as a baseline by [69] and [9], this
+method replaces tokens either with the best or a random replacement.
+5.2.2. Importance-based methods
+This approach ranks tokens based on their influence on the loss function, transforming the most impactful tokens
+first to minimise the perturbation size. [69] term this an importance ranking. Saliency maps can be an effective way
+to visualise these importance rankings, as shown in Figure 4.
+There are various ways to construct an importance ranking.
+• Gradient-based ranking: The gradient magnitude ∥∂l/∂eti∥2 serves as a heuristic for token importance. While
+this method doesn’t capture the direction of the gradient, it remains a widely-used heuristic [24, 40, 70].
+• Perturbation-based ranking: Tokens are systematically perturbed to measure their impact on the loss. Methods
+include token removal [7, 24, 44] and replacement with neutral tokens like the out-of-vocab, unknown or mask
+token, or zero vectors [20, 35, 42]. [71] extend this to phrase-level importance.
+• Temporal metrics: [21] propose metrics based on the document’s prefix and suffix relative to each token, termed
+the temporal head score and temporal tail score, and that quantify the token’s influence on the model’s output.
+• Attention-based ranking: Attention scores from the victim model’s layers are used to rank token importance
+[9, 72, 73]. This is applicable only to models with attention mechanisms.
+[69] found similar effectiveness across these methods,3 with gradient-based approaches being more computa-
+tionally efficient.4 Subsequent works have proposed additional efficiency improvements, such as using Locality
+Sensitive Hashing [72, 74] or predictive networks [75] to reduce the computational burden.
+3They did not test the attention method.
+4Systematic perturbation methods need many forward passes through the model, but gradient methods only need a single forwards and back-
+ward pass.
+Fig. 4. A saliency map visualising token importance for a sentiment analysis model. The map ranks the six most impactful words based on their
+gradient magnitude, shown in shades from dark to light orange. Such visualisations can aid in identifying tokens that, when transformed, are
+likely to influence model predictions. Obtained from AllenNLP Interpret [76].
+5.2.3. Beam search and greedy search
+Beam search is a widely-used optimisation technique, often employed in language model decoding, that maintains
+multiple promising sequences (or “beams”) simultaneously. The number of sequences is determined by the beam
+width parameter. A larger beam width generally leads to better solutions but increases computational cost. When the
+beam width is set to one, the method simplifies to greedy search, which selects the best transformation at each step
+without considering future implications.
+In the context of adversarial attacks, beam search has been employed in works like [13, 20] and has been reported
+to achieve high success rates, particularly for shorter documents, while being relatively query-efficient [69]. Variants
+of beam search, such as those with added randomness, have also been explored [67]. On the other hand, greedy
+search, used in [2, 10], is computationally less demanding but can get stuck in local minima and may not find the
+global optimum. [77] introduce a method called local search, which offers a middle ground, and provide theoretical
+performance bounds for it.
+5.2.4. Population-based algorithms
+Population-based algorithms have been widely used for generating adversarial examples. These algorithms typi-
+cally evolve a set of candidate solutions over time, guided by a fitness function that evaluates their quality.
+Genetic algorithms: Among the most prevalent are genetic algorithms, which have been adapted for text-based
+adversarial attacks by [6, 51, 78]. The process begins by generating an initial population of S candidates by applying
+S different transformations to the original example. In each iteration, new candidates are produced through a series of
+steps: application of transforms, fitness score calculation based on the loss, parent selection, crossover, and mutation.
+Different works employ various crossover functions; for instance, [6] randomly select words from parent documents,
+while [51] splice parent documents at a specific point.
+Differential evolution: As an alternative to genetic algorithms, differential evolution operates on continuous rep-
+resentations and has been used by [8].
+Particle swarm optimisation (PSO): PSO has also been applied in this context. The algorithm initialises a swarm
+of particles, each with a position and velocity. Particles update their positions based on the best-known positions,
+both locally and globally. They then update their positions based on these best-known positions, with some random-
+ness and a bias towards either the local or global best, depending on the variant. [37] used PSO, while [79] explored
+a variant known as quantum-behaved particle swarm optimisation (QPSO). [69] noted that PSO is query-inefficient
+despite its effectiveness in finding good solutions.
+5.2.5. Other
+Various other search methods have been used. These have included
+• Learning-based approaches: These methods integrate machine learning algorithms directly into the optimisa-
+tion process. For instance, [26] use neural networks to identify which tokens in the text are most susceptible to
+perturbation. Similarly, [80] use a reinforcement learning algorithm to choose synonym swaps.
+• Minimising perturbation size: Some approaches focus on generating adversarial examples with small perturba-
+tions to the original text. [81] introduce a rollback operation that iteratively removes unnecessary edits, thereby
+reducing the perturbation size. In a similar vein, [82] use a Bayesian optimisation technique that is further
+refined using importance scores and a post-processing step that minimises the perturbation size.
+6. Constraints
+As mentioned above, adversarial attacks all operate under a set of constraints. A constraint in this context refers
+to a rule or set of rules that determine what is an acceptable adversarial example. These constraints generally ensure
+that the perturbed input, while still being effective in misleading the classifier, remains as close as possible to the
+original input in terms of semantics, structure, and readability. For instance, constraints may dictate that the modified
+text should not deviate significantly in meaning from the original example (semantic drift), must retain readability
+for human observers, should adhere to grammatical norms, and maintain a certain level of similarity between the
+original and adversarial examples. These constraints preserve the linguistic integrity of the adversarial samples and
+ensure that the attacks are realistic and plausible within the bounds of the assumed threat model.
+As constraints will control the quality and characteristics of the generated adversarial examples, setting weaker
+linguistic constraints will increase the success rate of attacks, as the adversary has more freedom to alter the input
+text. However, the resultant adversarial examples will have lower text quality, which in this context, means they may
+unnatural or easily identifiable as adversarial interventions. Conversely, stronger constraints will produce higher
+quality adversarial examples that more closely resemble legitimate inputs. Yet, these constraints can also make it
+more challenging to find successful perturbations, and will lower the attack’s success rate. This trade-off is why
+attack success rate cannot be used to compare attack algorithms with different constraints, as the attack with weaker
+constraints will perform better [69].
+In the following subsections, we categorise and present the different constraints that have been used in the litera-
+ture. Table 4 provides a top-level overview.
+6.1. Readability
+These constraints are intended to enforce that the adversarial example be as close to natural text as possible.
+Grammar.
+A simple constraint in this area is that the adversarial example be grammatical. The intention is that
+adversarial examples that are more grammatical will naturally be of higher quality. This constraint can be checked
+using grammar-checking software, such as LanguageTool [87], as done by [45]). However, this constraint is not
+applicable to all attacks or threat models. It wouldn’t make sense when creating adversarial examples on data from
+domains which are rarely grammatical, such as tweets or forum posts. For example, the attack by [34] is aimed
+to deliberately mimic non-native English speakers, which makes grammar-checking less relevant in their context.
+Here, a grammatically correct sentence, “The cat sat on the mat” could be transformed to “Cat sat on mat”, which
+in this context is a legitimate adversarial example.
+Fluency.
+Attacks which value fluency wish to produce smooth, naturally flowing text that is easily comprehensible
+and linguistically sound. These attacks preference fluent sentences, like “The quick brown fox jumps over the lazy
+dog”, over non-fluent ones, such as “Quick brown fox jump over lazy dog”.
+The most common approach to measure fluency is to score the text by computing its likelihood according to a
+pre-trained language model, with the intention that more fluent text will score higher than less fluent text. Scoring
+methods range from the simple measures of perplexity and entropy, to developed metrics like BARTScore [88] or
+BERTScore [89]. These methods, akin to using one generative model to evaluate another [90] are widely used, often
+as a heuristic to select token replacements [6, 84, 85].
+An alternate approach is to assess the ‘linguistic acceptability’ of the text [5]. Linguistic acceptability is the task
+of determining if a sentence is acceptable or not, as judged by native speakers [91]. This is evaluated using a model
+that has been trained on a linguistic acceptability dataset, such as the Corpus of Linguistic Acceptability [91], and
+that then assesses text as either acceptable or unacceptable. Fluent text is more likely to be marked as acceptable
+because of its preservation of natural grammatical structures. As an example from this dataset, “The dog barked its
+way out of the room.” would be acceptable, but “The dog barked out of the room.” would be unacceptable.
+Description
+Sample references
+Apply spellchecker
+[23]
+Limit character transformations to words of specific length
+[23]
+Keep first and last letters of each word
+[23]
+Require pass through grammar checker
+[45]
+Check with linguistic acceptability model
+[5]
+Fluency via language model perplexity
+[83]
+Max of one transformation per token
+[17, 20]
+Max of k transformations per token
+[51]
+No replacing stop words
+[7, 40]
+Only replace specific word types (e.g. noun)
+[34, 37]
+Disallow stop words as replacements
+[42]
+Same part-of-speech tag for replacements
+[7, 37, 40]
+Filter replacements by fluency constraint
+[6, 83–85]
+Attack only sentences with homographs
+[30]
+Score replacements with class-conditioned language model
+[45]
+Min cosine similarity between document encodings
+[7, 29, 44, 86]
+Forbid replacement of sentiment or negation words
+[43]
+Min similarity on round-trip translation
+[18]
+Max edit distance
+[13, 21, 24]
+Include padding and unknown tokens in synonym set
+[40]
+Use lemmatisation and delemmatisation for candidate synonyms
+[37]
+Allow character transformations only for out-of-vocab words
+[20]
+Prioritize word replacements based on class and frequency
+[35, 70]
+Table 4
+Summary of the different constraints used in adversarial attacks.
+Character replacement constraints.
+Certain constraints are specifically tailored for character-level attacks — the
+attacks that add, remove or replace individual characters to achieve success. These attacks often introduce spelling
+mistakes and typos. Hence, a constraint is to require that the adversarial example contain no spelling errors, accord-
+ing to a spellchecker. To improve readability, [23] have enforced additional constraints on what character transfor-
+mations are acceptable. They disallow character replacements for words less than a certain length, and require that
+the first and last letters of each word are preserved. Examples of successful modifications under all these criteria
+might be changing bead to bed, or house to horse.
+6.2. Semantic
+Semantic constraints aim to ensure that the adversarial example preserves the original document’s intent and
+meaning. These constraints are essential because in text, a single token change can significantly change the docu-
+ment’s meaning. Consider the sentence: "The doctor recommended regular exercise to improve health." Here, the
+word “exercise” is a key component of the sentence. If this word is changed to “medication” the sentence becomes
+“The doctor recommended regular medication to improve health”, and the entire meaning of the sentence has shifted
+dramatically.
+We can divide semantic constraints into a number of categories:
+Token selection rules.
+Constraints in this category govern how tokens in the original document can be transformed.
+One type of constraint specifies which tokens can be acted upon, aiming to avoid changing tokens that are vital
+for document structure. For instance, some methods forbid the replacement of stop words [7, 40], or using stop
+words as a replacement [42]. Stop words are commonly used words in a language that contribute to the grammatical
+structure but carry little semantic weight, such as “the”, “is”, “at”, and so on. For example, modifying stop words
+in a sentence like “She is reading a book” to “She of reading a book” significantly degrades the sentence’s quality
+and changes its interpretation. A version of this constraint only specifically allows the replacement of specific word
+types, such as nouns, verbs, adverbs, or adjectives[34, 37].
+Another common constraint is to allow only one transformation per token [17, 20], or more generally, up to k
+transformations per token [51]. This helps to minimise potential semantic drift caused by multiple token changes.
+For example, in the sentence “The quick brown fox jumps over the lazy dog”, say the attacker replaces the second
+token, quick, with a synonym four times. The token changes from quick to swift to immediate to instantaneous, and
+the adversarial example “The instantaneous brown fox jumps over the lazy dog” has lost the meaning of the original.
+Some token selection rules are specific to a particular NLP task. One example is for sentiment analysis attacks,
+where constraints may forbid the replacement of sentiment-expressing to avoid changing the ground-truth label
+of the sentence. For example, if the original sentence is ‘‘I am extremely happy with the service”, the constraints
+would prevent changing the sentiment-expressing word “happy”. Modifying negation words like “not” could also
+be forbidden. These constraints are seen in [43].
+Token replacement rules.
+Constraints in this category aim to ensure that, when replacing one token with another,
+the replacement is similar to the original in the context of the document.
+One approach requires that replacements share the same part-of-speech tag as the original token, as seen in
+approaches by [7, 37, 40]. This helps to eliminate potential synonyms that use an incorrect word sense. Consider
+the sentence “She was absolutely ecstatic about her results.” The constraint would allow the adversary to change
+ecstatic (adjective) to elated (adjective), forming “She was absolutely elated about her results.”, but would prohibit
+changing ecstatic (adjective) to ecstasy (noun), and then forming “She was absolutely ecstasy about her results.”
+Another approach by [45] attempts to maintain label preservation of the original class by evaluating replacements
+using a class-conditioned language model [92]. This is a pre-trained language model that is then fine-tuned on only
+examples of a particular class of the dataset, such as positive examples for a sentiment analysis dataset. If, after a
+token replacement, a text has a high likelihood according to one of these models trained on the class of the original
+example, the reasoning is that it must belong to a similar distribution as the training data — and hence, this text
+should be truly labelled as of original class.
+Document embeddings.
+Document embeddings represent entire documents as fixed-size, dense numerical vectors.
+They allow the rich and complex information contained in a document into a format that is easily interpretable by
+machine learning models. An earlier way to create them was to aggregating individual word embeddings, such as
+those from GloVe [39]. A more modern method would be to use a transformer, (e.g. T5 [93]) to process the document
+and then pool the output embeddings. Adversarial attacks have tended to use the Universal Sentence Encoder [86]
+(USE), a model designed to produce sentence embeddings; examples include [29] or [7]. A similar model used for
+other NLP tasks is the Sentence-BERT model [94], which modifies the BERT architecture to produce embeddings
+more suitable to semantic similarity tasks.
+Document embeddings operate on the principle that documents with similar meanings should have closely re-
+lated embeddings. To evaluate the similarity between the original document and its adversarial counterpart, their
+embeddings can be compared. This comparison is often done using cosine similarity. If the similarity score is too
+low (below a certain threshold), it indicates a significant deviation in meaning, and as a result, the proposed trans-
+formation of the text is either avoided [7] or given a lower priority [44].
+Distance limits.
+In many adversarial attacks on images (e.g. [95]) it is common to put a constraint on the maximum
+distance between the original and and adversarial example, typically measured with a Lp norm. This constraint is
+intended to ensure that the adversarial changes are imperceptible to the human eye, and the image appears unaltered.
+This concept of limiting the adversarial distance has been similarly applied in text-based adversarial attacks. As
+imperceptible changes are not possible, perhaps the equivalent goal here is to keep the adversarial text semantically
+and structurally close to the original, so that the changes are not so obvious to humans.
+A common distance constraint is a maximum edit distance limit. Edit distance measures the number of transfor-
+mations needed to change one text to another. One variant is the Hamming distance, which measures the minimum
+number of token replacements needed to convert between the original and adversarial example. Another is the Lev-
+enshtein distance, which also allows inserting and deleting tokens, on top of replacement. For instance, consider
+again the sentence “The quick brown fox jumps over the lazy dog.” If we change quick to swift and lazy to slow
+the Hamming distance would be two, for the two token replacements. On the other hand, if we change quick to
+swift, remove lazy and insert sleepy before dog, the Levenshtein distance would be three, for one replacement, one
+deletion, and one insertion. Edit distance is commonly used [e.g. 13, 21, 24]
+Other distance metrics could include n-gram based metrics: those that track the number of matching n-grams
+between the original and adversarial examples. One example of this type of metric is BLEU [96], commonly used
+in machine translation. Another proposed option is Word Mover Distance [3], which broadly speaking, tracks the
+minimum distance that words from one text need to ‘travel’ in embedding space to match exactly with the words in
+another document. However, these metrics have not been widely adopted.
+6.3. Performance
+Some constraints are intended to improve the attack’s success rate, rather than to necessarily increase the text
+quality. Below are some examples of these.
+Some approaches attempt to exploit the special tokens of the tokeniser to fool the victim model. For example, [40]
+include padding and unknown tokens in the synonym set of words to increase the variety of potential replacements.
+This allows adversarial examples like “The [PAD] brown fox jumps over the lazy dog”. Another approach along
+these lines is to allow character-level transformations only if the resulting word is not in the model’s vocabulary,
+as done by [20]. This is done so that victim models that tokenise on the word level will then represent the changed
+word with an out-of-vocabulary token, rather than with a different, valid word token. This can lead to more effective
+adversarial examples, as the model cannot leverage its understanding of the altered word. For example, if the sen-
+tence was “I cannot sit down on this chair.”, the adversary could change chair to chbir, but not to chain. Then, chbir
+would be replaced at tokenisation with the out-of-vocabulary token.
+To improve the search space of the attack, [37] uses lemmatisation when searching for synonyms, and delem-
+matisation afterwards to prevent grammatical mistakes. Lemmatisation reduces words to their base or root form
+(lemma), while delemmatisation reverts lemmas back to their original inflected forms. For example, consider the
+sentence “The cats are sleeping on the mat.” With lemmatisation, cats would be reduced to its base form cat and
+similarly, sleeping to sleep. Then synonyms are searched for at the lemma level, which allows for a broader set of
+synonyms. After synonyms are found, like feline for cat and rest for sleep, delemmatisation is applied to fit these
+synonyms back into the original sentence context. The final sentence would then be “The felines are resting on the
+mat.”
+To increase attack strength, some attacks constrain replacements to those commonly seen in examples of other
+classes. For example, [35] replace named entities with the most frequent same-type named entities from a different
+class. Named entities are specific, identifiable elements in text, such as names of people or places, that are categorised
+as distinct types through the task of named entity recognition. In this approach, named entities in a text are replaced
+with other named entities of the same type but often seen with examples of a different class to the original in the
+training dataset. For example, consider the sentence, “I bought a smartphone from Apple.” Here, Apple is a named
+entity, categorised as an organisation. With this strategy, Apple might be replaced with another organisation, such as
+Samsung, if Samsung is identified as a frequent entity for a different class. Similarly, [70] categorise each example
+(e.g., by movie genre for a dataset of movie reviews) and then prioritise word replacements that are frequently used
+both within that category and in examples from different classes.
+7. Conclusion
+In this survey, we have provided an overview of the key components that make up token-modification adversarial
+attacks: goal functions, transformations, search methods, and constraints.
+We have first covered goal functions, which define what the adversary would like to achieve, and allow for a
+quantifiable measure of progress towards that goal. We have classified these as either classification or seq2seq goal
+functions, and again as either targeted or untargeted attacks, depending on the NLP task and the specifics of the
+attack goal. The majority of adversarial attacks have been for text classification, and it would be interesting to see
+more attacks targeting the wide range of seq2seq tasks, such as dialogue systems, paraphrasing, text summarisation
+and code generation.
+We have then covered the wide range of proposed transformations: functions that alter one set of ordered tokens
+into another, where the token can be at a range of different granularities. Typical transformations insert, replace or
+delete tokens, with most attacks replacing and fewer inserting or deleting them. The type of transformation depends
+on the intent of the adversary. If they simply wish to induce a label flip for a classifier, they can change tokens as
+they like. If they wish to mimic human errors, they might introduce typos or phonetically similar words to the text.
+If they wish to create close-to-imperceptible adversarial examples, they may replace with visually similar tokens or
+use invisible characters. If they wish to preserve the fluency of the text, they might use a language model to mask a
+word, and then replace it — and so on.
+After, we covered search methods. Starting from an original example, the search method repeatedly applies trans-
+formations until the adversarial example is found, or the search fails. They judge and choose transformations based
+on scoring functions, which numerically rank the available options. Search methods may be allow access to the
+gradients of the victim model (white-box) or they may forbid access (black-box). Should the victim model not be
+available, search methods may use a substitute model instead. A variety of search methods have been proposed.
+Simple methods and heuristics, such as greedy search, run quickly but give worse results. More complex methods,
+such as particle swarm optimisation, give better results but are slower to run. Generally, there is a correlation be-
+tween the number of times the victim model is queried, and the success of the search method; [69] has provided an
+initial benchmark of the performance and query effectiveness of search methods. More efficient search methods are
+continuing to be identified [e.g. 75, 77, 82].
+We have also surveyed the constraints of the field. Constraints determine what makes successful or unsuccessful
+adversarial examples. They are used to enforce minimum standards on readability, fluency, grammatically and se-
+mantic similarity, or also to set a maximum allowed perturbation distance. Constraints can also increase the attack
+strength, such as to exclude transformations less likely to degrade the performance of the victim model. Constraints
+are often quantified using automated metrics, like the count of grammatical errors or language model entropy for
+assessing fluency. These constraints are generally employed at each stage of the optimisation algorithm to prevent
+the search process from deviating.
+Finally, we will now propose some future directions that are motivated by the limitations of the field.
+Standardise attack scenarios.
+Currently the field is limited by a lack of standardised attack scenarios. The first
+problem is that each study establishes its own threat model, transformations, and constraints, which does not eas-
+ily allow for cross-study comparisons. The second problem is that most papers’ threat models do not align with
+real-world attack scenarios, which limits their practical relevance [97]. Real-world scenarios might include, among
+others: circumventing email spam filters; manipulating user reviews to deceive sentiment analysis models; caus-
+ing errors in translation models; altering news articles to evade fact-checking models; challenging hate-speech,
+offensive-language, or other automated content moderation systems; altering documents to evade piracy detection;
+or prompting chatbots to provide incorrect advice.
+Extend to multimodal scenarios.
+This has been a survey of text attacks, but it is worth remembering that many
+real-world systems are multimodal, integrating text, images, videos, audio, graphs, spatial data, structured data,
+time-series data, and more. For instance, webpages and emails often contain a mix of text, hyperlinks, images,
+video, and audio. Navigation systems meld text with images and geospatial data. A Facebook account may include
+a profile bio, a feed of text, video, and image posts, a network of friends, and geographical details (e.g., country
+of origin). Adapting text adversarial attack techniques to multimodal systems is a promising direction for future
+research.
+More multiple-token attacks.
+Most attacks insert, delete or replace single tokens at each step, which significantly
+limits the range of possible adversarial examples. By contrast, in Section 4.6 we discussed phrase-level attacks, such
+as the attacks by [81] and [45] that alter multiple tokens per optimisation step. These attacks are capable of a much
+larger range of adversarial examples, which is appealing, but to date they are much less explored. A promising option
+could be to incorporate generative seq2seq models, such as paraphrase models, to identify high-quality phrase and
+sentence-level transforms. Such an attack could modify phrases or idioms, which single-token attacks could not do.
+Consider the idiom “Bite the bullet”, which refers to enduring a painful or unpleasant situation. Such an attack might
+replace it with a similar idiom, such as “Grin and bear it” or “Tough it out”, which is not easily achievable with
+single-token modification algorithms.
+Incorporate human judgements.
+Currently attacks are often judged and ranked by automated metrics, such as
+fluency or semantic similarity scores. These metrics are flawed, however, and often correlate poorly with human
+judgement [90, 98], leading to scenarios where many so-called ‘adversarial’ examples are non-fluent, ungrammat-
+ical, do not preserve semantics, change the ground-truth label, etc. [99]. The core problem is that it is very hard
+to capture all the required ‘adversarial’ properties with a collection of metrics, as the ultimate judge of adversarial
+attacks is a human, and the metrics deviate from human judgement. Directly incorporating human feedback would
+improve the quality of adversarial examples, but human judgements are typically difficult and expensive to obtain.
+Two alternatives come to mind. The first is to allow the end user to construct the adversarial example, perhaps
+with guidance from a user-friendly interface and assistance from a model, as demonstrated in [100]. The second is
+to use techniques like Reinforcement Learning from Human Feedback (RLHF). Here, an adversary would develop
+a ’reward’ model that assigns scalar rewards to assess the quality of adversarial examples. The reward model would
+be trained using human preferences, and would be applied as a constraint in the optimisation process. The use of
+RLHF was key to the success of ChatGPT and other similar systems. It is particularly useful for scenarios where
+defining an explicit reward function is difficult, such as for this one.
+Statements and declarations
+Authorship statement. All authors contributed to the conception and design of the paper. The first author, Tom
+Roth, performed the literature search and wrote the manuscript. All authors then critically revised the work, com-
+mented on previous versions, and read and approved the final manuscript.
+Declarations. This research was supported by scholarships from Data61 and from the Australian Government Re-
+search Training Program (RTP). The authors declare that they have no conflict of interest and that they have no other
+sources of funding.
+Data availability statement. Data sharing is not applicable to this article as no datasets were generated or analysed
+during the current study.
+References
+[1] A. Kurakin, I.J. Goodfellow and S. Bengio, Adversarial Machine Learning at Scale, in: 5th International Conference on Learn-
+ing Representations, ICLR 2017, Toulon, France, April 24-26, 2017, Conference Track Proceedings, OpenReview.net, 2017. https:
+//openreview.net/forum?id=BJm4T4Kgx.
+[2] E. Wallace, M. Stern and D. Song, Imitation Attacks and Defenses for Black-box Machine Translation Systems, in: Proceedings of the
+2020 Conference on Empirical Methods in Natural Language Processing (EMNLP), Association for Computational Linguistics, Online,
+2020, pp. 5531–5546. doi:10.18653/v1/2020.emnlp-main.446. https://www.aclweb.org/anthology/2020.emnlp-main.446.
+[3] W.E. Zhang, Q.Z. Sheng, A. Alhazmi and C. Li, Adversarial Attacks on Deep-learning Models in Natural Language Processing, ACM
+Transactions on Intelligent Systems and Technology 11(3) (2020), 1–41. doi:10.1145/3374217.
+[4] B. Alshemali and J. Kalita, Improving the Reliability of Deep Neural Networks in NLP: A Review, Knowledge-Based Systems 191 (2020),
+105210. doi:10.1016/j.knosys.2019.105210.
+[5] J. Morris, E. Lifland, J.Y. Yoo, J. Grigsby, D. Jin and Y. Qi, TextAttack: A Framework for Adversarial Attacks, Data Augmentation,
+and Adversarial Training in NLP, in: Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing:
+System Demonstrations, Association for Computational Linguistics, Online, 2020, pp. 119–126. doi:10.18653/v1/2020.emnlp-demos.16.
+https://aclanthology.org/2020.emnlp-demos.16.
+[6] M. Alzantot, Y. Sharma, A. Elgohary, B.J. Ho, M.B. Srivastava and K.W. Chang, Generating Natural Language Adversarial Examples,
+Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, EMNLP 2018 (2020), 2890–2896. ISBN
+9781948087841. doi:10.18653/v1/d18-1316.
+[7] D. Jin, Z. Jin, J.T. Zhou and P. Szolovits, Is BERT Really Robust? A Strong Baseline for Natural Language Attack on Text Classification
+and Entailment, Proceedings of the AAAI Conference on Artificial Intelligence 34(05) (2020), 8018–8025. doi:10.1609/aaai.v34i05.6311.
+https://ojs.aaai.org/index.php/AAAI/article/view/6311.
+[8] N. Boucher, I. Shumailov, R. Anderson and N. Papernot, Bad Characters: Imperceptible NLP Attacks, in: 43rd IEEE Symposium on Secu-
+rity and Privacy, SP 2022, San Francisco, CA, USA, May 22-26, 2022, IEEE, 2022, pp. 1987–2004. doi:10.1109/SP46214.2022.9833641.
+[9] Y.-L. Hsieh, M. Cheng, D.-C. Juan, W. Wei, W.-L. Hsu and C.-J. Hsieh, On the Robustness of Self-Attentive Models, in: Proceedings of
+the 57th Annual Meeting of the Association for Computational Linguistics, Association for Computational Linguistics, Florence, Italy,
+2019, pp. 1520–1529. doi:10.18653/v1/P19-1147. https://www.aclweb.org/anthology/P19-1147.
+[10] P. Michel, X. Li, G. Neubig and J. Pino, On Evaluation of Adversarial Perturbations for Sequence-to-Sequence Models, in: Proceedings
+of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technolo-
+gies, Volume 1 (Long and Short Papers), Association for Computational Linguistics, Minneapolis, Minnesota, 2019, pp. 3103–3114.
+doi:10.18653/v1/N19-1314. https://www.aclweb.org/anthology/N19-1314.
+[11] O.-M. Camburu, B. Shillingford, P. Minervini, T. Lukasiewicz and P. Blunsom, Make Up Your Mind! Adversarial Generation of Incon-
+sistent Natural Language Explanations, in: Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics,
+Association for Computational Linguistics, Online, 2020, pp. 4157–4165. doi:10.18653/v1/2020.acl-main.382. https://www.aclweb.org/
+anthology/2020.acl-main.382.
+[12] R. Jia and P. Liang, Adversarial Examples for Evaluating Reading Comprehension Systems, in: Proceedings of the 2017 Conference on
+Empirical Methods in Natural Language Processing, Association for Computational Linguistics, Copenhagen, Denmark, 2017, pp. 2021–
+2031. doi:10.18653/v1/D17-1215. https://www.aclweb.org/anthology/D17-1215.
+[13] J. Ebrahimi, D. Lowd and D. Dou, On Adversarial Examples for Character-Level Neural Machine Translation, in: Proceedings of the 27th
+International Conference on Computational Linguistics, Association for Computational Linguistics, Santa Fe, New Mexico, USA, 2018,
+pp. 653–663. https://www.aclweb.org/anthology/C18-1055.
+[14] J. Wan, J. Yang, S. Ma, D. Zhang, W. Zhang, Y. Yu and Z. Li, PAEG: Phrase-level Adversarial Example Generation for Neural Machine
+Translation, in: Proceedings of the 29th International Conference on Computational Linguistics, International Committee on Computa-
+tional Linguistics, Gyeongju, Republic of Korea, 2022, pp. 5085–5097. https://aclanthology.org/2022.coling-1.451.
+[15] N. Papernot, P.D. McDaniel, A. Swami and R.E. Harang, Crafting Adversarial Input Sequences for Recurrent Neural Networks, in:
+2016 IEEE Military Communications Conference, MILCOM 2016, Baltimore, MD, USA, November 1-3, 2016, J. Brand, M.C. Valenti,
+A. Akinpelu, B.T. Doshi and B.L. Gorsic, eds, IEEE, 2016, pp. 49–54. doi:10.1109/MILCOM.2016.7795300.
+[16] Z. Zhao, D. Dua and S. Singh, Generating Natural Adversarial Examples, in: 6th International Conference on Learning Representations,
+ICLR 2018, Vancouver, BC, Canada, April 30 - May 3, 2018, Conference Track Proceedings, OpenReview.net, 2018. https://openreview.
+net/forum?id=H1BLjgZCb.
+[17] M. Cheng, J. Yi, P.-Y. Chen, H. Zhang and C.-J. Hsieh, Seq2Sick: Evaluating the Robustness of Sequence-to-Sequence Models with Adver-
+sarial Examples, Proceedings of the AAAI Conference on Artificial Intelligence 34(04) (2020), 3601–3608. doi:10.1609/aaai.v34i04.5767.
+https://ojs.aaai.org/index.php/AAAI/article/view/5767.
+[18] X. Zhang, J. Zhang, Z. Chen and K. He, Crafting Adversarial Examples for Neural Machine Translation, in: Proceedings of the 59th Annual
+Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing
+(Volume 1: Long Papers), Association for Computational Linguistics, Online, 2021, pp. 1967–1977. doi:10.18653/v1/2021.acl-long.153.
+https://aclanthology.org/2021.acl-long.153.
+[19] D. Li, Y. Zhang, H. Peng, L. Chen, C. Brockett, M.-T. Sun and B. Dolan, Contextualized Perturbation for Textual Adversarial Attack, in:
+Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language
+Technologies, Association for Computational Linguistics, Online, 2021, pp. 5053–5069. doi:10.18653/v1/2021.naacl-main.400. https:
+//aclanthology.org/2021.naacl-main.400.
+[20] J. Ebrahimi, A. Rao, D. Lowd and D. Dou, HotFlip: White-Box Adversarial Examples for Text Classification, in: ACL 2018, Melbourne,
+Australia, July 15-20, 2018, Volume 2: Short Papers, I. Gurevych and Y. Miyao, eds, Association for Computational Linguistics, 2018,
+pp. 31–36. doi:10.18653/v1/P18-2006. https://www.aclweb.org/anthology/P18-2006/.
+[21] J. Gao, J. Lanchantin, M.L. Soffa and Y. Qi, Black-Box Generation of Adversarial Text Sequences to Evade Deep Learning Clas-
+sifiers, Proceedings - 2018 IEEE Symposium on Security and Privacy Workshops, SPW 2018 (2018), 50–56. ISBN 9780769563497.
+doi:10.1109/SPW.2018.00016.
+[22] B. Formento, C.S. Foo, L.A. Tuan and S.K. Ng, Using Punctuation as an Adversarial Attack on Deep Learning-Based NLP Systems: An
+Empirical Study, in: Findings of the Association for Computational Linguistics: EACL 2023, Association for Computational Linguistics,
+Dubrovnik, Croatia, 2023, pp. 1–34. https://aclanthology.org/2023.findings-eacl.1.
+[23] Y. Belinkov and Y. Bisk, Synthetic and Natural Noise Both Break Neural Machine Translation, in: 6th International Conference on Learn-
+ing Representations, {ICLR} 2018, Vancouver, BC, Canada, April 30 - May 3, 2018, Conference Track Proceedings, OpenReview.net,
+2018. https://openreview.net/forum?id=BJ8vJebC-.
+[24] J. Li, S. Ji, T. Du, B. Li and T. Wang, TextBugger: Generating Adversarial Text Against Real-world Applications, in:
+26th Annual Network and Distributed System Security Symposium, NDSS 2019, San Diego, California, USA, February 24-27,
+2019, The Internet Society, 2019. ISBN 189156255X. doi:10.14722/ndss.2019.23138. https://www.ndss-symposium.org/ndss-paper/
+textbugger-generating-adversarial-text-against-real-world-applications/.
+[25] I. Mondal, BBAEG: Towards BERT-based Biomedical Adversarial Example Generation for Text Classification, in: Proceedings of the
+2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies,
+NAACL-HLT 2021, Online, June 6-11, 2021, K. Toutanova, A. Rumshisky, L. Zettlemoyer, D. Hakkani-Tür, I. Beltagy, S. Bethard, R. Cot-
+terell, T. Chakraborty and Y. Zhou, eds, Association for Computational Linguistics, 2021, pp. 5378–5384. doi:10.18653/v1/2021.naacl-
+main.423.
+[26] C. Emmery, Ákos Kádár and G. Chrupala, Adversarial Stylometry in the Wild: Transferable Lexical Substitution Attacks on Author
+Profiling, in: EACL, 2021, pp. 2388–2402. https://www.aclweb.org/anthology/2021.eacl-main.203/.
+[27] S. Eger and Y. Benz, From Hero to Zéroe: A Benchmark of Low-Level Adversarial Attacks, in: Proceedings of the 1st Conference
+of the Asia-Pacific Chapter of the Association for Computational Linguistics and the 10th International Joint Conference on Natural
+Language Processing, AACL/IJCNLP 2020, Suzhou, China, December 4-7, 2020, K. Wong, K. Knight and H. Wu, eds, Association for
+Computational Linguistics, 2020, pp. 786–803. https://aclanthology.org/2020.aacl-main.79/.
+[28] T. Le, J. Lee, K. Yen, Y. Hu and D. Lee, Perturbations in the Wild: Leveraging Human-Written Text Perturbations for Realistic Adversarial
+Attack and Defense, in: Findings of the Association for Computational Linguistics: ACL 2022, Dublin, Ireland, May 22-27, 2022, S. Mure-
+san, P. Nakov and A. Villavicencio, eds, Association for Computational Linguistics, 2022, pp. 2953–2965. doi:10.18653/v1/2022.findings-
+acl.232.
+[29] H. Liu, C. Cai and Y. Qi, Expanding Scope: Adapting English Adversarial Attacks to Chinese, in: Proceedings of the 3rd Workshop on
+Trustworthy Natural Language Processing (TrustNLP 2023), Association for Computational Linguistics, Toronto, Canada, 2023, pp. 276–
+286. doi:10.18653/v1/2023.trustnlp-1.24. https://aclanthology.org/2023.trustnlp-1.24.
+[30] D. Emelin, I. Titov and R. Sennrich, Detecting Word Sense Disambiguation Biases in Machine Translation for Model-Agnostic Adver-
+sarial Attacks, in: Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing, EMNLP 2020, Online,
+November 16-20, 2020, B. Webber, T. Cohn, Y. He and Y. Liu, eds, Association for Computational Linguistics, 2020, pp. 7635–7653.
+doi:10.18653/v1/2020.emnlp-main.616.
+[31] S. Eger, G.G. ˙I¸sgüder, A. Rücklé, J.-U. Lee, C. Schulz, M. Mesgar, K. Swarnkar, E. Simpson and I. Gurevych, Text Processing Like
+Humans Do: Visually Attacking and Shielding NLP Systems, in: Proceedings of the 2019 Conference of the North American Chapter of
+the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers), Association for Com-
+putational Linguistics, Minneapolis, Minnesota, 2019, pp. 1634–1647. doi:10.18653/v1/N19-1165. https://www.aclweb.org/anthology/
+N19-1165.
+[32] J. Li, T. Du, S. Ji, R. Zhang, Q. Lu, M. Yang and T. Wang, TextShield: Robust Text Classification Based on Multimodal Embedding and
+Neural Machine Translation, in: 29th USENIX Security Symposium (USENIX Security 20), USENIX Association, 2020, pp. 1381–1398.
+ISBN 978-1-939133-17-5. https://www.usenix.org/conference/usenixsecurity20/presentation/li-jinfeng.
+[33] A. Dionysiou and E. Athanasopoulos, Unicode Evil: Evading NLP Systems Using Visual Similarities of Text Characters, in: Proceedings
+of the 14th ACM Workshop on Artificial Intelligence and Security, AISec ’21, Association for Computing Machinery, New York, NY,
+USA, 2021, pp. 1–12–. ISBN 9781450386579. doi:10.1145/3474369.3486871.
+[34] S. Tan, S. Joty, M.-Y. Kan and R. Socher, It’s Morphin’ Time! Combating Linguistic Discrimination with Inflectional Perturbations, in:
+Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, Association for Computational Linguistics,
+Online, 2020, pp. 2920–2935. doi:10.18653/v1/2020.acl-main.263. https://www.aclweb.org/anthology/2020.acl-main.263.
+[35] S. Ren, Y. Deng, K. He and W. Che, Generating Natural Language Adversarial Examples through Probability Weighted Word Saliency,
+Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics (2019), 1085–1097. doi:10.18653/v1/p19-1103.
+https://www.aclweb.org/anthology/P19-1103.
+[36] C. Fellbaum, WordNet: An Electronic Lexical Database, Bradford Books, 1998.
+[37] Y. Zang, F. Qi, C. Yang, Z. Liu, M. Zhang, Q. Liu and M. Sun, Word-level Textual Adversarial Attacking as Combinatorial Optimization,
+in: Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, Association for Computational Linguistics,
+Online, 2020, pp. 6066–6080. doi:10.18653/v1/2020.acl-main.540. https://www.aclweb.org/anthology/2020.acl-main.540.
+[38] G. Chang, H. Gao, Z. Yao and H. Xiong, TextGuise: Adaptive adversarial example attacks on text classification model, Neuro-
+computing 529 (2023), 190–203. doi:https://doi.org/10.1016/j.neucom.2023.01.071. https://www.sciencedirect.com/science/article/pii/
+S0925231223001042.
+[39] J. Pennington, R. Socher and C.D. Manning, GloVe: Global Vectors for Word Representation, in: In EMNLP, 2014.
+[40] J. Xu and Q. Du, TextTricker: Loss-Based and Gradient-Based Adversarial Attacks on Text Classification Models, Eng. Appl. Artif. Intell.
+92 (2020), 103641. doi:10.1016/j.engappai.2020.103641.
+[41] N. Mrkši´c, D. Ó Séaghdha, B. Thomson, M. Gaši´c, L. Rojas-Barahona, P.-H. Su, D. Vandyke, T.-H. Wen and S. Young, Counter-fitting
+Word Vectors to Linguistic Constraints, in: Proceedings of HLT-NAACL, 2016.
+[42] L. Li, R. Ma, Q. Guo, X. Xue and X. Qiu, BERT-ATTACK: Adversarial Attack Against BERT Using BERT, in: Proceedings of the 2020
+Conference on Empirical Methods in Natural Language Processing (EMNLP), Association for Computational Linguistics, Online, 2020,
+pp. 6193–6202. doi:10.18653/v1/2020.emnlp-main.500. https://www.aclweb.org/anthology/2020.emnlp-main.500.
+[43] H. Zhang, H. Zhou, N. Miao and L. Li, Generating Fluent Adversarial Examples for Natural Languages, in: Proceedings of the 57th
+Annual Meeting of the Association for Computational Linguistics, Association for Computational Linguistics, Florence, Italy, 2019,
+pp. 5564–5569. doi:10.18653/v1/P19-1559. https://www.aclweb.org/anthology/P19-1559.
+[44] S. Garg and G. Ramakrishnan, BAE: BERT-based Adversarial Examples for Text Classification, in: Proceedings of the 2020 Conference on
+Empirical Methods in Natural Language Processing (EMNLP), Association for Computational Linguistics, Online, 2020, pp. 6174–6181.
+doi:10.18653/v1/2020.emnlp-main.498. https://www.aclweb.org/anthology/2020.emnlp-main.498.
+[45] Y. Lei, Y. Cao, D. Li, T. Zhou, M. Fang and M. Pechenizkiy, Phrase-level Textual Adversarial Attack with Label Preservation, in: Findings
+of the Association for Computational Linguistics: NAACL 2022, Association for Computational Linguistics, Seattle, United States, 2022,
+pp. 1095–1112. doi:10.18653/v1/2022.findings-naacl.83. https://aclanthology.org/2022.findings-naacl.83.
+[46] Z. Shao, Z. Wu and M. Huang, AdvExpander: Generating Natural Language Adversarial Examples by Expanding Text, IEEE ACM Trans.
+Audio Speech Lang. Process. 30 (2022), 1184–1196. doi:10.1109/TASLP.2021.3129339.
+[47] L. Yuan, X. Zheng, Y. Zhou, C.-J. Hsieh and K.-W. Chang, On the Transferability of Adversarial Attacks against Neural Text Classifier, in:
+Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, Association for Computational Linguistics,
+Online and Punta Cana, Dominican Republic, 2021, pp. 1612–1625. doi:10.18653/v1/2021.emnlp-main.121. https://aclanthology.org/
+2021.emnlp-main.121.
+[48] C. Stephenson, The Methodology of Historical Census Record Linkage: a User’s Guide To the Soundex, Journal of Family History 5(1)
+(1980), 112–115. doi:10.1177/036319908000500106.
+[49] Z. Dong, Q. Dong and C. Hao, HowNet and Its Computation of Meaning, in: Coling 2010: Demonstrations, Coling 2010 Organizing
+Committee, Beijing, China, 2010, pp. 53–56. https://www.aclweb.org/anthology/C10-3014.
+[50] D.S. Wishart, Y.D. Feunang, A.C. Guo, E.J. Lo, A. Marcu, J.R. Grant, T. Sajed, D. Johnson, C. Li, Z. Sayeeda, N. Assempour, I. Iynkkaran,
+Y. Liu, A. Maciejewski, N. Gale, A. Wilson, L. Chin, R. Cummings, D. Le, A. Pon, C. Knox and M. Wilson, DrugBank 5.0: a major update
+to the DrugBank database for 2018, Nucleic Acids Res. 46(Database–Issue) (2018), D1074–D1082. doi:10.1093/nar/gkx1037.
+[51] X. Wang, H. Jin, Y. Yang and K. He, Natural Language Adversarial Defense through Synonym Encoding, in: Proceedings of the Confer-
+ence on Uncertainty in Artificial Intelligence, 2021, pp. 823–833.
+[52] J. Devlin, M.-W. Chang, K. Lee and K. Toutanova, BERT: Pre-training of Deep Bidirectional Transformers for Language Understand-
+ing, in: Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human
+Language Technologies, Volume 1 (Long and Short Papers), Association for Computational Linguistics, Minneapolis, Minnesota, 2019,
+pp. 4171–4186. doi:10.18653/v1/N19-1423. https://aclanthology.org/N19-1423.
+[53] Z. Meng and R. Wattenhofer, A Geometry-Inspired Attack for Generating Natural Language Adversarial Examples, in: Proceedings of the
+28th International Conference on Computational Linguistics, COLING 2020, Barcelona, Spain (Online), December 8-13, 2020, D. Scott,
+N. Bel and C. Zong, eds, International Committee on Computational Linguistics, 2020, pp. 6679–6689. doi:10.18653/v1/2020.coling-
+main.585.
+[54] S. Moosavi-Dezfooli, A. Fawzi and P. Frossard, DeepFool: A Simple and Accurate Method to Fool Deep Neural Networks, in: 2016 IEEE
+Conference on Computer Vision and Pattern Recognition, CVPR 2016, Las Vegas, NV, USA, June 27-30, 2016, IEEE Computer Society,
+2016, pp. 2574–2582. doi:10.1109/CVPR.2016.282.
+[55] B. Liang, H. Li, M. Su, P. Bian, X. Li and W. Shi, Deep Text Classification Can be Fooled, in: Proceedings of the Twenty-Seventh Inter-
+national Joint Conference on Artificial Intelligence, {IJCAI-18}, International Joint Conferences on Artificial Intelligence Organization,
+2018, pp. 4208–4215. doi:10.24963/ijcai.2018/585.
+[56] B. Wang, H. Pei, B. Pan, Q. Chen, S. Wang and B. Li, T3: Tree-Autoencoder Constrained Adversarial Text Generation for Targeted Attack,
+in: Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP), Association for Computational
+Linguistics, Online, 2020, pp. 6134–6150. doi:10.18653/v1/2020.emnlp-main.495. https://aclanthology.org/2020.emnlp-main.495.
+[57] D. Ippolito, D. Duckworth, C. Callison-Burch and D. Eck, Automatic Detection of Generated Text is Easiest when Humans are Fooled,
+in: ACL, 2020, pp. 1808–1822. doi:10.18653/v1/2020.acl-main.164.
+[58] D. Harbecke and C. Alt, Considering Likelihood in NLP Classification Explanations with Occlusion and Language Modeling, in: Pro-
+ceedings of the 58th Annual Meeting of the Association for Computational Linguistics: Student Research Workshop, ACL 2020, On-
+line, July 5-10, 2020, S. Rijhwani, J. Liu, Y. Wang and R. Dror, eds, Association for Computational Linguistics, 2020, pp. 111–117.
+doi:10.18653/v1/2020.acl-srw.16.
+[59] V. Malik, A. Bhat and A. Modi, Adv-OLM: Generating Textual Adversaries via OLM, 2021.
+[60] W. Zhou, T. Ge, K. Xu, F. Wei and M. Zhou, BERT-based Lexical Substitution, in: Proceedings of the 57th Conference of the Association
+for Computational Linguistics, ACL 2019, Florence, Italy, July 28- August 2, 2019, Volume 1: Long Papers, A. Korhonen, D.R. Traum
+and L. Màrquez, eds, Association for Computational Linguistics, 2019, pp. 3368–3373. doi:10.18653/v1/p19-1328.
+[61] C. Manning, M. Surdeanu, J. Bauer, J. Finkel, S. Bethard and D. McClosky, The Stanford CoreNLP Natural Language Processing Toolkit,
+in: Proceedings of 52nd Annual Meeting of the Association for Computational Linguistics: System Demonstrations, Association for Com-
+putational Linguistics, Baltimore, Maryland, 2014, pp. 55–60. doi:10.3115/v1/P14-5010. https://aclanthology.org/P14-5010.
+[62] M.T. Ribeiro, S. Singh and C. Guestrin, Semantically equivalent adversarial rules for debugging NLP models, ACL 2018 - 56th An-
+nual Meeting of the Association for Computational Linguistics, Proceedings of the Conference (Long Papers) 1 (2018), 856–865. ISBN
+9781948087322. doi:10.18653/v1/p18-1079.
+[63] J.Y. Yoo and Y. Qi, Towards Improving Adversarial Training of NLP Models, in: Findings of the Association for Computational Lin-
+guistics: EMNLP 2021, Virtual Event / Punta Cana, Dominican Republic, 16-20 November, 2021, M. Moens, X. Huang, L. Specia and
+S.W. Yih, eds, Association for Computational Linguistics, 2021, pp. 945–956. doi:10.18653/v1/2021.findings-emnlp.81.
+[64] N. Berger, S. Riezler, S. Ebert and A. Sokolov, Don’t Search for a Search Method - Simple Heuristics Suffice for Adversarial Text Attacks,
+in: Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, EMNLP 2021, Virtual Event / Punta
+Cana, Dominican Republic, 7-11 November, 2021, M. Moens, X. Huang, L. Specia and S.W. Yih, eds, Association for Computational
+Linguistics, 2021, pp. 8216–8224. doi:10.18653/v1/2021.emnlp-main.647.
+[65] S. Singla, E. Wallace, S. Feng and S. Feizi, Understanding Impacts of High-Order Loss Approximations and Features in Deep Learning
+Interpretation, in: Proceedings of the 36th International Conference on Machine Learning, K. Chaudhuri and R. Salakhutdinov, eds,
+Proceedings of Machine Learning Research, Vol. 97, PMLR, 2019, pp. 5848–5856. http://proceedings.mlr.press/v97/singla19a.html.
+[66] N. Papernot, P. McDaniel, I. Goodfellow, S. Jha, Z.B. Celik and A. Swami, Practical black-box attacks against machine learning,
+ASIA CCS 2017 - Proceedings of the 2017 ACM Asia Conference on Computer and Communications Security (2017), 506–519. ISBN
+9781450349444. doi:10.1145/3052973.3053009.
+[67] B. Zhu, Z. Gu, Y. Qian, F. Lau and Z. Tian, Leveraging transferability and improved beam search in textual adversarial attacks, Neu-
+rocomputing 500 (2022), 135–142. doi:https://doi.org/10.1016/j.neucom.2022.05.054. https://www.sciencedirect.com/science/article/pii/
+S0925231222006154.
+[68] L. Yuan, Y. Zhang, Y. Chen and W. Wei, Bridge the Gap Between CV and NLP! A Gradient-based Textual Adversarial Attack Framework,
+in: Findings of the Association for Computational Linguistics: ACL 2023, Association for Computational Linguistics, Toronto, Canada,
+2023, pp. 7132–7146. doi:10.18653/v1/2023.findings-acl.446. https://aclanthology.org/2023.findings-acl.446.
+[69] J.Y. Yoo, J.X. Morris, E. Lifland and Y. Qi, Searching for a Search Method: Benchmarking Search Algorithms for Generating NLP
+Adversarial Examples, 2020.
+[70] S. Samanta and S. Mehta, Towards Crafting Text Adversarial Samples, arXiv abs/1707.0 (2017). http://arxiv.org/abs/1707.02812.
+[71] P. Zhan, C. Zheng, J. Yang, Y. Wang, L. Wang, Y. Wu and Y. Zhang, PARSE: An Efficient Search Method for Black-box Adversarial
+Text Attacks, in: Proceedings of the 29th International Conference on Computational Linguistics, COLING 2022, Gyeongju, Republic of
+Korea, October 12-17, 2022, N. Calzolari, C. Huang, H. Kim, J. Pustejovsky, L. Wanner, K. Choi, P. Ryu, H. Chen, L. Donatelli, H. Ji,
+S. Kurohashi, P. Paggio, N. Xue, S. Kim, Y. Hahm, Z. He, T.K. Lee, E. Santus, F. Bond and S. Na, eds, International Committee on
+Computational Linguistics, 2022, pp. 4776–4787. https://aclanthology.org/2022.coling-1.423.
+[72] R. Maheshwary, S. Maheshwary and V. Pudi, A Strong Baseline for Query Efficient Attacks in a Black Box Setting, in: Proceedings of the
+2021 Conference on Empirical Methods in Natural Language Processing, Association for Computational Linguistics, Online and Punta
+Cana, Dominican Republic, 2021, pp. 8396–8409. doi:10.18653/v1/2021.emnlp-main.661. https://aclanthology.org/2021.emnlp-main.
+661.
+[73] Z. Zeng and D. Xiong, An Empirical Study on Adversarial Attack on NMT: Languages and Positions Matter, in: Proceedings of the
+59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language
+Processing (Volume 2: Short Papers), Association for Computational Linguistics, Online, 2021, pp. 454–460. doi:10.18653/v1/2021.acl-
+short.58. https://aclanthology.org/2021.acl-short.58.
+[74] M.S. Charikar, Similarity Estimation Techniques from Rounding Algorithms, in: Proceedings of the Thiry-Fourth Annual ACM Sym-
+posium on Theory of Computing, STOC ’02, Association for Computing Machinery, New York, NY, USA, 2002, pp. 380–388–. ISBN
+1581134959. doi:10.1145/509907.509965.
+[75] X. Guo, S. Tu and L. Xu, Learning to Generate Textual Adversarial Examples, in: Artificial Neural Networks and Machine Learning
+- ICANN 2022 - 31st International Conference on Artificial Neural Networks, Bristol, UK, September 6-9, 2022, Proceedings, Part I,
+E. Pimenidis, P.P. Angelov, C. Jayne, A. Papaleonidas and M. Aydin, eds, Lecture Notes in Computer Science, Vol. 13529, Springer,
+2022, pp. 195–206. doi:10.1007/978-3-031-15919-0_17.
+[76] E. Wallace, J. Tuyls, J. Wang, S. Subramanian, M. Gardner and S. Singh, {AllenNLP Interpret}: A Framework for Explaining Predictions
+of {NLP} Models, in: Empirical Methods in Natural Language Processing, 2019.
+[77] S. Liu, N. Lu, C. Chen and K. Tang, Efficient Combinatorial Optimization for Word-Level Adversarial Textual Attack, IEEE/ACM Trans.
+Audio, Speech and Lang. Proc. 30 (2022), 98–111–. doi:10.1109/TASLP.2021.3130970.
+[78] R. Maheshwary, S. Maheshwary and V. Pudi, Generating Natural Language Attacks in a Hard Label Black Box Setting, in: Thirty-Fifth
+AAAI Conference on Artificial Intelligence, AAAI 2021, Thirty-Third Conference on Innovative Applications of Artificial Intelligence, IAAI
+2021, The Eleventh Symposium on Educational Advances in Artificial Intelligence, EAAI 2021, Virtual Event, February 2-9, 2021, AAAI
+Press, 2021, pp. 13525–13533. https://ojs.aaai.org/index.php/AAAI/article/view/17595.
+[79] Q. Chen, J. Sun and V. Palade, A Word-Level Adversarial Attack Method Based on Sememes and an Improved Quantum-Behaved Particle
+Swarm Optimization, IEEE Transactions on Neural Networks and Learning Systems (2023), 1–12. doi:10.1109/TNNLS.2023.3283308.
+[80] G. Maimon and L. Rokach, A universal adversarial policy for text classifiers, Neural Networks 153 (2022), 282–291.
+doi:10.1016/j.neunet.2022.06.018.
+[81] L. Xu, A. Cuesta-Infante, L. Berti-Equille and K. Veeramachaneni, R&R: Metric-guided Adversarial Sentence Generation, in: Findings
+of the Association for Computational Linguistics: AACL-IJCNLP 2022, Association for Computational Linguistics, Online only, 2022,
+pp. 438–452. https://aclanthology.org/2022.findings-aacl.41.
+[82] D. Lee, S. Moon, J. Lee and H.O. Song, Query-Efficient and Scalable Black-Box Adversarial Attacks on Discrete Sequential Data via
+Bayesian Optimization, in: International Conference on Machine Learning (ICML), 2022.
+[83] Y. Wang, W. Che, I. Titov, S.B. Cohen, Z. Lei and T. Liu, A Closer Look into the Robustness of Neural Dependency Parsers Using Better
+Adversarial Examples, in: Findings of the Association for Computational Linguistics: ACL-IJCNLP 2021, Association for Computational
+Linguistics, Online, 2021, pp. 2344–2354. doi:10.18653/v1/2021.findings-acl.207. https://aclanthology.org/2021.findings-acl.207.
+[84] W. Han, L. Zhang, Y. Jiang and K. Tu, Adversarial Attack and Defense of Structured Prediction Models, in: Proceedings of the 2020
+Conference on Empirical Methods in Natural Language Processing (EMNLP), Association for Computational Linguistics, Online, 2020,
+pp. 2327–2338. doi:10.18653/v1/2020.emnlp-main.182. https://aclanthology.org/2020.emnlp-main.182.
+[85] P. Gai´nski and K. Bałazy, Step by Step Loss Goes Very Far: Multi-Step Quantization for Adversarial Text Attacks, in: Proceedings of the
+17th Conference of the European Chapter of the Association for Computational Linguistics, Association for Computational Linguistics,
+Dubrovnik, Croatia, 2023, pp. 2038–2048. https://aclanthology.org/2023.eacl-main.149.
+[86] D. Cer, Y. Yang, S.-y. Kong, N. Hua, N. Limtiaco, R. St. John, N. Constant, M. Guajardo-Cespedes, S. Yuan, C. Tar, B. Strope
+and R. Kurzweil, Universal Sentence Encoder for English, in: Proceedings of the 2018 Conference on Empirical Methods in Natu-
+ral Language Processing: System Demonstrations, Association for Computational Linguistics, Brussels, Belgium, 2018, pp. 169–174.
+doi:10.18653/v1/D18-2029. https://aclanthology.org/D18-2029.
+[87] D. Naber, T. Fakultät and U. Bielefeld, A Rule-Based Style and Grammar Checker.
+[88] W. Yuan, G. Neubig and P. Liu, BARTScore: Evaluating Generated Text as Text Generation, in: Advances in Neural Information Pro-
+cessing Systems, Vol. 34, M. Ranzato, A. Beygelzimer, Y. Dauphin, P.S. Liang and J.W. Vaughan, eds, Curran Associates, Inc., 2021,
+pp. 27263–27277. https://proceedings.neurips.cc/paper/2021/file/e4d2b6e6fdeca3e60e0f1a62fee3d9dd-Paper.pdf.
+[89] T. Zhang*, V. Kishore*, F. Wu*, K.Q. Weinberger and Y. Artzi, BERTScore: Evaluating Text Generation with BERT, in: International
+Conference on Learning Representations, 2020. https://openreview.net/forum?id=SkeHuCVFDr.
+[90] D. Deutsch, R. Dror and D. Roth, On the Limitations of Reference-Free Evaluations of Generated Text, in: Proceedings of the
+2022 Conference on Empirical Methods in Natural Language Processing, Y. Goldberg, Z. Kozareva and Y. Zhang, eds, Association
+for Computational Linguistics, Abu Dhabi, United Arab Emirates, 2022, pp. 10960–10977. doi:10.18653/v1/2022.emnlp-main.753.
+https://aclanthology.org/2022.emnlp-main.753.
+[91] A. Warstadt, A. Singh and S.R. Bowman, Neural Network Acceptability Judgments, arXiv preprint arXiv:1805.12471 (2018).
+[92] E. Malmi, A. Severyn and S. Rothe, Unsupervised Text Style Transfer with Padded Masked Language Models, in: Proceedings of the
+2020 Conference on Empirical Methods in Natural Language Processing (EMNLP), Association for Computational Linguistics, Online,
+2020, pp. 8671–8680. doi:10.18653/v1/2020.emnlp-main.699. https://aclanthology.org/2020.emnlp-main.699.
+[93] C. Raffel, N. Shazeer, A. Roberts, K. Lee, S. Narang, M. Matena, Y. Zhou, W. Li and P.J. Liu, Exploring the Limits of Transfer Learning
+with a Unified Text-to-Text Transformer, Journal of Machine Learning Research 21(140) (2020), 1–67. http://jmlr.org/papers/v21/20-074.
+html.
+[94] N. Reimers and I. Gurevych, Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks, in: Proceedings of the 2019 Confer-
+ence on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing
+(EMNLP-IJCNLP), K. Inui, J. Jiang, V. Ng and X. Wan, eds, Association for Computational Linguistics, Hong Kong, China, 2019,
+pp. 3982–3992. doi:10.18653/v1/D19-1410. https://aclanthology.org/D19-1410.
+[95] I.J. Goodfellow, J. Shlens and C. Szegedy, Explaining and Harnessing Adversarial Examples, in: 3rd International Conference on Learn-
+ing Representations, ICLR 2015, San Diego, CA, USA, May 7-9, 2015, Conference Track Proceedings, Y. Bengio and Y. LeCun, eds,
+2015. http://arxiv.org/abs/1412.6572.
+[96] K. Papineni, S. Roukos, T. Ward and W.-J. Zhu, BLEU: A Method for Automatic Evaluation of Machine Translation, in: Proceedings of
+the 40th Annual Meeting on Association for Computational Linguistics, ACL ’02, Association for Computational Linguistics, USA, 2002,
+pp. 311–318–. doi:10.3115/1073083.1073135.
+[97] J. Gilmer, R.P. Adams, I.J. Goodfellow, D. Andersen and G.E. Dahl, Motivating the Rules of the Game for Adversarial Example Research,
+CoRR abs/1807.0 (2018). http://arxiv.org/abs/1807.06732.
+[98] J. Morris, E. Lifland, J. Lanchantin, Y. Ji and Y. Qi, Reevaluating Adversarial Examples in Natural Language, in: Findings of the
+Association for Computational Linguistics: EMNLP 2020, Association for Computational Linguistics, Online, 2020, pp. 3829–3839.
+doi:10.18653/v1/2020.findings-emnlp.341. https://aclanthology.org/2020.findings-emnlp.341.
+[99] D. Herel, H. Cisneros and T. Mikolov, Preserving Semantics in Textual Adversarial Attacks, arXiv preprint arXiv:2211.04205 (2022).
+[100] E. Wallace, P. Rodriguez, S. Feng, I. Yamada and J. Boyd-Graber, Trick Me If You Can: Human-in-the-loop Generation of
+Adversarial Question Answering Examples, Transactions of the Association for Computational Linguistics 7(0) (2019), 387–401.
+doi:10.1162/tacl_a_00279. https://transacl.org/ojs/index.php/tacl/article/view/1711.

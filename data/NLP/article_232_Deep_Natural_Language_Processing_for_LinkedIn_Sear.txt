@@ -1,0 +1,1068 @@
+Title: Deep Natural Language Processing for LinkedIn Search
+Source URL: http://arxiv.org/abs/2108.13300v1
+--------------------------------------------------
+
+DEEP NATURAL LANGUAGE PROCESSING FOR
+LINKEDIN SEARCH
+A PREPRINT
+Weiwei Guo, Xiaowei Liu, Sida Wang, Michaeel Kazi, Zhiwei Wang,
+Zhoutong Fu, Jun Jia, Liang Zhang, Huiji Gao, Bo Long
+{wguo,xwli,sidwang,mikazi,zhiwwang,zfu,jjia,lizhang,hgao,blong}@linkedin.com
+LinkedIn, Mountain View, CA
+August 31, 2021
+ABSTRACT
+Many search systems work with large amounts of natural language data, e.g., search queries, user
+proﬁles, and documents. Building a successful search system requires a thorough understanding
+of textual data semantics, where deep learning based natural language processing techniques (deep
+NLP) can be of great help. In this paper, we introduce a comprehensive study for applying deep NLP
+techniques to ﬁve representative tasks in search systems: query intent prediction (classiﬁcation),
+query tagging (sequential tagging), document ranking (ranking), query auto completion (language
+modeling), and query suggestion (sequence to sequence). We also introduce BERT pre-training as
+a sixth task that can be applied to many of the other tasks. Through the model design and experi-
+ments of the six tasks, readers can ﬁnd answers to four important questions: (1) When is deep NLP
+helpful/not helpful in search systems? (2) How to address latency challenges? (3) How to ensure
+model robustness? This work builds on existing efforts of LinkedIn search, and is tested at scale on
+LinkedIn’s commercial search engines. We believe our experiences can provide useful insights for
+the industry and research communities.
+Keywords Natural Language Processing, Deep Learning, Search Engine, Query Understanding
+1
+Introduction
+Search systems are widely used to help users retrieve information from large and often difﬁcult to categorize data
+sources. Search engines are typically complicated ecosystems that contain many components. As shown in Figure
+1, after a user issues a query, the language generation modules (Bar-Yossef and Kraus, 2011; Li et al., 2006; Cao
+et al., 2008) serve as search assistants to generate a better query. The language understanding modules Kang and Kim
+(2003); Guo et al. (2009); Blanco et al. (2015) aim to extract semantic information from the query and documents,
+such as user intent and named entities. Finally, all the extracted information is used for document retrieval and ranking.
+A common part of these search components is that they all deal with large amounts of text data, such as queries, user
+proﬁles and documents. Text data is sequential, and understanding such sequential information is a nontrivial task
+with traditional methods. For example, the systems need to handle (1) synonyms/similar concepts, e.g., ”software
+engineer” vs ”programmer”, (2) disambiguation, e.g., ”job opening” vs ”restaurant opening”, and (3) word importance
+weighting, e.g., the important words in a query ”looking for a research scientist job” would be ”research scientist”,
+and so on. Traditional methods highly rely on sparse features such as unigram features, which do not have strong
+generalization power to handle these cases.
+On the other hand, deep learning has shown great success in NLP tasks LeCun et al. (2015), indicating its potential in
+search systems. In addition to alleviating the language problems mentioned above, there are several other beneﬁts of
+using deep learning, such as end-to-end training, automatic feature engineering, etc.
+arXiv:2108.13300v1  [cs.IR]  16 Aug 2021
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Developing deep NLP models for search systems requires considering three challenges of the complicated ecosystem
+of search engines Croft et al. (2010); Mitra et al. (2018). Firstly, serving latency constraints preclude complex models
+from being used in production. In addition, directly trained deep learning models can have robustness issues such as
+overﬁtting. The last challenge is effectiveness: often production models are very strong baselines that are trained on
+millions of data examples with many handcrafted features, and have been tweaked for years.
+In this paper, we focus on developing practical solutions to tackle the three challenges, and share real world experi-
+ences. As shown in Figure 2, we have picked ﬁve representative search tasks that cover the classic NLP problems:
+classiﬁcation, ranking, sequence tagging, language modeling, and sequence-to-sequence. For each of the tasks, we
+investigate the unique challenges, provide practical deep NLP solutions, and analyze the ofﬂine/online experiments
+results. By providing a comprehensive study, we hope the readers can not only learn how to handle the different
+challenges in search systems, but also generalize and apply it to new tasks in other industry productions such as
+recommender systems.
+The contribution of the paper is:
+• To our best knowledge, this is the ﬁrst comprehensive study for applying deep NLP models in search produc-
+tions. Five tasks in search systems are selected, which cover most common NLP problems. For each task, we
+provide practical solutions, and report experiments in LinkedIn’s commercial search engines.
+• We go beyond the task boundary and summarize the observations and solutions into lessons. We believe
+our experience would be a valuable resource for other vertical searches, as well as other applications such as
+recommender systems.
+• We successfully deploy BERT to two real world productions: query intent and document ranking.
+Language 
+Understanding
+Query 
+Intention
+NER
+Documents
+Entity 
+Disambiguation
+Language 
+Generation
+Auto 
+Completion
+Spell Check
+Query 
+Suggestion
+Raw query
+Doc Retrieval 
+& Ranking
+Retrieval
+Ranking
+…...
+…...
+Figure 1: Overview of a search system.
+2
+Search Systems at LinkedIn
+2.1
+LinkedIn Search Systems Overview
+LinkedIn provides multiple vertical searches, each corresponding to a document type, e.g., people, job, company, etc.
+In this paper, the experiments are conducted on 3 vertical searches (people search, job search, help center search),
+and federated search. Federated search retrieves the documents from all vertical searches and blends them into the
+same search result page. When users go to LinkedIn, federated search is the default. People search is the most popular
+search engine, which retrieves member proﬁles; job search returns job posts for job seekers; help center search provides
+answers on how to use LinkedIn with a lot of natural language queries, e.g., ”how to change my account password”.
+2
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+A typical search system is shown in Figure 1. There are three main components: (1) Language understanding
+constructs important features for the other two components; (2) Language generation improves user experiences by
+suggesting queries that are more likely to lead to desirable search results. (3) Document retrieval & ranking produces
+the ﬁnal results of search systems and presents them to users.
+2.2
+Characteristics of Vertical Search Data
+Search data is different from classic NLP task data, mainly from two aspects: data genre and training data size. In
+classic NLP datasets Pang and Lee (2005); Hu and Liu (2004), the data unit is one or several complete sentences
+with dozens of words in proper grammar. In a search system, queries have several keywords without grammar, which
+introduces ambiguity. Meanwhile, LinkedIn searches are vertical searches instead of web search such as Google. The
+vocabulary is mostly domain speciﬁc entities, e.g., people names, company, skills, etc.
+In addition, the training data size is noteworthy. Classic NLP datasets are human annotated, therefore the size is
+usually around tens of thousands of sentences, e.g., 11k training examples in the sentiment analysis dataset Pang and
+Lee (2005). However, search training data is usually derived from click-through data, hence contains millions of noisy
+training examples.
+2.3
+Challenges of Deep NLP for Search
+There are several common challenges to applying deep NLP models to search systems. The ﬁrst challenge is the online
+production latency. Deep learning models are known for their large compute time. Assuming the time complexity
+of a bag-of-words model is O(n), where n is the number of words in a sentence, then a LSTM model Hochreiter
+and Schmidhuber (1997) has a time complexity of O(nd2), where d is the number of dimensions used for word
+embeddings. In this paper, we analyze the unique latency challenge faced by each task, and provide multiple practical
+solutions to resolve or mitigate the latency issue.
+The second challenge is robustness. Deep learning models have many parameters, hence are more likely to overﬁt
+to the training data, and ignore the infrequent patterns. For example, in query tagging, the LSTM models always
+recognize the query ”linkedin facebook” as one company, since queries with two companies are rare. In addition, deep
+NLP models tend to over-generalize word semantics, e.g., in people search, professor proﬁles are matched to the query
+”student”. In this paper, we show several tasks that could lead to overﬁtting, and provide practical solutions such as
+more careful training data creation to tackle it.
+The third challenge is effectiveness. The traditional production models are usually optimized for many iterations and
+are trained with millions of examples, hence hard to beat. In general, we reuse the existing handcrafted features to
+alleviate the issue. We also analyze why deep learning models do not work well in some scenarios.
+Sequential Modeling
+Classification
+(Query Intent)
+Representation Learning
+(BERT Pretraining)
+to sequence 
+label
+to 
+documents
+Sequence Generation
+(Query Suggestion)
+to next 
+sequence
+Sequence Completion
+(Auto Completion)
+to completed 
+sequence
+Sequential Labeling
+(Query Tagging)
+to word 
+label
+Ranking
+(Search Ranking)
+Figure 2: Deep NLP models for representative search tasks.
+2.4
+Search Tasks
+The core of deep NLP is sequential modeling with CNN/LSTM/Transformer LeCun and Bengio (1995); Hochreiter
+and Schmidhuber (1997); Vaswani et al. (2017) networks to generate word or sequence embeddings. By adding
+speciﬁc loss functions on top of these embeddings, they can serve different NLP problems: predicting a sequence
+level label is a classiﬁcation problem; predicting a label for each word is a sequential tagging problem, etc. In total
+3
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+there are ﬁve common NLP problems: classiﬁcation, ranking, sequence tagging, language modeling, and sequence-
+to-sequence. For each of the NLP tasks, we present a corresponding search task in Figure 2. These search tasks cover
+major components in search systems, ranging from language understanding/generation to document ranking. We also
+present a fundamental model pre-training task Devlin et al. (2019) that can potentially beneﬁt all tasks.
+3
+Representative Search Tasks
+In this section, we introduce each speciﬁc task, outline the challenges, show how to overcome the challenges, and
+analyze the ofﬂine/online experiment results.
+The experiments are conducted on the LinkedIn English market. Ofﬂine results are reported on the test set. All
+reported online metrics are statistically signiﬁcant with p < 0.05.
+3.1
+Query Intent Prediction
+3.1.1
+Introduction
+Query intent prediction Kang and Kim (2003); Hu et al. (2009) is an important product in modern search engines.
+Query intent is used in federated search to predict the probability of a user’s intent towards seven search verticals:
+people, job, feed, company, group, school, event. The predicted intent is an important feature leveraged by downstream
+tasks such as search result blending Li et al. (2008) to rank higher the documents from relevant search verticals.
+The challenge of this task is there are very few words in a query, hence it is hard to disambiguate words, such as
+”michael dell” (person names) vs ”dell engineer jobs” (company). Deep NLP models can alleviate this issue, especially
+BERT which produces contextualized word embeddings Devlin et al. (2019) (more details can be found in Section 3.6).
+3.1.2
+Approach
+The query intent prediction task is modeled as a multi-class classiﬁcation problem. CNNs have achieved signiﬁcant
+performance gains in text classiﬁcation problemsKalchbrenner et al. (2014); Kim (2014); Hashemi et al. (2016). In
+our approach (Figure 3), we combine the extracted text embedding with handcrafted features, and use a hidden layer
+to enable feature non-linearity. The existing handcrafted features are powerful. For example, the query tagger (Section
+3.2) feature can identify almost all people names accurately, including those out of the word embedding vocabulary.
+The member behavior features can enable personalization (e.g., whether a user clicks on job postings in a certain
+period of time).
+Max pooling
+Conv layers
+Embeddings
+Dense layer
+Intent classes
+seq_len
+...
+...
+Handcrafted 
+features
+PEOPLE
+JOB
+engineer
+position
+LinkedIn
+software
+...
+Figure 3: CNN based query intent prediction.
+4
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Table 1: Ofﬂine comparison w.r.t. production baseline.
+Accuracy
+P99 Latency
+LR (baseline)
+-
+-
+CNN w/o handcrafted features
++1.03%
++0.44ms
+CNN
++1.49%
++0.45ms
+LSTM
++1.61%
++0.96ms
+Table 2: Online comparison for CNN based query intent prediction model vs production baseline. CTR@5 calculates the propor-
+tion of searches that received a click at top 5 items.
+Metrics
+Percentage Lift
+CTR@5 of job posts
++0.43%
+3.1.3
+Experiments
+The label is inferred from click-through behaviors in the search log: if a user clicked on a document from one of the
+seven verticals, then the query is assigned the corresponding vertical label. We use 24M queries for training and 50k
+for dev and test. Besides the production baseline SCRF model, another baseline is bidirectional LSTM Graves et al.
+(2013). For the CNN and LSTM model, the vocabulary size is 100k with word embedding dimension as 64; word
+embedding is pre-trained with GloVe Pennington et al. (2014);1 hidden layer dimension is 200 (Figure 3). In the CNN
+model, 128 ﬁlters of size 3 is used to capture word tri-grams. In LSTM, the hidden state size is 128.
+3.1.4
+Results
+The baseline model is the production model, logistic regression on bag-of-words features and other handcrafted fea-
+tures. The ofﬂine relevance and latency performance are shown in Table 1. Both CNN and LSTM models outperform
+the production model, meaning that the features automatically extracted by CNN/LSTM can capture the query intents.
+For online experiments (Table 2), we choose CNN instead of LSTM, since the relevance difference is small, but CNN
+is faster than LSTM. The online results show CNN increases the job documents click metrics.
+3.1.5
+Related Work
+The traditional methods use many handcrafted features, such as unigram, language model scores, lexicon matching
+features, etc Arguello et al. (2009); Cao et al. (2009). For Deep NLP models, ofﬂine experiments with CNN are
+conducted on 10k queries Hashemi et al. (2016). In contrast, our CNN model is trained on millions of queries with
+many handcrafted features (personalization, query tagger, etc). We also provided detailed analysis on latency and
+online impact on the vertical prediction task.
+3.2
+Query Tagging
+3.2.1
+Introduction
+The goal of query tagging is to identify the named entities in queries. At LinkedIn, we are interested in 7 types of
+entities: ﬁrst name, last name, company name, school name, geolocation, title, and skill. After entities are identiﬁed,
+many important features can be constructed for downstream tasks such as query intent prediction or search ranking.
+Query tagging is not a trivial task. For example, lexicon matching cannot solve the simple case such as ”research
+scientist”, because there are three entities matched: ”research” as skill, ”scientist” as title, ”research scientist” as title.
+In addition, for ambiguous queries, the query tagger should produce the most probable hypotheses, e.g., ”vera wang”
+as a company rather than a person.
+1In the ﬁve tasks except question suggestion, we always pre-train the word embedding on millions of training data with GloVe.
+In query tagger, we add additional queries and member proﬁles to enrich the corpus for pre-training. We ﬁnd word embedding
+pre-training always yields comparable or better relevance performance.
+5
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Table 3: Features used in SCRF based query tagger.
+Type
+Description
+char based
+preﬁx/sufﬁx features, such as ”er”, ”ist”
+word based
+word
+lemma
+brown cluster id Brown et al. (1992)
+bigram with previous word, bigram with next word
+lexicon
+proﬁle lexicon, collected from member proﬁles
+clickthrough lexicon, collected from clickthrough data
+Table 4: Query tagging results, measure by F1 score.
+Model
+Hand-crafted Ftrs
+F1
+SCRF (baseline)
+char/word/lexicon
+-
+CRF
+char/word/lexicon
+−0.6%
+SCRF-nolex
+char/word
+−6.1%
+LSTM-SCRF
+char/lexicon
+−0.3%
+LSTM-SCRF-all
+char/word/lexicon
+−0.1%
+3.2.2
+Approach
+Query tagging is a named entity recognition task on query data. The production model uses three categories of features:
+character based, word based and lexicon based, as summarized in Table 3. It is worth noting that we are able to extract
+powerful lexicon features leveraging large amount of user generated data, i.e., collecting the lexicon items from the
+corresponding ﬁelds of 600 million member proﬁles. Because of this, we choose semi-markov conditional random
+ﬁeld (SCRF) Sarawagi and Cohen (2005) as a baseline model, which can better exploit lexicon features than CRF
+Lafferty et al. (2001).
+The bidirectional LSTM-CRF architecture Lample et al. (2016) proves to be a successful model on classic NLP
+datasets Sang and De Meulder (2003). We further extend it to bidirectional LSTM-SCRF. Essentially, the deep part,
+Bidirectional LSTM, is used to replace the word-based features in Table 3.
+3.2.3
+Experiments
+Queries from LinkedIn federated search are collected and manually annotated. Meanwhile, a few thousand queries are
+generated to overcome the robustness problem (explained later). In total, we have 100k training queries, 5k dev and
+5k test queries. For all models, the Adagrad optimizer Duchi et al. (2011) is used with learning rate 10−3; batch size
+is 100; word embedding size is 50. This is tuned on a dev set.
+3.2.4
+Results
+The traditional method SCRF achieves the best results in Table 4. LSTM-SCRF has all the handcrafted features
+except word based features, however, it cannot outperform the SCRF baseline, and neither can LSTM-SCRF-all with
+all handcrafted features. Due to no signiﬁcant ofﬂine experiment gain, these models are not deployed online.
+We believe the major reason is the strength of lexicon features, therefore LSTM does not help much. The SCRF-nolex
+(without lexicon based features) performance also indicates lexicon features are the most important. Meanwhile,
+looking at the data, we found most entities are already covered by the lexicons that are built on large scales of data.
+Other reasons could be due to the data genre: Queries are much shorter than natural language sentences. Therefore,
+LSTM’s ability to extract long distance dependencies is not helpful in this task.
+3.2.5
+Related Work
+The early works use CRF/SCRF to extract entities in queries Li et al. (2009); Guo et al. (2008). SCRF Sarawagi and
+Cohen (2005) yields stronger performance superior by better exploiting lexicon features. The deep NLP models are
+mainly designed for natural language sentences with LSTM-CRF Lample et al. (2016); Ma and Hovy (2016), where
+LSTM is able to generate more powerful features by summarizing the long distance dependency. In this paper, we
+6
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Table 5: Statistics of two document ranking datasets.
+People Search
+Help Center
+# docs
+600M
+2,700
+# training data (queries)
+5M
+340,000
+presented a strong production baseline SCRF with lexicons constructed from large scale datasets, and analyzed why
+deep NLP models failed to improve the relevance performance.
+3.3
+Document Ranking
+3.3.1
+Introduction
+Ranked documents are the ﬁnal results presented to users. Given a query, a searcher proﬁle and a set of retrieved
+documents, the goal is to assign a relevance score to each document and generate the ranking.
+Latency is the biggest challenge for this task. Although it has the same time complexity as query intent/tagging
+tasks, the data unit of document ranking task is a set of documents, therefore the absolute time is not affordable. The
+other challenge comes from effectiveness. The production model is optimized in many iterations, with many strong
+handcrafted features.
+In this paper, the experiments are conducted on people search and help center search. Table 5 shows the statistics of
+two searches.
+3.3.2
+Approach
+The production model uses XGBoost Chen and Guestrin (2016) for training, which works well with large scale training
+data and is effective in modeling feature non-linearity. In people search, many non-text features are used, such as
+personalized features based on social network structures and past user behaviors, and document popularity features
+based on search log statistics. In addition, millions of training examples are available for people search.
+Raw text
+Text 
+embeddings
+Deep features
+Handcrafted features
+Hidden layer
+Doc score
+Doc_field1
+Query
+Doc_field2
+CNN
+CNN
+CNN
+Figure 4: Model architecture for ranking model (The learning-to-rank layer is not included).
+One beneﬁt of a deep learning approach is that we can easily combine the deep NLP based semantic matching with
+other techniques that prove to be effective. Figure 4 shows the architecture.
+In Figure 4, the input is a query, multiple document ﬁelds, and a hand crafted feature vector. After text embeddings are
+extracted, cosine similarity is computed for each query/document ﬁeld embedding. The cosine similarity is combined
+with hand crafted features, and a Multi-Layer Perception Pal and Mitra (1992) layer is used with a hidden layer,
+followed by a learning-to-rank layer. In general, we extend the previous work Huang et al. (2013); Zamani et al.
+(2018), by combining hand crafted features with cosine similarities and adding a hidden layer.
+7
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Table 6: Ofﬂine document ranking results (NDCG@10).
+Models
+People Search
+Help Center
+XGBoost (baseline)
+-
+-
+CNN-ranking
++3.02%
++11.56%
+CNN-ranking w/o handcrafted features
+−4.52%
++11.07%
+Table 7: Online document ranking results on two searches. ”Sat click” is a people search metric: number of satisfactory searches
+that include (1) connecting, messaging or following a proﬁle (2) viewing a proﬁle with dwelling time ¿ 5 seconds. ”Happy path
+rate” is a help center search metric: proportion of users who searched and clicked a document without using help center search
+again in that day.
+Search
+Metrics
+Percentage lift
+People Search
+CTR@5
++1.13%
+Sat Click
++0.76%
+Help Center
+Happy Path Rate
++15.0%
+Online Production Deployment As mentioned before, latency is a major issue for ranking tasks. To reduce latency,
+we use two different online deployment strategies, based on the particular production environment. For the help center
+task, since there are only thousands of documents in total, we pre-compute the document embeddings. By doing
+this, the computation is reduced to query embedding extraction and cosine similarity between query and document
+embeddings.
+Pre-computing the document embeddings requires nontrivial infrastructure changes for people search, where there are
+600 million documents (member proﬁles). It needs a lot of space to store the embeddings, as well as complicated
+designs to keep them fresh. In the P99 case in people search, there are thousands of retrieved documents on a searcher
+machine.2 Our solution is a two-pass ranking strategy: ﬁrstly apply a lightweight model without deep learning modules
+(MLP layer only), and choose the top hundreds of documents to send to deep models for reranking. After applying
+this change, the P99 latency is signiﬁcantly reduced.
+3.3.3
+Experiments
+The experiments are conducted on two searches (Table 5). On average each query has around 10 documents. Dev and
+test size is 50k. For all models that apply, Adam optimizer Kingma and Ba (2015) is used with learning rate 10−3;
+batch size is 256; word embedding size is 64.
+3.3.4
+Results
+We report ofﬂine and online results in Table 6 and 73, respectively. In general, the ofﬂine and online performance
+are consistent. The baseline is the production model trained with xgboost. Our model CNN-ranking signiﬁcantly
+outperforms the baseline by a large margin.
+To understand the impact of handcrafted features, we perform another experiment using CNN-ranking without any
+these features. It turns out the handcrafted features in people search are more powerful than the help center, largely
+because people search contains a lot of social network features and document clickthrough features.
+By comparing CNN-ranking vs baseline across the two searches, it is interesting to see that the impact of deep NLP
+models is signiﬁcantly larger in the help center setting. This is again caused by the data genre. In help center, the
+queries and documents are mostly natural language sentences, such as a query ”how to hide my proﬁle updates” to
+document ”Sharing Proﬁle Changes with Your Network”, where CNNs can capture the semantic meaning. In people
+search, it is more important to perform exact matching, for example, query ”facebook” should not return member
+proﬁles who work at ”linkedin”.
+Finally, we present the latency of different deployment strategies in Table 8. For people search, we do not observe
+signiﬁcant difference in terms of online relevance metrics between two pass ranking and all-decoding. We manually
+2there are many searcher machines, each responsible for a part of the 600m proﬁles
+3The online setting is slightly different in help center search. Since there are only thousands of documents in total, the production
+model will score all the documents. Therefore, for cnn-ranking we also adopt this setting.
+8
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Table 8: P99 latency in document ranking.
+Deployment Strategy
+Search
+#Docs
+@P99 latency
+Two pass ranking
+People search
+100-999
++21ms
+All-decoding
+1000-9999
++55ms
+Document pre-computing
+Help center
+1000-9999
++25ms
+checked the ranking scores, and found that the documents discarded in the ﬁrst phrase ranking usually have very low
+scores.
+3.3.5
+Related Work
+There are many existing works on deep NLP models for search ranking Huang et al. (2013); Shen et al. (2014);
+Palangi et al. (2016); Guo et al. (2016); Xiong et al. (2017); Dai et al. (2018). Our model adopted many designs in
+previous work to achieve balance between efﬁciency and effectiveness: multiple document ﬁelds Zamani et al. (2018)
+to improve document understanding, text-level interaction instead of word-level interaction Huang et al. (2013), etc.
+In addition, we also show that combining existing handcrafted features with deep features in an MLP layer to optimize
+relevance performance. For production deployment, while the previous work focus on the embedding precomputing
+Ramanath et al. (2018); Yin et al. (2016); Grbovic and Cheng (2018), we demonstrate that two pass ranking can work
+well with signiﬁcantly less infra changes.
+3.4
+Query auto completion
+3.4.1
+Introduction
+Query auto completion Bar-Yossef and Kraus (2011) is a language generation task. The input is a preﬁx typed by a
+user, and the goal is to return a list of completed queries that match the user’s intent. As a search assistance component,
+it improves user experience in two aspects: (1) Saves user keystrokes and returns search results in less time. (2) More
+importantly, it guides users to better queries and search results, e.g., for a preﬁx sof, the query software engineer is
+considered better than software developer, since the former is a more common job title that leads to better recall.
+Query auto completion has a strict latency requirement, since the model needs to return results for each keystroke.
+3.4.2
+Approach
+The traditional auto completion system has two separate steps: candidate generation and candidate ranking. The
+candidate generation performs a lookup from a query preﬁx to a completed query, which is extremely efﬁcient. This
+is done by memorizing each query preﬁx to the set of all possible queries that have been seen in the search log.
+For unseen query preﬁxes, a heuristic is used to generate the candidates Mitra and Craswell (2015). The candidate
+ranking component is to rank the completed queries with frequency based counting or ML models like XGBoost.
+Several features are constructed for the completed queries, with the most effective feature being the query frequency.
+In summary, both candidate generation and candidate rank stages are lightweight and can be ﬁnished within several
+milliseconds.
+Since query auto completion is a language generation task, an ideal model is neural language modeling Mikolov
+et al. (2010) with beam search decoding Park and Chiba (2017). This neural language modeling approach achieves
+impressive relevance results, but at the cost of latency. During beam search decoding, generation and ranking are
+performed at the same time for many iterations (one iteration for one generated token); while in traditional methods,
+there is only one generation and one ranking step. According to reported previous work Park and Chiba (2017),
+relevance performance can be increased by 10%, while latency can rise to over 1 second Wang et al. (2018).
+To reduce latency, instead of a end-to-end neural network approach, we apply deep learning only for the ranking
+component (Figure 5). A LSTM based language model is used to assign a score for each candidate. We notice that the
+majority of time is spent on the computing the normalization constant of the word probability, since it sums over the
+entire vocabulary:
+log P(wi|hi) = log
+exp(v⊤
+i hi)
+P
+j exp(v⊤
+j hi) = v⊤
+i hi −log
+X
+j
+exp(v⊤
+j hi)
+(1)
+9
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+researcher
+linkedin
+<s>
+LSTM
+researcher
+linkedin
+</s>
+query score
+word score
+Figure 5: Model architecture for query auto completion. The learning-to-rank layer is not included.
+Table 9: P99 Latency in query auto completion task. Each preﬁx has 100 candidates to rank.
+Models
+Latency
+Baseline
+-
+Language Model (ranking only)
++61ms
+Unnormalized LM (ranking only)
++9ms
+Therefore, following the unnormalized language model approach Sethy et al. (2015), we approximate the denominator
+by log P
+j exp(v⊤
+j hi) = b, where b is another parameter to estimate. The computation time reduction is summarized
+in Table 9.
+3.4.3
+Experiments
+The model is applied on job search query auto completion. We follow the experiment setting and the train/dev/test
+splitting schema deﬁned in Mitra and Craswell (2015). The LSTM has one layer with a 100 dimension hidden state.
+Adagrad is used with learning rate 10−3. The vocabulary is 100k words with 100 dimensional embedding.
+3.4.4
+Results
+XGBoost is used as the product baseline model for candidate ranking component. Table 10 and 11 show the of-
+ﬂine/online results, respectively. All deep learning models outperforms the traditional methods by a large margin.
+More interestingly, the gain is mostly from unseen query preﬁxes. For seen preﬁxes, the frequency based methods
+can do a fairly good job. We also compare with CLSM model Mitra and Craswell (2015). It formulates the problem
+as ranking the completed sufﬁx given a preﬁx, i.e., the cosine similarity between the preﬁx and sufﬁx is the ranking
+score. It has worse results than language modeling based methods, since the task nature is to rank the likelihood of
+completed queries, while CLSM focuses on extracting ngram patterns.
+3.4.5
+Related Work
+Traditional query auto completion systems use a two-step framework, candidate generation and ranking Cai and De Ri-
+jke (2016), similar to the production baseline described in Section 3.4.2. The deep NLP models in previous work
+perform candidate generation and ranking at the same time via beam search Park and Chiba (2017). This neural beam
+Table 10: Ofﬂine relevance performance in query auto completion task, measured by mean reciprocal rank (MRR@10 Craswell
+(2009)).
+Ranking Models
+All
+Seen preﬁx
+Unseen preﬁx
+baseline
+-
+-
+-
+Unnormalized LM
++3.2%
++0.06%
++6.0%
+CLSM Mitra and Craswell (2015)
++2.1%
++0.06%
++3.9%
+10
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Table 11: Online metrics of query auto completion at job search. ”Job Applies” is the number of job posts applied from search.
+”Job Views” is the number of job posts clicked from search.s
+Metric
+Percentage Lift
+Job Applies
++1.45%
+Job Views
++0.43%
+search framework is followed by adding personalization Jaech and Ostendorf (2018); Fiorini and Lu (2018); Jiang
+et al. (2018) and time information Fiorini and Lu (2018). While impressive relevance performance is achieved, the
+model latency does not meet industry requirement. In this paper, we proposed a novel approach to effectively model
+the query context and reduce the latency.
+3.5
+Query Suggestion
+3.5.1
+Introduction
+Query suggestion Fonseca et al. (2005); Cao et al. (2008) is another essential part of our search experience. Many
+search engines offer such a function, e.g., Google’s ”Searches related to ...”, and LinkedIn’s ”People also search for”,
+to assist users to seek relevant information.
+3.5.2
+Approach
+The production baseline is based on frequency counting of search queries. It collects query pairs, and for each input
+query, sorts the suggestions by the query pair frequency. Heuristics are used to make sure the query pairs are seman-
+tically related: (1) The query pairs must be in the same session, where sessions are deﬁned by queries separated by
+no more than 10 minutes; and either (2) two queries must share one common word or (3) the two queries co-occur for
+several distinct users.
+We formulate the problem as machine translation in sequence-to-sequence (seq2seq) framework Sutskever et al.
+(2014), where the main beneﬁt is to generalize to infrequent and unseen queries. We ﬁnd the deep learning model can
+overﬁt to reformulation pairs if not careful handled. When training data contain query generalization, e.g. ”research
+scientist –¿ scientist”, the trained model will degrade to only delete words, to produce low perplexity suggestions. We
+handle this by removing these types of examples from the training data.
+The seq2seq model has a large latency, which can be an issue in production. In this case, we serve our model in parallel
+with search result ranking, which gives us plenty of time (more than 100ms) to run the seq2seq model.
+3.5.3
+Experiments
+The seq2seq model is tested in federated search. Training/dev/test data size is 300m/50k/50k query pairs. For the
+seq2seq model, we use a small model to reduce latency (dimension in LSTM is 100 units, 2 layers deep). Stochastic
+gradient descent is used with a learning rate of 1.0.
+3.5.4
+Results
+In our ofﬂine experiments in Table 12, we measure both the relative lift of MRR@10, and the coverage. The MRR
+of the model is computed based on the position of the gold standard query in the top 10 list, if it appears at all. The
+coverage indicates whether the model is able to produce any suggestion at all from the input. The MRR improves
+signiﬁcantly relative to the baseline by using a deep learning method. The coverage of the deep learning method is
+trivially 100%, although in practice it is lower due to ﬁltering of unknown words or the rare blacklisted query. Overall,
+we can see that query suggestion is an area where deep learning provides great impact over traditional methods.
+Online experiments (Table 13) display evidence of an enhanced user experience, particularly on ﬁnding jobs and
+overall proportion of successful LinkedIn use.
+3.5.5
+Related Work
+Traditional approaches to this problem are frequency based counting of search queries, or collaborative ﬁltering Paine
+et al. (2007), both of which only work on previously seen searches. He et al. He et al. (2016) applied seq2seq to
+rewrite queries into document titles, which is later used as features for search ranking. For query suggestions, multiple
+11
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Table 12: Ofﬂine experiments for query suggestion task.
+Model
+MRR@10
+Coverage
+Frequency baseline
+-
+67.3%
+Seq2Seq
++11.1%
+100%
+Table 13: Query suggestion online results.
+Metric
+Percentage Lift
+Job views
++0.6%
+Job apply
++1.0%
+session models have been proposed Dehghani et al. (2017); Ren et al. (2018) by exploiting the other queries in a search
+session. However, these works focus on ofﬂine results. In this paper, we outlined a practical solution for the related
+search production, from query reformulation collection to model training and online deployment. Our approach is
+applicable to any search engine with search logs.
+3.6
+BERT Pre-training
+BERT Devlin et al. (2019) is a pre-trained language representation model that is proven to be beneﬁcial for many
+NLP tasks. In this paper, our goal is to pre-train a BERT model on LinkedIn data (hence the name LiBERT). The
+advantage of a LinkedIn speciﬁc BERT model is: (1) Better relevance for domain speciﬁc tasks. In Google’s pre-
+trained model, ”linkedin” and many other companies are not in the vocabulary. (2) Smaller model structure for the
+ease of deployment. Our model is 6 layer with 34m parameters, compared to 12 layers and 110M parameters in
+Google’s BERT-Base model.
+3.6.1
+Model Pre-training
+The original BERT models were pre-trained on Wikipedia and BooksCorpus data, which are widely used datasets in
+language modeling. The text data in LinkedIn search systems are of a different genre. For pre-training the LiBERT
+models, we extracted data from different domains at LinkedIn. Table 14 shows the data source of the pre-training data
+as well as the statistics. The large amount of text data from these domains should cover most NLP use cases in search
+products and are general enough for downstream ﬁne-tuning tasks.
+The major challenge of productionizing BERT is the latency. In this paper, we train a smaller LiBERT on LinkedIn
+data to minimize the latency. We experimented with the original BERT implementation Devlin et al. (2019), as well
+as our more light-weight LiBERT architecture (LiBERT). The model speciﬁcation is 6 transformer layers (L=6), 12
+hidden size (H=512), 8 attention heads (A=8), and 64 positional embeddings (P=64). A much smaller number of
+positional embeddings is used, due to that the length of search queries are much shorter than the sentences in classic
+NLP tasks. The resulting model has 1/3 as many parameters as BERT-Base.
+3.6.2
+Experiments on Fine-tuning Tasks
+Fine-tuning experiments are conducted on two tasks: help center search ranking and query intent classiﬁcation. For
+help center ranking, the deployment strategy is document embedding pre-computing. The CNN model in the classiﬁ-
+cation and ranking task (Figure 3 and 4) is replaced by our LiBERT model. Since queries are short, we only keep the
+ﬁrst 16 words in queries, to further reduce P99 computation.
+Table 14: Corpus used for LiBERT pre-training.
+Corpus
+Description
+#Words
+Search
+Search queries
+890M
+Member proﬁles
+Headlines, summaries, positions
+728M
+Job listings
+Job titles and descriptions
+604M
+Ads
+Ads titles and descriptions
+637M
+12
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Table 15: LiBERT ﬁne-tuning ofﬂine performance comparison on query intent and help center ranking tasks.
+Model
+BERT HParams
+Query intent
+Help center
+#L
+#H
+#A
+#P
+Accuracy
+NDCG@10
+CNN
+-
+-
+-
+-
+-
+-
+BERT-Base
+12
+768
+12
+512
++2.89%
++2.15%
+LiBERT
+6
+512
+8
+64
++3.28%
++2.13%
+Table 16: Online experiments of LiBERT over the baseline model (CNN) in query intent prediction and help center ranking tasks.
+Task
+Metrics
+Percentage lift
+Query intent
+CTR@5
++0.17%
+SAT click
++1.36%
+Help center
+Happy Path Rate
++11.3%
+In Table 15, the LiBERT model achieves comparable performance to BERT-Base in both tasks, even though a simpler
+architecture is used. This is due to the in-domain pre-training data that is more relevant to the task. Similar trend of
+performance improvements are observed in online experiments, as shown in Table 16. We also reported the P99 ofﬂine
+latency. In the help center search task, recall that document pre-computing is used, and all 2,700 document embeddings
+are directly compared to the queries. As shown in Table 17, LiBERT can signiﬁcantly reduce the computation time,
+compared to BERT-Base. Accordingly, we deployed the LiBERT based models to production.
+4
+Lessons Learned
+Our previous section focuses on task speciﬁc challenges and solutions for each individual task. In this section, we go
+beyond the task boundary and generalize the interesting observations into lessons. We believe these lessons are not
+limited to search systems, but also can be applied to other areas such as recommender systems.
+4.1
+When is Deep NLP Helpful?
+In general, the deep NLP models achieve better relevance performance than traditional methods in search tasks, and
+are particularly powerful in the following scenarios:
+• Language generation tasks. Based on the ofﬂine experiments, query suggestion (Table 12) beneﬁts most
+from deep NLP modeling. This is determined by the nature of language generation tasks. In the seq2seq
+framework, the hidden state summarizes the context well, and the decoder can produce related queries for
+any input query.
+• Data with rich paraphrasing. In document ranking, the improvement brought by using CNN is larger in
+help center than in people search (Table 6 and 7), since help center has a lot of natural language queries while
+people search queries are combination of keywords.
+4.2
+When is Deep NLP not Helpful?
+There are two cases in search systems where no gain is observed by applying deep NLP models: (1) query tagging
+(Table 4); (2) seen preﬁxes in query auto completion (Table 10).
+Table 17: Ofﬂine P99 latency of LiBERT on query intent classiﬁcation and help center ranking.
+Model
+Classiﬁcation
+Ranking
+CNN
++0.5ms
++25ms
+BERT-Base
++53ms
++65ms
+LiBERT
++15ms
++44ms
+13
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+There are mainly two reasons for this. The ﬁrst reason is for the particular task, the handcrafted features are powerful
+enough to solve most of the problems. In query tagging, there is a lexicon built on 700 million user proﬁles, therefore
+the lexicons can give a pretty accurate estimation of the entity label. Similarly, for seen preﬁxes of query auto comple-
+tion, the frequencies of preﬁxes to completed queries is collected on million of entries in the search logs, which makes
+them reliable.
+The second reason is the data genre. Firstly, query tagging datasets contain a lot of people names (over 50%) where
+word embedding do not help much. In fact, except for query intent and query tagging, the other three tasks work on
+datasets without people names. Secondly, it lacks language variation, similar to what we mentioned in the last section.
+It is interesting that in classic NLP data sets, e.g. CoNLL’03 Sang and De Meulder (2003), the LSTM-CRF Lample
+et al. (2016) outperforms CRF by a large margin. In the NLP data set, each data unit is a complete sentence, which
+provides context clues. For example, the headline ”Jordan expels Iraqi diplomat” makes it obvious what kind of entity
+”Jordan” is, but it would be rare to see this in search data.
+4.3
+Latency is the Biggest Challenge
+We found latency to be the biggest challenge of applying deep NLP models to search productions. We summarize as
+below the practical solutions to reduce latency: Dense matrix multiplication and evaluating softmax are costly, and
+these are often performed on every word in a text.
+• Algorithm redesign. In query auto completion, instead of a fully neural network approach, we only apply
+deep learning for candidate ranking. In addition, the unnormalized language model is applied to further
+reduce latency.
+• Parallel computing. In query suggestion, the seq2seq model runs in parallel with search ranking, which
+leave more than 100ms buffer for seq2seq model.
+• Embedding pre-computing. In help center search ranking, the document embeddings are pre-computed,
+leaving only query processing to be computed at run-time.
+• Two pass ranking. In people search ranking, a lightweight model is applied to handle all documents, then
+a deep model reranks the top ones. Compared to embedding pre-computing, two pass ranking has less of an
+infrastructure requirement.
+It is also worth noting that due to the nature of the production setting, computation time may not be a blocker. In
+query intent, the BERT model is computationally heavy, but it only needs to handle several words in a query (+15ms),
+therefore the search system can afford the absolute additional time.
+4.4
+How to Ensure Robustness?
+Robustness proves to be a challenge in multiple tasks, since deep learning models are more likely to overﬁt the training
+data and over generalize word semantics, compared to traditional methods. Our solution is to manipulate the training
+data and reuse handcrafted features to enforce robustness.
+• Training data manipulation. In query suggestion, we observe that with generalization pairs (”senior re-
+search scientist” -> ”research scientist”), the trained seq2seq will mostly generate queries by deleting original
+words. We address it by removing the generalization pairs in the training data.
+• Reuse handcrafted features. In document ranking, the deep NLP model may rank the topically related
+documents higher than the keywords matched documents. For example, in people search, matching professor
+proﬁles to query ”student”. This can be alleviated by incorporating the existing handcrafted features (e.g.,
+keywords matching features such as cosine similarity) into neural networks.
+5
+Related Work
+The task speciﬁc related work is mentioned in Section 3, therefore, in this section, we mainly focus on the common
+text based features and machine learning approaches.
+5.1
+Traditional NLP Approaches
+For language understanding tasks, the text based features are usually sparse features such as unigrams, bigrams Finkel
+et al. (2005) (classiﬁcation and sequential tagging tasks), and dense matching features between queries and documents
+14
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+such as BM25 Robertson and Zaragoza (2009) (ranking tasks). In terms of algorithms, logistic regression, SVM,
+neural networks or decision tree Cortes and Vapnik (1995); Zhang (2000); Burges (2010) are used for classiﬁcation
+and ranking. The latter three introduce feature non-linearity but are usually not applied on sparse text features. For
+language generation tasks, usually there are two separate steps: candidate generation and candidate ranking Bar-
+Yossef and Kraus (2011); Fonseca et al. (2005); Cao et al. (2008); Shokouhi (2013); Li et al. (2006). The generation
+is usually done by string matching, without explicitly modeling the word semantics. Ranking is usually similar to
+document ranking.
+5.2
+Deep NLP Models
+CNN/LSTM/Transformer LeCun and Bengio (1995); Vaswani et al. (2017); Hochreiter and Schmidhuber (1997) are
+used to generate contextualized embeddings for words and sentences. These embeddings are able to replace the sparse
+textual features such as unigrams/bigrams (in classiﬁcation and sequential tagging) and textual matching features (in
+ranking). For language generation tasks, a language model with beam search decoding can perform the generation
+and ranking at the same time. Attention Bahdanau et al. (2015) is usually used in sequence-to-sequence framework
+Sutskever et al. (2014). Recently, the pre-trained language models Peters et al. (2018); Radford et al. (2018); Devlin
+et al. (2019) have shown impressive results on many NLP tasks by exploiting unsupervised data.
+5.3
+Deep NLP for Search
+As mentioned in Section 3, deep NLP models have been applied in most of the search tasks Hashemi et al. (2016);
+Huang et al. (2013); Mitra and Craswell (2015); He et al. (2016); Guo et al. (2016); Xiong et al. (2017); Dai et al.
+(2018). Additional information has been incorporated into the deep NLP models, such as personalization Jaech and
+Ostendorf (2018); Fiorini and Lu (2018), session-aware Dehghani et al. (2017); Ren et al. (2018), etc.
+Instead, the focus of this paper is to overcome the challenges of productionizing deep NLP models: latency, robustness,
+effectiveness Mitra et al. (2018). All the resulting models have been deployed in the LinkedIn commercial search
+engines. For example, an efﬁcient BERT based ranking model is designed to enable document pre-computing which is
+crucial for productionization. In contrast, the existing BERT based ranking models Dai and Callan (2019); MacAvaney
+et al. (2019); Nogueira and Cho (2019) do not allow document pre-computing.
+There are some existing efforts that report online experiments, however, most models are for the document ranking
+task Ramanath et al. (2018); Yin et al. (2016); Grbovic and Cheng (2018); Li et al. (2019). In this paper, we have a set
+of much broader tasks that covers query understanding and language generation.
+6
+Conclusions
+Industry provides its own set of challenges, different in key ways from classic studied NLP tasks: (1) the amount and
+type of data, (2) constraints on latency or infrastructure, and (3) the highly optimized production baselines. This paper
+focused on how to apply deep NLP models to ﬁve representative search productions, illuminating the challenges along
+the way. All resulting models except query tagging are deployed in LinkedIn’s search engines. More importantly, we
+also summarized the lessons learned across the tasks. We listed the factors to consider when estimating the potential
+improvement brought by deep NLP models for a new task. We showed robustness and overﬁtting can be typically
+handled with careful data analysis. Latency, which is almost always a concern, can be addressed creatively in many
+ways, such as architecture simpliﬁcation, two-pass systems, memorization, or parallel computation.
+References
+Jaime Arguello, Fernando Diaz, Jamie Callan, and Jean-Francois Crespo. 2009. Sources of evidence for vertical
+selection. In SIGIR.
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. 2015. Neural Machine Translation by Jointly Learning to
+Align and Translate. In ICLR.
+Ziv Bar-Yossef and Naama Kraus. 2011. Context-sensitive query auto-completion. In WWW.
+Roi Blanco, Giuseppe Ottaviano, and Edgar Meij. 2015. Fast and space-efﬁcient entity linking for queries. In WSDM.
+Peter F Brown, Peter V Desouza, Robert L Mercer, Vincent J Della Pietra, and Jenifer C Lai. 1992. Class-based
+n-gram models of natural language. Computational linguistics (1992).
+Christopher JC Burges. 2010. From ranknet to lambdarank to lambdamart: An overview. Learning 11 (2010).
+15
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Fei Cai and Maarten De Rijke. 2016. A survey of query auto completion in information retrieval. Foundations and
+Trends® in Information Retrieval (2016).
+Huanhuan Cao, Derek Hao Hu, Dou Shen, Daxin Jiang, Jian-Tao Sun, Enhong Chen, and Qiang Yang. 2009. Context-
+aware query classiﬁcation. In SIGIR.
+Huanhuan Cao, Daxin Jiang, Jian Pei, Qi He, Zhen Liao, Enhong Chen, and Hang Li. 2008. Context-aware query
+suggestion by mining click-through and session data. In KDD.
+Tianqi Chen and Carlos Guestrin. 2016. Xgboost: A scalable tree boosting system. In KDD.
+Corinna Cortes and Vladimir Vapnik. 1995. Support-vector networks. Machine Learning (1995).
+Nick Craswell. 2009. Mean reciprocal rank. Encyclopedia of Database Systems (2009).
+W. Bruce Croft, Donald Metzler, and Trevor Strohman. 2010. Search engines: Information retrieval in practice.
+Reading: Addison-Wesley.
+Zhuyun Dai and Jamie Callan. 2019. Deeper Text Understanding for IR with Contextual Neural Language Modeling.
+In SIGIR.
+Zhuyun Dai, Chenyan Xiong, Jamie Callan, and Zhiyuan Liu. 2018. Convolutional neural networks for soft-matching
+n-grams in ad-hoc search. In WSDM.
+Mostafa Dehghani, Sascha Rothe, Enrique Alfonseca, and Pascal Fleury. 2017. Learning to attend, copy, and generate
+for session-based query suggestion. In CIKM.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: Pre-training of Deep Bidirectional
+Transformers for Language Understanding. In NAACL: HLT.
+John Duchi, Elad Hazan, and Yoram Singer. 2011. Adaptive subgradient methods for online learning and stochastic
+optimization. Journal of Machine Learning Research 12, Jul (2011), 2121–2159.
+Jenny Rose Finkel, Trond Grenager, and Christopher Manning. 2005. Incorporating non-local information into infor-
+mation extraction systems by gibbs sampling. In ACL.
+Nicolas Fiorini and Zhiyong Lu. 2018. Personalized neural language models for real-world query auto completion. In
+NAACL.
+Bruno M Fonseca, Paulo Golgher, Bruno Pˆossas, Berthier Ribeiro-Neto, and Nivio Ziviani. 2005. Concept-based
+interactive query expansion. In CIKM.
+Alex Graves, Navdeep Jaitly, and Abdel-rahman Mohamed. 2013. Hybrid speech recognition with deep bidirectional
+LSTM. In IEEE workshop on automatic speech recognition and understanding.
+Mihajlo Grbovic and Haibin Cheng. 2018. Real-time Personalization using Embeddings for Search Ranking at Airbnb.
+In KDD.
+Jiafeng Guo, Yixing Fan, Qingyao Ai, and W Bruce Croft. 2016. A deep relevance matching model for ad-hoc
+retrieval. In CIKM.
+Jiafeng Guo, Gu Xu, Xueqi Cheng, and Hang Li. 2009. Named entity recognition in query. In SIGIR.
+Jiafeng Guo, Gu Xu, Hang Li, and Xueqi Cheng. 2008. A uniﬁed and discriminative model for query reﬁnement. In
+SIGIR.
+Homa B. Hashemi, Amir Asiaee, and Reiner Kraft. 2016. Query Intent Detection using Convolutional Neural Net-
+works. In WSDM, Workshop on Query Understanding.
+Yunlong He, Jiliang Tang, Hua Ouyang, Changsung Kang, Dawei Yin, , and Yi Chang. 2016. Learning to rewrite
+queries. In CIKM.
+Sepp Hochreiter and J¨urgen Schmidhuber. 1997. Long short-term memory. In Neural computation.
+Jian Hu, Gang Wang, Fred Lochovsky, Jian-tao Sun, and Zheng Chen. 2009. Understanding user’s query intent with
+wikipedia. In WWW.
+Minqing Hu and Bing Liu. 2004. Mining and summarizing customer reviews. In KDD.
+Po-Sen Huang, Xiaodong He, Jianfeng Gao, Li Deng, Alex Acero, and Larry Heck. 2013. Learning deep structured
+semantic models for web search using clickthrough data. In CIKM.
+Aaron Jaech and Mari Ostendorf. 2018. Personalized Language Model for Query Auto-Completion. In ACL.
+Danyang Jiang, Wanyu Chen, Fei Cai, and Honghui Chen. 2018. Neural Attentive Personalization Model for Query
+Auto-Completion. In IAEAC.
+16
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Nal Kalchbrenner, Edward Grefenstette, and Phil Blunsom. 2014. A Convolutional Neural Network for Modelling
+Sentences. In ACL.
+In-Ho Kang and GilChang Kim. 2003. Query type classiﬁcation for web document retrieval. In SIGIR.
+Yoon Kim. 2014. Convolutional Neural Networks for Sentence Classiﬁcation. In EMNLP.
+Diederick P Kingma and Jimmy Ba. 2015. Adam: A method for stochastic optimization. In ICLR.
+John Lafferty, Andrew McCallum, and Fernando CN Pereira. 2001. Conditional random ﬁelds: Probabilistic models
+for segmenting and labeling sequence data. In ICML.
+Guillaume Lample, Miguel Ballesteros, Sandeep Subramanian, Kazuya Kawakami, and Chris Dyer. 2016. Neural
+architectures for named entity recognition. NAACL (2016).
+Yann LeCun and Yoshua Bengio. 1995. Convolutional networks for images, speech, and time series. The handbook
+of brain theory and neural networks (1995).
+Yann LeCun, Yoshua Bengio, and Geoffrey Hinton. 2015. Deep learning. nature (2015).
+Cheng Li, Mingyang Zhang, Michael Bendersky, Hongbo Deng, Donald Metzler, and Marc Najork. 2019. Multi-view
+Embedding-based Synonyms for Email Search. In SIGIR.
+Mu Li, Yang Zhang, Muhua Zhu, and Ming Zhou. 2006. Exploring distributional similarity based models for query
+spelling correction. In ACL.
+Xiao Li, Ye-Yi Wang, and Alex Acero. 2008. Learning query intent from regularized click graphs. In SIGIR.
+Xiao Li, Ye-Yi Wang, and Alex Acero. 2009. Extracting structured information from user queries with semi-supervised
+conditional random ﬁelds. In SIGIR.
+Xuezhe Ma and Eduard Hovy. 2016. End-to-end Sequence Labeling via Bi-directional LSTM-CNNs-CRF. In ACL.
+Sean MacAvaney, Andrew Yates, Arman Cohan, and Nazli Goharian. 2019. CEDR: Contextualized embeddings for
+document ranking. In SIGIR.
+Tom´aˇs Mikolov, Martin Karaﬁ´at, Luk´aˇs Burget, Jan ˇCernock´y, and Sanjeev Khudanpur. 2010. A neural probabilistic
+language model. In ISCA.
+Bhaskar Mitra and Nick Craswell. 2015. Query auto-completion for rare preﬁxes. In CIKM.
+Bhaskar Mitra, Nick Craswell, et al. 2018. An introduction to neural information retrieval. Foundations and Trends®
+in Information Retrieval (2018).
+Rodrigo Nogueira and Kyunghyun Cho. 2019. Passage Re-ranking with BERT. arXiv preprint arXiv:1901.04085
+(2019).
+Mark Paine, Winton Davies, Donald F Geddis, Jon Dukes-Schlossberg, and Darren J Davis. 2007. Recommending
+search terms using collaborative ﬁltering and web spidering. US Patent 7,225,182.
+Sankar K Pal and Sushmita Mitra. 1992. Multilayer perceptron, fuzzy sets, and classiﬁcation. IEEE Transactions on
+neural networks (1992).
+Hamid Palangi, Li Deng, Yelong Shen, Jianfeng Gao, Xiaodong He, Jianshu Chen, Xinying Song, and Rabab Ward.
+2016. Deep Sentence Embedding Using Long Short-Term Memory Networks: Analysis and Application to Infor-
+mation Retrieval. IEEE Trans Audio Speech Lang Process (2016).
+Bo Pang and Lillian Lee. 2005. Seeing stars: Exploiting class relationships for sentiment categorization with respect
+to rating scales. In ACL.
+Dae Hoon Park and Rikio Chiba. 2017. A neural language model for query auto-completion. In SIGIR.
+Jeffrey Pennington, Richard Socher, and Christopher Manning. 2014. Glove: Global Vectors for Word Representation.
+In EMNLP.
+Matthew E Peters, Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher Clark, Kenton Lee, and Luke Zettlemoyer.
+2018. Deep contextualized word representations. In NAACL.
+Alec Radford, Karthik Narasimhan, Tim Salimans, and Ilya Sutskever. 2018. Improving language understanding by
+generative pre-training. (2018).
+Rohan Ramanath, Hakan Inan, Gungor Polatkan, Bo Hu, Qi Guo, Cagri Ozcaglar, Xianren Wu, Krishnaram Kentha-
+padi, and Sahin Cem Geyik. 2018. Towards Deep and Representation Learning for Talent Search at LinkedIn. In
+CIKM.
+Gary Ren, Xiaochuan Ni, Manish Malik, and Qifa Ke. 2018. Conversational Query Understanding Using Sequence to
+Sequence Modeling. In WWW.
+17
+Deep Natural Language Processing for
+LinkedIn Search
+A PREPRINT
+Stephen Robertson and Hugo Zaragoza. 2009. The probabilistic relevance framework: BM25 and beyond. Foundations
+and Trends® in Information Retrieval (2009).
+Erik F Sang and Fien De Meulder. 2003. Introduction to the CoNLL-2003 shared task: Language-independent named
+entity recognition. In NAACL: HLT.
+Sunita Sarawagi and William W Cohen. 2005. Semi-markov conditional random ﬁelds for information extraction. In
+NeurIPS.
+Abhinav Sethy, Stanley Chen, Ebru Arisoy, and Bhuvana Ramabhadran. 2015. Unnormalized exponential and neural
+network language models. In ICASSP.
+Yelong Shen, Xiaodong He, Jianfeng Gao, Li Deng, and Gr´egoire Mesnil. 2014.
+A latent semantic model with
+convolutional-pooling structure for information retrieval. In CIKM.
+Milad Shokouhi. 2013. Learning to personalize query auto-completion. In SIGIR.
+Ilya Sutskever, Oriol Vinyals, and Quoc V. Le. 2014. Iterative quantization: A procrustean approach to learning binary
+codes for large-scale image retrieval. In NeurIPS.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia
+Polosukhin. 2017. Attention is all you need. In NeurIPS.
+Po-Wei Wang, Huan Zhang, Vijai Mohan, Inderjit S. Dhillon, and J. Zico Kolter. 2018. Realtime query completion
+via deep language models. In SIGIR Workshop On eCommerce.
+Chenyan Xiong, Zhuyun Dai, Jamie Callan, Zhiyuan Liu, and Russell Power. 2017. End-to-end neural ad-hoc ranking
+with kernel pooling. In SIGIR.
+Dawei Yin, Yuening Hu, Jiliang Tang, Tim Daly, Mianwei Zhou, Hua Ouyang, Jianhui Chen, Changsung Kang,
+Hongbo Deng, Chikashi Nobata, et al. 2016. Ranking relevance in yahoo search. In KDD.
+Hamed Zamani, Bhaskar Mitra, Xia Song, Nick Craswell, and Saurabh Tiwary. 2018. Neural ranking models with
+multiple document ﬁelds. In WSDM.
+Guoqiang Peter Zhang. 2000. Neural networks for classiﬁcation: a survey. IEEE Transactions on Systems, Man, and
+Cybernetics, Part C (2000).
+18

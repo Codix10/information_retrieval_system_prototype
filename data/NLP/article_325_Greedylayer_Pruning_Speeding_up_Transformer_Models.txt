@@ -1,0 +1,1128 @@
+Title: Greedy-layer Pruning: Speeding up Transformer Models for Natural Language Processing
+Source URL: http://arxiv.org/abs/2105.14839v2
+--------------------------------------------------
+
+Greedy-layer Pruning: Speeding up Transformer Models for Natural
+Language Processing ∗
+David Peer1,2
+Sebastian Stabinger1,2
+Stefan Engl1
+Antonio Rodr´ıguez-S´anchez2
+1DeepOpinion, 6020 Innsbruck, Austria
+2University of Innsbruck, 6020 Innsbruck, Austria
+March 30, 2022
+Abstract
+Fine-tuning transformer models after unsupervised pre-
+training reaches a very high performance on many dif-
+ferent natural language processing tasks. Unfortunately,
+transformers suﬀer from long inference times which
+greatly increases costs in production.
+One possible so-
+lution is to use knowledge distillation, which solves this
+problem by transferring information from large teacher
+models to smaller student models. Knowledge distillation
+maintains high performance and reaches high compres-
+sion rates, nevertheless, the size of the student model
+is ﬁxed after pre-training and can not be changed in-
+dividually for a given downstream task and use-case to
+reach a desired performance/speedup ratio. Another so-
+lution to reduce the size of models in a much more ﬁne-
+grained and computationally cheaper fashion is to prune
+layers after the pre-training.
+The price to pay is that
+the performance of layer-wise pruning algorithms is not
+on par with state-of-the-art knowledge distillation meth-
+ods.
+In this paper, Greedy-layer pruning is introduced
+to (1) outperform current state-of-the-art for layer-wise
+pruning, (2) close the performance gap when compared
+to knowledge distillation, while (3) providing a method to
+adapt the model size dynamically to reach a desired perfor-
+mance/speedup tradeoﬀwithout the need of additional pre-
+training phases. Our source code is available on https:
+//github.com/deepopinion/greedy-layer-pruning.
+1
+Introduction
+Fine-tuning transformer models on multiple tasks after
+pre-training is the de-facto standard in Natural Language
+Processing [30] due to its outstanding performance on a
+wide range of applications such as sentence classiﬁcation
+[3, 12], named entity recognition [18] or document level
+∗Accepted
+at
+Pattern
+Recognition
+Letters
+(https://www.
+journals.elsevier.com/pattern-recognition-letters)
+relation extraction tasks [21]. Classical transformer mod-
+els, such as BERT [3], are massive networks with up to 24
+layers, each containing fully connected layers as well as
+many attention heads, leading to more than 100M param-
+eters as a result. This extremely large number of param-
+eters leads to long inference times and an increase in cost
+if deployed in production after training. Additionally, in-
+creased memory consumption and inference-time hinder
+the deployment of transformer models on edge- or em-
+bedded devices. Diﬀerent areas of research address this
+problem by targeting a reduction in memory consumption
+as well as inference time. One such research direction is
+knowledge distillation, where information is transferred
+from large teacher models to much smaller student mod-
+els, while maintaining up to 96.8% of the performance of
+the teacher [10].
+In the ﬁrst step of knowledge distillation, information is
+transferred during a pre-training stage from large teacher
+models to smaller student models.
+Specialized teacher
+models can be pre-trained additionally for better perfor-
+mance [25].
+Task-agnostic knowledge distillation mod-
+els such as DistilBERT [20] or MobileBERT [25] can di-
+rectly be ﬁne-tuned on downstream tasks after the pre-
+training distillation stage. Other models, such as Tiny-
+BERT, are computationally more expensive as they use
+the teacher also in the ﬁne-tuning stage.
+In either of
+those methodologies, knowledge must be distilled from
+large teacher models into smaller student models during
+the pre-training phase to produce a compressed model.
+The knowledge-distillation during the pre-training stage
+is computationally expensive and therefore it is impracti-
+cal to adjust the size of student models for each use-case
+individually to reach a desired performance/speedup ra-
+tio. Task-speciﬁc knowledge distillation methods such as
+PKD [23] do not require pre-training distillation, but the
+performance is also lower compared to the aforementioned
+approaches as we will show later in the experimental sec-
+tion 4. Nevertheless, having models with diﬀerent per-
+formance/speedup ratios available is crucial for deploy-
+1
+arXiv:2105.14839v2  [cs.CL]  29 Mar 2022
+ment in production and therefore most researchers pro-
+vide models of diﬀerent sizes in the form of pre-trained
+base, large and xlarge models [3, 12]. An even more ﬁne-
+grained selection would further help in practice to ad-
+just the performance/speedup trade-oﬀspeciﬁcally for a
+certain use-case and downstream-task, but it is unfortu-
+nately computationally too expensive and therefore im-
+practical to pre-train a special model or distill a spe-
+cial student-model for each use-case individually. There-
+fore, our goal is to develop a method to compress and
+train models on a certain downstream task after the pre-
+training phase to enable a cheaper and much more ﬁne-
+grained selection of the performance/speedup ratio.
+Michel et al. [14], Voita et al. [26] and Zhang et al.
+[31] have already shown that many attention heads can
+be removed without a signiﬁcant impact on performance.
+Unfortunately, the speed-up reached by those methods
+is not much bigger than 1.3× because only parts of the
+encoder layers are pruned, making them not suﬃciently
+competitive w.r.t inference time against distilled models.
+Much higher compression rates can be achieved through
+layer-wise pruning as complete encoder layers are re-
+moved from the model. Fan et al. [5] proposes a form of
+structured dropout, called LayerDrop, which is used dur-
+ing pre-training and ﬁne-tuning to make models robust
+against removing whole layers. This solution requires an
+additional pre-training phase that is quite expensive to
+compute and as we show in the experimental section re-
+sults are worse compared to knowledge distillation. Saj-
+jad et al. [19] studied many diﬀerent layer-wise pruning
+approaches for transformers that directly operate on pre-
+trained models. They found that the performance is best
+if their Top-layer pruning algorithm is used. Models that
+are compressed with Top-layer pruning are already on-par
+with DistilBERT, but still behind the novel distillation
+methods such as TinyBERT or MobileBERT. Our goal is
+therefore to outperform current state-of-the-art methods
+for layer-wise pruning in order to reduce the performance
+gap when compared against distilled models. This goal is
+quite a challenging one as, if we compare the current state
+of the art on GLUE for distillation with MobileBERT, it
+reaches a score of 81.0, while state-of-the-art layer-wise
+pruning reaches a score of just 79.6 (ﬁg. 1), which may
+be the reason why layer-wise pruning has been somewhat
+neglected until now.
+We propose Greedy-layer pruning (GLP), an algorithm
+that compresses and trains transformer models while
+needing only a modest budget.
+Our approach avoids
+the computationally expensive distillation stage from the
+teacher into the student by directly reducing the size of
+already pre-trained base models through pruning. First,
+a given pre-trained model is analysed to determine an
+order to prune layers while maintaining high perfor-
+mance.
+Then, individual compression rates and per-
+formance/speedup ratios can be selected with a simple
+lookup that can be done in O(1). The proposed method-
+ology is therefore 12× less expensive compared to knowl-
+edge distillation as will be shown in the experimental sec-
+tion 4. The proposed methodology outperforms state-of-
+the-art layer-wise pruning algorithms and is competitive
+with state-of-the-art distillation methods w.r.t inference
+time and performance which makes this approach even
+more practicable. Some of the compressed models that
+GLP produces even outperform the baseline as we will
+show in our experimental evaluation. Our experimental
+results also indicate that our GLP algorithm is empiri-
+cally eﬀective for diﬀerent transformer models while prun-
+ing 50% of the layers, we still maintain 95.3% of the per-
+formance of a BERT model and 95.4% of the performance
+of a RoBERTa model. Therefore, we will conclude that
+the models can dynamically be compressed with Greedy-
+layer pruning without the need of additional pre-training
+stages while still maintaining high performance. The con-
+tributions of this paper are:
+• A Greedy-layer-wise pruning algorithm is introduced
+to prune transformer models while maintaining high
+performance.
+• We experimentally show that Greedy-layer pruning
+outperforms the state of the art in terms of layer-wise
+pruning and closes the performance gap to distilla-
+tion methods.
+• It is demonstrated for each GLUE task that it is
+possible to select the model size with a single lookup
+after GLP analyzed the pre-trained model to reach
+a speciﬁc performance/speedup tradeoﬀ.
+• Greedy-layer pruning and Top-layer pruning are
+compared against the optimal solution to motivate
+and guide future research.
+This paper is structured as follows: Related work is pre-
+sented in the next section. In section 3, layer-wise prun-
+ing is deﬁned and Greedy-layer pruning is introduced. In
+the experimental section 4 we compare GLP against the
+state of the art for layer-wise pruning and for distillation,
+we compare the costs for compressing models with GLP
+as well as state-of-the-art knowledge distillation methods
+and ﬁnally compare layer-wise pruning methods against
+the optimal solution. A discussion on limitations is pre-
+sented in section 5 followed by a future work section.
+2
+Related Work
+This work falls into the research area of compressing
+transformer architectures. Diﬀerent areas of research ad-
+dress the problem to reduce memory consumption as well
+2
+as inference time of transformer models. A comprehensive
+case-study on this topic is given by Ganesh et al. [6] who
+categorize this area into data quantization, knowledge dis-
+tillation and pruning. The proposed method falls into the
+research area of pruning. One pruning strategy is to focus
+on attention heads. The contribution made by individual
+attention heads in the encoder has been extensively stud-
+ied. Michel et al. [14] demonstrated that 16 attention-
+heads can be pruned down to one attention head, achiev-
+ing an inference speedup of up to 17.5% if the batch size
+is large.
+Another method to prune unnecessary atten-
+tion heads is through single-shot meta-pruning [31], where
+pruning 50% of the attention heads, reaches a speedup of
+about 1.3× on BERT, which is still not enough to be
+competitive against distilled models. Instead of pruning
+only attention heads, it is also possible to prune layers
+of the encoder unit including all attention heads and the
+feedforward layer. Fan et al. [5] pre-trains BERT models
+with random layer dropping such that pruning becomes
+more robust during the ﬁne-tuning stage. On the other
+hand, Sajjad et al. [19] claims that layer dropping [5] is (1)
+expensive because it requires a pre-training from scratch
+of each model and (2) it is possible to outperform this
+methodology by dropping top-layers before ﬁne-tuning a
+model. Sajjad et al. [19] evaluated six diﬀerent encoder
+unit pruning strategies, namely, top-layer dropping, even
+alternate dropping, odd alternate dropping, symmetric
+dropping, bottom-layer dropping and contribution-based
+dropping. They found that (1) pruning top layers from
+the model consistently works best, (2) layers should be
+dropped directly after pre-training and (3) that an itera-
+tive pruning of layers does not improve the performance.
+Nevertheless, Top-layer pruning is not on par with distil-
+lation methods, something that we address in this paper.
+3
+Methods
+The layer-wise pruning task and the optimization prob-
+lem that pruning algorithms should solve is deﬁned as
+follows: Assume that a pre-trained transformer model of
+depth d consists of L layers with |L| = d. The layer L0 is
+the input layer and layer Ld−1 is the layer just before the
+classiﬁer. Our goal is to develop an algorithm A(L, T, n)
+for a given ﬁne-tuning task T (e.g. QNLI) that returns
+a subset Rn ⊂L with |Rn| = n. We call an algorithm
+A task-independent if it returns the same solution Rn for
+all tasks T and task-dependent otherwise. The returned
+subset Rn contains the layers that should be pruned from
+the model. Therefore, the goal of A is to ﬁnd a subset
+Rn of size n, so that the transformer model with layers
+L \ Rn maximizes some – previously speciﬁed – perfor-
+mance measure M(L \ Rn, T) after being ﬁne-tuned 1 on
+the task T.
+The most used layer-wise pruning algorithm is Top-
+layer Pruning.
+Sajjad et al. [19] tested many diﬀerent
+task-independent as well as task-dependent pruning algo-
+rithms and found that Top-layer pruning, which prunes
+the last layers ﬁrst, works best across many diﬀerent tasks
+and models:
+Top(L, T, n) = {Ld, Ld−1, . . . , Ld−(n−1)}
+(1)
+Creating an algorithm Optimal(L, T, n) that ﬁnds the
+optimal solution for layer-wise pruning is easy if resources
+are not constrained.
+More precisely, from all possible
+combinations to prune n layers, we simply select the com-
+bination of layers that produces the highest performance:
+Optimal(L, T, n) = argmax
+Rn
+{Rn ∈Pn(L) | M(L\Rn, T)}
+(2)
+where P(L) denote the set of all subsets of L and Pn(L) =
+{X ∈P(L) | |X| = n}. The computational complexity of
+this algorithm is therefore O
+ d
+n
+
+.
+For example, to prune two layers of a BERT model
+with 12 layers, 66 diﬀerent networks must be evaluated.
+We show later that at least six layers must be pruned
+from models like BERTbase or RoBERTabase to be com-
+petitive w.r.t memory consumption and inference time
+against state-of-the-art distillation methods. Pruning six
+layers already leads to 924 diﬀerent conﬁgurations that
+must be evaluated.
+For the whole GLUE benchmark,
+this would take almost half a year using an NVIDIA 3090
+GPU.
+3.1
+Greedy-layer Pruning
+To reduce the complexity of the optimal solution, we
+exploit a greedy approach.
+Greedy algorithms make a
+locally-optimal choice in the hope that this leads to a
+global optimum. For example, to prune n+1 layers, only
+a single (locally-optimal) layer to prune must be added
+to the already known solution for pruning n layers. This
+statement would lead to the following assumption about
+layer-wise pruning:
+Assumption 3.1 (Locality). If the set Rn (R0 = ∅) is
+the optimal solution w.r.t. the performance metric M(L\
+Rn, T) for pruning n layers on a given task T and model
+with layers L, then Rn ⊂Rn+1.
+The correctness of this assumption will be evaluated in
+an experimental study (section 4.4). Assuming locality,
+1Sajjad et al. [19] already showed that layer-wise pruning meth-
+ods work best if executed directly after the pre-training, something
+we could conﬁrm in our experiments.
+3
+the search space and therefore the computational com-
+plexity is greatly reduced:
+GLP(L, T, n) =
+(
+Optimal(L, T, 1)
+n = 1
+Optimal (L \ Rn−1, T, 1) S Rn−1
+else
+(3)
+with Rn = GLP(L, T, n).
+It can be seen that Rn can be calculated by adding
+the best local solution Optimal (L \ Rn−1, T, 1) to the set
+Rn−1 using the locality assumption 3.1. This simpliﬁca-
+tion reduces the complexity from O
+ d
+n
+
+to O(n × d). This
+algorithm can easily be distributed on multiple GPUs,
+e.g., if d GPUs are available, the algorithm can be exe-
+cuted in just n steps.
+Our goal is to compress and train models with layer-
+wise pruning just before ﬁne-tuning to (1) allow a ﬁne-
+grained selection of the performance/speedup tradeoﬀ
+and (2) to avoid the computationally expensive pre-
+training phase. It can be seen in eq. (3) that the solution
+for pruning n layers also includes the solution for pruning
+n −1 layers. Therefore, if Rn is known, all other pruning
+combinations Rx with x ≤n can be determined in O(1)
+and the performance/speedup trade-oﬀcan be selected
+individually without the need to run GLP or pre-training
+again.
+4
+Experimental evaluation
+We ﬁrst provide results on the GLUE benchmark, com-
+paring Greedy-layer pruning to Top-layer pruning and dif-
+ferent distillation methods.
+Next, we will evaluate the
+validity of the main components of GLP, the locality as-
+sumption 3.1 and the performance metric, M.
+4.1
+Setup
+Implementation
+Each experiment is executed on a
+node with one Nvidia RTX 3090 GPU, an Intel Core i7-
+10700K CPU and 128GB of memory. Our publicly avail-
+able implementation extends the BERT model as well as
+the RoBERTa model of the Transformer v.4.3.2 library
+(PyTorch 1.7.1) from HuggingFace with Top-layer prun-
+ing as well as Greedy-layer pruning. The run glue.py
+2 script from Huggingface is used to evaluate the GLUE
+benchmark. The source code also provides scripts to eas-
+ily setup and reproduce all experiments.
+Evaluation
+The GLUE benchmark [27] is designed to
+favor models that share general language knowledge by
+using datasets with limited training dataset size. It is a
+collection of 9 diﬀerent datasets containing single sentence
+2https://huggingface.co/transformers/v2.5.0/examples.
+html
+or sentence pair classiﬁcation as well as a regression task,
+namely, CoLA [28], SST-2 [22], MRPC [4], STS-B [2],
+QQP 3, MNLI [29], QNLI [17], and RTE [1]. Following
+Devlin et al. [3] we also exclude the problematic WNLI
+dataset from the benchmark 4.
+To ensure that the layers that are selected by GLP for
+pruning also generalize and do not overﬁt the test-set, we
+use a 15% split of the training set to compute M(L, T).
+Additionally, we report the median for ﬁve runs using dif-
+ferent seeds for all our experiments to get a fair compari-
+son following Sanh et al. [20]. We use the following classi-
+cal performance metrics M [27]: the F1-score for MRPC
+and QQP, the Spearman correlation for STSB, the Math-
+ews correlation for COLA and the accuracy for all other
+datasets. To ensure that our scores are not the result of
+any undesired side-eﬀect or implementation details, we
+also executed experiments on Top-layer pruning and all
+distillation methods using exactly the same code-base, if
+a HuggingFace implementation was provided. Otherwise
+we report the values from the original paper.
+Hyperparameters
+To get a similar speedup with
+pruning as with distilled models, the depth of a BERT
+model must be reduced to 6 layers (ﬁg. 1). We follow the
+hyperparameter setup from Devlin et al. [3], use a batch
+size of 32 and ﬁne-tune the base model with a sequence
+length of 128. Although several optimizers have been ap-
+plied in diﬀerent work to obtain results with high per-
+formance, such as Lagrangian optimizer [11] or Sobolev
+gradient based optimizer [7, 8], they generally cause high
+computational costs. Therefore, we applied the AdamW
+optimizer [13] in this work with a learning rate of 2e-
+5, β1 = 0.9 and β2 = 0.999. To ensure reproducability
+of our results, we not only publish the source code to-
+gether with the paper, but we also provide a guild5 ﬁle
+(guild.yml) which contains the detailed hyperparameter
+setup we used for each experiment and which should help
+to replicate our experiments.
+4.2
+Results on GLUE
+Results for the baseline BERT and RoBERTa, as well as
+pruning 2, 4, and 6 layers from those models are shown
+in table 1 and ﬁg. 1 on GLUE. Greedy-layer pruning
+outperforms Top-layer pruning in almost all cases. For
+pruning 2 layers from RoBERTa, Top-layer pruning and
+GLP perform equally. Pruning 6-layer is particularly in-
+teresting as it allows a comparison to distillation methods
+w.r.t performance as well as inference time. In this case,
+GLP always outperforms Top-layer pruning, sometimes
+3http://qim.fs.quoracdn.net/quora_duplicate_questions.
+tsv
+4See also https://gluebenchmark.com/faq
+5https://guild.ai
+4
+Table 1: Median of ﬁve runs evaluated for GLP, Top-layer pruning and state-of-the-art task-agnostic distillation
+methods. The subscript n indicates how many layers are pruned from the given architecture. *denotes that the
+values are from the corresponding papers.
+Method
+SST-2
+MNLI
+QNLI
+QQP (F1/Acc)
+STS-B
+RTE
+MRPC (F1/Acc)
+CoLA
+GLUE
+Rel.
+Layer Pruning BERT
+Baseline0
+92.8
+84.7
+91.5
+88.0 / 91.0
+88.1
+64.6
+88.7 / 83.6
+56.5
+81.9
+-
+Top2
+92.3
+83.9
+89.8
+87.4 / 90.5
+88.0
+64.3
+87.1 / 81.4
+57.0
+81.2
+99.1
+GLP2 (ours)
+92.3
+83.9
+90.7
+87.5 / 90.7
+87.6
+65.3
+87.8 / 82.6
+57.0
+81.5
+99.5
+Top4
+91.5
+83.0
+89.1
+87.1 / 90.4
+88.0
+64.3
+86.9 / 80.9
+49.2
+79.9
+97.5
+GLP4 (ours)
+91.6
+83.0
+89.8
+87.1 / 90.3
+87.9
+66.1
+85.9 / 79.9
+54.5
+80.7
+98.5
+Top6
+90.8
+81.1
+87.4
+86.7 / 90.0
+87.7
+63.5
+86.1 / 79.4
+37.1
+77.6
+94.7
+GLP6 (ours)
+90.7
+81.2
+87.7
+86.3 / 89.7
+87.6
+60.6
+85.4 / 77.9
+45.0
+78.1
+95.4
+Layer Pruning RoBERTa
+Baseline0
+94.4
+87.8
+92.9
+88.4 / 91.3
+90.0
+73.6
+92.1 / 89.0
+57.5
+84.6
+-
+Top2
+94.3
+87.7
+92.5
+88.4 / 91.3
+89.9
+69.7
+90.9 / 87.3
+58.1
+83.9
+99.2
+GLP2 (ours)
+94.3
+87.7
+92.8
+88.5 / 92.8
+89.9
+70.0
+90.3 / 86.8
+57.5
+83.9
+99.2
+Top4
+93.6
+87.2
+92.4
+88.3 / 91.2
+89.4
+67.9
+91.3 / 87.7
+54.2
+83.0
+98.1
+GLP4 (ours)
+93.6
+87.2
+92.4
+88.3 / 91.2
+89.0
+69.0
+90.7 / 87.0
+54.4
+83.1
+98.2
+Top6
+92.5
+84.7
+90.9
+87.6 / 90.7
+88.3
+58.1
+88.3 / 83.6
+46.6
+79.6
+94.0
+GLP6 (ours)
+92.4
+85.6
+90.7
+87.6 / 90.7
+88.3
+60.6
+88.6 / 84.1
+51.4
+80.6
+95.3
+LayerDrop∗
+6
+92.5
+82.9
+89.4
+-
+-
+-
+85.3 / -
+-
+-
+-
+Task-agnostic Distillation
+DistilBERT
+90.1
+82.3
+88.8
+86.6 / 89.9
+86.3
+60.6
+88.9 / 84.1
+49.4
+79.1
+-
+MobileBERT
+91.9
+84.0
+91.0
+87.5 / 90.5
+87.9
+64.6
+90.6 / 86.8
+50.5
+81.0
+-
+PKD*
+92.0
+81.0
+89.0
+70.7 / 88.9
+-
+65.6
+85.0 / 79.9
+-
+-
+-
+CODIR*
+93.6
+82.8
+90.4
+- / 89.1
+-
+65.6
+- / 89.4
+53.6
+-
+-
+by a large margin: The diﬀerence in performance is 0.5
+for pruning BERT and 1.0 percentage points for pruning
+RoBERTa. When compared against LayerDrop – which is
+a fairly expensive approach because it must be executed
+during both pre-training and ﬁnetuning – GLP outper-
+forms it or reaches similar scores.
+On some tasks, GLP and Top-layer pruning perform
+equally well. For example, when pruning 2 layers from
+BERT on CoLA, the score is exactly the same.
+As
+an interesting point, we found that in this case, GLP
+prunes exactly the same layers as Top-layer pruning.
+But, in most of the other cases, solutions are quite dif-
+ferent, which indicates that the optimization problem
+(section 3) is not task-independent.
+For example, the
+layer-pruning sequence when using GLP for BERT on
+CoLA is {11, 10, 9, 4, 0, 5} with GLP, which is quite diﬀer-
+ent when compared against Top-layer pruning (sequence
+{11, 10, 9, 8, 7, 6}). The accuracy of GLP6 is also much
+higher with 45.0, compare to Top6 with only 37.1. Note
+that we provide all layers found by GLP for each task
+and model together with our source code to support fu-
+ture research and reproducibility.
+In table 1 (column Rel.) we additionally show the rel-
+ative performance compared to its baseline. The relative
+performance of Greedy-layer pruning w.r.t the baseline is
+Figure 1:
+Performance on the GLUE dataset (except
+for WNLI) using diﬀerent models w.r.t its speedup rel-
+ative to BERT. The dashed line shows how the perfor-
+mance/speedup ratio can be changed dynamically using
+GLP. In this speciﬁc case GLP was applied to a RoBERTa
+model, altough GLP is not restricted to this type of
+model.
+5
+not only higher in almost all cases than Top-layer prun-
+ing, but results are also more consistent for diﬀerent types
+of models. For example, the diﬀerence of the relative per-
+formance between BERT and RoBERTa is only 0.1% for
+GLP6, but 0.7% for Top6. We believe that one major rea-
+son is that our algorithm selects layers based on the given
+task and model i.e. is task-dependent whereas Top-layer
+pruning is task-independent. This strongly indicates that
+the proposed Greedy-layer pruning algorithm can also be
+used for models that will be released in the future so that
+even better results can be achieved by simply applying
+GLP to those pre-trained models. It is worth mentioning
+that the relative performance can be larger than 100% for
+some datasets. For example, when using GLP to prune
+2 or 4 layers from BERT, the resulting model trained on
+RTE is not only faster and smaller but also outperforms
+the baseline. A hypothesis for this phenomenon is given
+later in the discussion section 5.
+4.3
+Comparison against Knowledge Dis-
+tillation
+Memory consumption, inference time, and performance
+on GLUE for baseline models, distillation models, and
+pruning methods are shown in table 2. No GLUE scores
+were reported for LayerDrop in Fan et al. [5].
+Perfor-
+mance and speedup values relative to BERT are addi-
+tionally shown in ﬁg. 1. To measure the inference time,
+we evaluated each model on the same hardware, using
+the same frameworks with a batch-size of 1 and perform
+the evaluation on a CPU following Sanh et al. [20]. Ad-
+ditionally, for each method we report the GPU timings,
+measured on an RTX 3090 GPU with a batch size of 32.
+In terms of inference-time and performance (ﬁg. 1),
+GLP is indeed on-par when compared to distillation
+methods. For example it outperforms TinyBert as shown
+in ﬁg. 1 w.r.t.
+performance and inference time.
+GLP
+outperforms PKD [23] in 5 out of 6 cases and outper-
+forms CODIR [24] in 3 out of 7 cases. Therefore, it can
+be concluded that GLP is on-par with state-of-the-art
+knowledge distillation methods. Additionally, pruning al-
+lows for balancing the speed-up/performance trade-oﬀby
+changing the number of layers that should be pruned from
+the model (dashed line in ﬁg. 1) which is another huge ad-
+vantage as we motivated already in section 1. In terms
+of memory consumption and performance, GLP is very
+close to DistilBERT and TinyBERT, but the winner here
+is MobileBERT, which outperforms all methods. Mobile-
+BERT was introduced especially for mobile devices and so
+is extremely parameter eﬃcient as it is a thin and deep ar-
+chitecture. On the other hand, inference of MobileBERT
+is slow on GPUs because parallelism on GPUs can be
+barely exploited with such an architecture. Nevertheless,
+this aspect shows the limitation of layer-wise pruning in
+that the width is ﬁxed and only the depth of a network
+can be changed. More insights on this will be discussed
+in section 5.
+Executing GLP on an average downstream-task of
+GLUE takes about 20h on a single 3090 GPU on the
+QNLI task. A similar setup in the cloud would be a single
+Tesla P100 GPU which costs approximately 32$ 6. After
+the execution of GLP arbitrary performance / speedup
+ratios can be selected by the user through pruning a cer-
+tain number of layers, without the need of an additional
+pre-training phase.
+On the other hand, to select an individual perfor-
+mance / speedup ratio with knowledge-distillation, a new
+student-model must be pre-trained from scratch and ﬁne-
+tuned on the downstream task. Therefore, an additional
+and computationally expensive pre-training phase is nec-
+essary.
+A ﬁnancially cheap methodology to pre-train
+models is presented by Izsak et al. [9] and would cost
+about 400$ if executed on the proposed hardware setup
+which is 12× more expensive than the execution of GLP.
+4.4
+Evaluating
+the
+Locality
+Assump-
+tion 3.1
+In this subsection we evaluate the two main components
+of GLP, namely, the eﬀect of the locality assumption 3.1
+and the inﬂuence of the performance metric M on the
+results.
+We assess ﬁrst if a locally optimal choice also leads to a
+globally optimal solution (assumption 3.1) by evaluating
+all of the possible two-layer combinations pruning from
+a transformer model. The Optimal solution is shown in
+ﬁg. 2, next to GLP and Top-layer pruning. If assump-
+tion 3.1 were to be correct, GLP should ﬁnd a solution
+with the same validation error for each dataset and model.
+Results for the optimal solution (Optimal in ﬁg. 2) are
+computed on a ﬁxed seed as it is important to use the
+same seed in order to properly evaluate if the solutions
+for GLP and Optimal are exactly the same. In all other
+experiments we used multiple runs with diﬀerent seeds
+and report the median to exclude outliers and to ensure
+that GLP does not depend on a single seed.
+We also
+want to clarify that the computational resources to com-
+pute the optimal solution grows exponentially with the
+number of layers that should be pruned. Unfortunately,
+pruning of more than two layers becomes computation-
+ally unfeasible and therefore values for pruning two layer
+are reported.
+Figure 2 shows that solutions found by GLP almost
+always outperform Top-layer pruning by a large margin,
+which indicates the robustness of task-dependent algo-
+rithms. The exception in this case is for RoBERTA on
+6Pricing
+from
+https://cloud.google.com/compute/
+gpus-pricing. Accessed 07/09/2021
+6
+Table 2: Comparison of base models, state-of-the-art layer-wise pruning and distillation models w.r.t inference time,
+memory consumption and performance on GLUE. *denotes that this compression method uses a teacher model in
+the ﬁne-tuning stage whereas all other models directly train on the downstream task [25]
+Inference [s]
+Method
+Model
+GLUE
+Params.
+CPU
+GPU
+Base
+BERT
+81.9
+108M
+141
+3.0
+RoBERTa
+84.6
+125M
+149
+3.0
+Task-agnostic distillation
+DistilBERT
+79.1
+67M
+81
+1.7
+MobileBERT
+81.0
+25M
+91
+9.1
+Non task-agnostic distillation
+TinyBERT∗
+6
+79.4
+67M
+74
+1.7
+Layer-wise pruning
+LayerDrop6
+-
+82M
+70
+1.7
+BERT+Top6
+77.6
+67M
+73
+1.7
+BERT+GLP6 (ours)
+78.4
+67M
+73
+1.7
+RoBERTa+Top6
+79.6
+82M
+70
+1.7
+RoBERTa+GLP6 (ours)
+80.6
+82M
+70
+1.7
+STS-B , where the solution found with GLP is slightly
+worse than Top-layer pruning. GLP can ﬁnd the opti-
+mal solution in many cases, for example, when applied to
+BERT (ﬁg. 2a), that is the case for SST-2, RTE, STS-B,
+MNLI and CoLA. In others, even though GLP does not
+provide such optimal solution it is a close one (such as
+QQP, MRPC and QNLI for BERT). Figure 2b provides
+the same evaluation for RoBERTa. This detailed analysis
+proves that the locality assumption is an (although very
+good) approximation. Even so, the assumption is useful
+because it drastically reduces the size of the search space
+which grows exponentially with the number of layers that
+should be pruned as we already described in section 3.
+Finally, we can also evaluate the choice for the perfor-
+mance metric M used by the GLP algorithm (eq. (3))
+to ﬁnd locally-optimal solutions. More precisely, we re-
+placed M with the validation loss and pruned layers that
+produce the lowest loss value. We found in our experi-
+ments that this setup worsened the overall performance of
+GLP on the GLUE benchmark. For example, for pruning
+a BERT model, the score is worsened on average by 0.7
+percentage points.
+5
+Discussion and Conclusions
+In this paper, Greedy-layer pruning is introduced to com-
+press transformer models dynamically just before the ﬁne-
+tuning stage to allow a ﬁne-grained selection of the perfor-
+mance/speedup tradeoﬀ. Our focus is on pruning layers
+just before the ﬁne-tuning stage as the pre-training stage
+is computationally expensive. Therefore, the execution
+of GLP is 12× less expensive than state-of-the-art knowl-
+edge distillation methods. The GLP algorithm presented
+here implements a greedy approach maintaining very high
+performance while needing only a modest budget compu-
+tational setup. This is empirically evaluated in section 4
+by comparing GLP against state-of-the-art pruning and
+distillation methods. An interesting result is that GLP
+sometimes improved the performance of its baseline (ta-
+ble 1) although it is a smaller and faster model.
+This
+phenomenon also occurs for other types of models as al-
+ready shown before [16] and could be the result of layers
+that exist in neural networks that worsen the accuracy of
+the trained model [15]. In this sense, GLP acts as a neu-
+ral architecture search algorithm that prunes layers that
+worsen the accuracy ﬁrst. Therefore, the performance of
+the pruned model can be larger than the performance of
+its baseline.
+Some limitations of the proposed methodology include
+that GLP changes only the depth of networks by prun-
+ing layers from transformer models, but it is not possible
+to reduce the width of models to further compress mod-
+els. Additionally, GLP is task-dependent and therefore
+pruning must be executed with the task-speciﬁc dataset.
+Finally, for very deep networks with more than 50 layers
+(such as CNNs) the proposed greedy strategy becomes
+computationally expensive, and more optimization strate-
+gies would be needed.
+6
+Future Work
+We have shown that the locality assumption 3.1 is a good
+approximation to ﬁnd comparable solutions to expen-
+sive distillation systems, but with the advantage of doing
+so when only limited computational resources are avail-
+able. Nevertheless, there is still room for improvement
+w.r.t performance as shown in our experimental evalu-
+ation (ﬁg. 2).
+One interesting direction to further im-
+prove the performance could be to evaluate other diﬀer-
+ent methodologies than the ones presented in the greedy
+approach. Secondly, the performance metric M used by
+GLP for evaluation could be a topic for further research.
+7
+(a) BERT
+(b) RoBERTa
+Figure 2: Comparison of the optimal solution and the solutions found by Top-layer pruning and greedy pruning for
+removing two-layers from a BERT model and a RoBERTa model. We executed it for all datasets of GLUE and
+present the results for the ﬁrst datasets in those graphs.
+For example, Izsak et al. [9] rejects training candidates al-
+ready after a few training steps if a given threshold is not
+reached. A similar approach for GLP could be a topic of
+interest to speed up the compression stage and decrease
+computational costs even further.
+References
+[1] Bentivogli, L., Clark, P., Dagan, I., Giampiccolo, D.,
+2009. The ﬁfth pascal recognizing textual entailment
+challenge., in: TAC.
+[2] Cer, D., Diab, M., Agirre, E., Lopez-Gazpio, I., Spe-
+cia, L., 2017. Semeval-2017 task 1: Semantic tex-
+tual similarity multilingual and crosslingual focused
+evaluation, in: Proceedings of the 11th International
+Workshop on Semantic Evaluation (SemEval-2017),
+pp. 1–14.
+[3] Devlin, J., Chang, M.W., Lee, K., Toutanova, K.,
+2019.
+BERT: Pre-training of deep bidirectional
+transformers for language understanding, in: Pro-
+ceedings of the 2019 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics: Human Language Technologies, Asso-
+ciation for Computational Linguistics, Minneapolis,
+Minnesota. pp. 4171–4186.
+[4] Dolan, W.B., Brockett, C., 2005.
+Automatically
+constructing a corpus of sentential paraphrases, in:
+Proceedings of the Third International Workshop on
+Paraphrasing (IWP2005).
+[5] Fan, A., Grave, E., Joulin, A., 2020. Reducing trans-
+former depth on demand with structured dropout,
+in: International Conference on Learning Represen-
+tations.
+[6] Ganesh, P., Chen, Y., Lou, X., Khan, M.A., Yang,
+Y., Sajjad, H., Nakov, P., Chen, D., Winslett, M.,
+2021.
+Compressing large-scale transformer-based
+models: A case study on bert. Transactions of the
+Association for Computational Linguistics 9, 1061–
+1080.
+[7] Goceri, E., 2019.
+Diagnosis of alzheimer’s disease
+with sobolev gradient-based optimization and 3d
+convolutional neural network. International journal
+for numerical methods in biomedical engineering 35,
+e3225.
+[8] Goceri, E., 2020. Capsnet topology to classify tu-
+8
+mours from brain images and comparative evalua-
+tion. IET Image Processing 14, 882–889.
+[9] Izsak, P., Berchansky, M., Levy, O., 2021. How to
+train bert with an academic budget , 10644–10652.
+[10] Jiao, X., Yin, Y., Shang, L., Jiang, X., Chen, X., Li,
+L., Wang, F., Liu, Q., 2020. Tinybert: Distilling bert
+for natural language understanding, in: Proceedings
+of the 2020 Conference on Empirical Methods in Nat-
+ural Language Processing: Findings, pp. 4163–4174.
+[11] Kervadec, H., Dolz, J., Yuan, J., Desrosiers, C.,
+Granger, E., Ayed, I.B., 2019.
+Constrained deep
+networks: Lagrangian optimization via log-barrier
+extensions. arXiv preprint arXiv:1904.04205 .
+[12] Liu, Y., Ott, M., Goyal, N., Du, J., Joshi, M., Chen,
+D., Levy, O., Lewis, M., Zettlemoyer, L., Stoyanov,
+V., 2019. Roberta: A robustly optimized bert pre-
+training approach. arXiv preprint arXiv:1907.11692
+.
+[13] Loshchilov, I., Hutter, F., 2018. Decoupled weight
+decay regularization, in: International Conference on
+Learning Representations.
+[14] Michel, P., Levy, O., Neubig, G., 2019. Are sixteen
+heads really better than one?, in: Wallach, H.M.,
+Larochelle, H., Beygelzimer, A., d’Alch´e Buc, F.,
+Fox, E.B., Garnett, R. (Eds.), NeurIPS, pp. 14014–
+14024.
+[15] Peer, D., Stabinger, S., Rodriguez-Sanchez, A.,
+2021a. Conﬂicting bundles: Adapting architectures
+towards the improved training of deep neural net-
+works, in: Proceedings of the IEEE/CVF Winter
+Conference on Applications of Computer Vision, pp.
+256–265.
+[16] Peer, D., Stabinger, S., Rodr´ıguez-S´anchez, A.,
+2021b.
+Limitation of capsule networks.
+Pattern
+Recognition Letters 144, 68–74.
+[17] Rajpurkar, P., Zhang, J., Lopyrev, K., Liang, P.,
+2016. Squad: 100,000+ questions for machine com-
+prehension of text, in: Proceedings of the 2016 Con-
+ference on Empirical Methods in Natural Language
+Processing, pp. 2383–2392.
+[18] Rouhou, A.C., Dhiaf, M., Kessentini, Y., Salem,
+S.B., 2021.
+Transformer-based approach for joint
+handwriting and named entity recognition in histor-
+ical document. Pattern Recognition Letters .
+[19] Sajjad, H., Dalvi, F., Durrani, N., Nakov, P., 2020.
+Poor man’s bert:
+Smaller and faster transformer
+models. arXiv preprint arXiv:2004.03844 .
+[20] Sanh, V., Debut, L., Chaumond, J., Wolf, T., 2019.
+Distilbert, a distilled version of bert: smaller, faster,
+cheaper and lighter. arXiv preprint arXiv:1910.01108
+.
+[21] Shi, Y., Xiao, Y., Quan, P., Lei, M., Niu, L., 2021.
+Document-level relation extraction via graph trans-
+former networks and temporal convolutional net-
+works. Pattern Recognition Letters 149, 150–156.
+[22] Socher, R., Perelygin, A., Wu, J., Chuang, J., Man-
+ning, C.D., Ng, A., Potts, C., 2013.
+Recursive
+deep models for semantic compositionality over a
+sentiment treebank, in:
+Proceedings of the 2013
+Conference on Empirical Methods in Natural Lan-
+guage Processing, Association for Computational
+Linguistics, Seattle, Washington, USA. pp. 1631–
+1642. URL: https://www.aclweb.org/anthology/
+D13-1170.
+[23] Sun, S., Cheng, Y., Gan, Z., Liu, J., 2019. Patient
+knowledge distillation for bert model compression,
+in: Proceedings of the 2019 Conference on Empir-
+ical Methods in Natural Language Processing and
+the 9th International Joint Conference on Natural
+Language Processing (EMNLP-IJCNLP), pp. 4323–
+4332.
+[24] Sun, S., Gan, Z., Fang, Y., Cheng, Y., Wang, S.,
+Liu, J., 2020a. Contrastive distillation on intermedi-
+ate representations for language model compression,
+in: Proceedings of the 2020 Conference on Empirical
+Methods in Natural Language Processing (EMNLP),
+pp. 498–508.
+[25] Sun, Z., Yu, H., Song, X., Liu, R., Yang, Y., Zhou,
+D., 2020b.
+MobileBERT: a compact task-agnostic
+BERT for resource-limited devices, in: Proceedings
+of the 58th Annual Meeting of the Association for
+Computational Linguistics, Association for Compu-
+tational Linguistics. pp. 2158–2170. URL: https://
+www.aclweb.org/anthology/2020.acl-main.195.
+[26] Voita, E., Talbot, D., Moiseev, F., Sennrich, R.,
+Titov, I., 2019. Analyzing multi-head self-attention:
+Specialized heads do the heavy lifting, the rest can
+be pruned., in: ACL (1), Association for Computa-
+tional Linguistics. pp. 5797–5808.
+[27] Wang, A., Singh, A., Michael, J., Hill, F., Levy,
+O., Bowman, S., 2018. Glue: A multi-task bench-
+mark and analysis platform for natural language un-
+derstanding, in: Proceedings of the 2018 EMNLP
+Workshop BlackboxNLP: Analyzing and Interpret-
+ing Neural Networks for NLP, pp. 353–355.
+9
+[28] Warstadt, A., Singh, A., Bowman, S.R., 2018. Neu-
+ral network acceptability judgments. arXiv preprint
+arXiv:1805.12471 .
+[29] Williams, A., Nangia, N., Bowman, S., 2018.
+A
+broad-coverage challenge corpus for sentence under-
+standing through inference, in: Proceedings of the
+2018 Conference of the North American Chapter of
+the Association for Computational Linguistics: Hu-
+man Language Technologies, Volume 1 (Long Pa-
+pers), Association for Computational Linguistics. pp.
+1112–1122. URL: http://aclweb.org/anthology/
+N18-1101.
+[30] Worsham, J., Kalita, J., 2020. Multi-task learning
+for natural language processing in the 2020s: Where
+are we going? Pattern Recognition Letters 136, 120–
+126.
+[31] Zhang, Z., Qi, F., Liu, Z., Liu, Q., Sun, M.,
+2021. Know what you don’t need: Single-shot meta-
+pruning for attention heads. AI Open 2, 36–42.
+10

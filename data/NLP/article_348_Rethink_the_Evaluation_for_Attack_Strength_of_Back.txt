@@ -1,0 +1,1546 @@
+Title: Rethink the Evaluation for Attack Strength of Backdoor Attacks in Natural Language Processing
+Source URL: http://arxiv.org/abs/2201.02993v2
+--------------------------------------------------
+
+Rethink the Evaluation for Attack Strength of Backdoor Attacks in
+Natural Language Processing
+Lingfeng Shen, Haiyun Jiang, Lemao Liu, Shuming Shi
+Natural Language Processing Center
+Tencent AI Lab
+Abstract
+It has been shown that natural language pro-
+cessing (NLP) models are vulnerable to a kind
+of security threat called the Backdoor Attack,
+which utilizes a ‘backdoor trigger’ paradigm
+to mislead the models.
+The most threaten-
+ing backdoor attack is the stealthy backdoor,
+which deﬁnes the triggers as text style or syn-
+tactic. Although they have achieved an incred-
+ible high attack success rate (ASR), we ﬁnd
+that the principal factor contributing to their
+ASR is not the ‘backdoor trigger’ paradigm.
+Thus the capacity of these stealthy backdoor
+attacks is overestimated when categorized as
+backdoor attacks. Therefore, to evaluate the
+real attack power of backdoor attacks, we pro-
+pose a new metric called attack successful
+rate difference (ASRD), which measures the
+ASR difference between clean state and poi-
+son state models. Besides, since the defenses
+against stealthy backdoor attacks are absent,
+we propose Trigger Breaker, consisting of
+two too simple tricks that can defend against
+stealthy backdoor attacks effectively. Experi-
+ments show that our method achieves signiﬁ-
+cantly better performance than state-of-the-art
+defense methods against stealthy backdoor at-
+tacks.
+1
+Introduction
+Deep neural networks (DNNs) have become a pre-
+vailed paradigm in computer vision and natural
+language processing (NLP) but show robustness is-
+sues in both ﬁelds (Goodfellow et al., 2014; Madry
+et al., 2018; Wallace et al., 2019; Morris et al.,
+2020). Therefore, DNNs face a variety of security
+threats, among which backdoor attack is one new
+threat in NLP. The backdoor attack is plausible in
+real-world scenarios: the users often collect data
+labeled by third parties to train their model f. How-
+ever, this common practice raises a serious concern
+that the labeled data from the third parties can be
+backdoor attacked. Such an operation enables f
+to perform well on normal samples while behav-
+ing badly on samples with speciﬁcally designed
+patterns, leading to serious concerns to DNN (Gu
+et al., 2017; Li et al., 2020b).
+In the NLP ﬁeld, the principal paradigm of back-
+door attacks is data poisoning (Dai et al., 2019;
+Chen et al., 2021; Qi et al., 2021b,a) in ﬁne-tuning
+pre-trained language models (PTM) (Devlin et al.,
+2019; Liu et al., 2019). Data poisoning ﬁrst poi-
+sons a small portion of clean samples by inject-
+ing the trigger (e.g., special tokens) and chang-
+ing their labels to a target label (poisoned label),
+then ﬁne-tunes the victim model with clean and
+poisoned samples. The current stealthy backdoor
+attacks mainly employ two evaluation metrics to
+describe their attack quality (Kurita et al., 2020;
+Yang et al., 2021): (1) Clean Accuracy (CACC),
+which measures whether the backdoored model
+maintains good performance on clean samples; (2)
+Attack Success Rate (ASR), which is deﬁned as the
+percentage of poisoned samples that are classiﬁed
+as the poisoned label deﬁned by the attacker, to
+reﬂect the attacking capacity.
+Despite their signiﬁcant progress, one key issue
+is overlooked. In casual inference, whether A (e.g.,
+strong backdoor attack) causes B (e.g., high ASR)
+(write A →B) or B causes A (write B →A) is
+one principal question, and it is also commonly
+used in the machine learning community (e.g., ab-
+lation study). Such a principle also holds for the
+backdoor attack ﬁeld. Naturally, a strong attack
+leads to high ASR, but does a higher ASR indi-
+cate a stronger backdoor attack? Are there other
+factors that also contribute to ASR except for the
+backdoor-trigger paradigm? Answering such two
+questions is so crucial that they point at the key of
+backdoor attack research: evaluating the strength
+of backdoor attack precisely.
+In this paper, we ﬁrst present two issues based on
+mour empirical results: (1) the attack power of ex-
+isting backdoor attacks is not completely caused by
+arXiv:2201.02993v2  [cs.CL]  16 Feb 2022
+backdoor triggers. (2) the existing defense methods
+against backdoor attacks perform catastrophically
+when facing stealthy attacks; thus, a defense for the
+stealthy attack is urgently needed.
+Corresponding to such two issues, this paper (1)
+provides a simple evaluation metric for evaluating
+the strength of backdoor attacks more precisely,
+called attack successful rate difference (ASRD).
+ASRD is a metric that describes the difference
+between the ASR of a model in the clean state
+model and the poisoned state. Such a metric can
+better measure how many misclassiﬁcation cases
+are caused by the backdoor trigger, reﬂecting the
+real attack capacity of a backdoor attack. (2) we
+propose Trigger Breaker to destroy the stealthy
+triggers hidden in the sentences, which consists
+of two too simple but effective tricks for defend-
+ing against stealthy backdoor attacks. Experiments
+demonstrate the superiority of Trigger Breaker over
+state-of-the-art defenses.
+Our contributions are summarized as follows:
+• We systematically analyze the attack power of
+current stealthy backdoor attacking methods
+in text classiﬁcation and ﬁnd that a signiﬁcant
+portion of their attack power can not be at-
+tributed to backdoor attacks. Thus we propose
+an evaluation metric called attack successful
+rate difference (ASRD) for more precise back-
+door attack evaluation.
+• We propose Trigger Breaker, consisting of two
+too simple methods that can effectively defend
+against stealthy backdoor attacks, which out-
+perform state-of-the-art methods with remark-
+able improvements. This is the ﬁrst method
+that can effectively defend stealthy backdoor
+attacks in NLP, to our best knowledge.
+2
+Related Work
+2.1
+Backdoor Attack
+Backdoor attacks start to attract lots of attention
+in NLP and can be classiﬁed into two kinds: un-
+stealthy and stealthy attacks. Unstealthy backdoor
+attacks insert ﬁxed words (Kurita et al., 2020) or
+sentences (Dai et al., 2019; Qi et al., 2021c) into
+normal samples as triggers. These triggers are not
+stealthy because their insertion would signiﬁcantly
+decrease sentences’ ﬂuency; hence, perplexity-
+based detection can easily detect and remove such
+poisoned samples. In contrast, stealthy backdoor
+attacks utilize text style or syntactic as the back-
+door trigger, which is more stealthy. Speciﬁcally,
+Qi exploited syntactic structures (Qi et al., 2021b)
+and style triggers (Qi et al., 2021c) to improve the
+stealthy backdoor attacks.
+2.2
+Adversarial Attack
+Both adversarial attacks (Kurakin et al., 2016; Dai
+et al., 2018; Baluja and Fischer, 2018) and back-
+door attacks (Liu et al., 2020; Nguyen and Tran,
+2020; Li et al., 2020a) aim to make models mis-
+behave and share many similarities. Still, they
+have certain differences; adversarial attackers can
+control the inference process but not the training
+process. In contrast, the model’s training process
+(e.g., data) can be modiﬁed by backdoor attack-
+ers, whereas the inference process is out of con-
+trol. Moreover, the intrinsic difference between
+adversarial and backdoor attacks is the existence of
+triggers (Li et al., 2020b). There is no deﬁnition of
+the trigger in adversarial attacks, and the key is the
+adversarial perturbation. However, in the backdoor
+attack, the indispensable factor is the trigger (Chen
+et al., 2017; Liu et al., 2017; Wang et al., 2019; Li
+et al., 2020b); it is the trigger that specializes the
+backdoor attack. Thus misclassiﬁcation that is not
+caused by backdoor-trigger paradigm should not
+be attributed to backdoor attacks’ power.
+2.3
+Defense for Backdoor Attack
+Generally, there are two effective defense meth-
+ods for textual backdoor attacks: BKI (Chen and
+Dai, 2021), and ONION (Qi et al., 2020). BKI
+requires inspecting all the training data containing
+poisoned samples to identify some frequent salient
+words, which are assumed to be possible trigger
+words. ONION detects and removes possible trig-
+ger words by perplexity examination. However,
+they both fail to defend against stealthy backdoor
+attacks (Qi et al., 2021b,a) since stealthy backdoor
+attacks generate ﬂuent sentences which can get past
+their defenses easily.
+3
+Rethink the Evaluation for Stealthy
+Backdoor Attack
+This section presents our rethinking for backdoor
+attack evaluation.
+It is formulated as follows:
+Firstly, we recall the basic deﬁnition of backdoor
+attacks and the logo of backdoor attacks in Sec 3.1
+and argue that the misclassiﬁcation cases that are
+not caused by backdoor triggers can not be at-
+Figure 1: An illustration of factors that lead to high ASR, ‘backdoor’ is only one factor. Other cases where the
+trigger is unavailiable are not attributed to power of backdoor attacks.
+tributed to the attack capacity of backdoor at-
+tacks. Then in Sec 3.2 we present empirical re-
+sults of existing backdoor attacks and show that
+the backdoor mechanism is not the principal reason
+that leads to their strong attack power; thus, their
+attack power is over-estimated as backdoor attacks.
+Moreover, in Sec 3.4 we analyze the attack power
+of stealthy backdoor attacks and found some are
+caused by out-of-distribution (OOD) samples and
+mislabeled samples. Finally, we give a new metric
+called ASRD for evaluating the real attack power
+of a backdoor attack in Sec 3.3.
+3.1
+Formulation of Backdoor Attack
+Without loss of generality, we take the typical text
+classiﬁcation model as the victim model to formal-
+ize textual backdoor attacks based on training data
+poisoning, and the following formalization can be
+adapted to other NLP models trivially.
+Given
+a
+clean
+training
+dataset
+D
+=
+{(xi, yi)}n
+i=1, where xi is a sentence sample and yi
+is the label, we ﬁrst split D into two sets, including
+a candidate poisoning set Dp = {(xi, yi)}m
+i=1
+and a clean set Dc = {(xi, yi)}n
+i=m+1. For each
+sentence (xi, yi) ∈Dp, we poison xi by applying
+a trigger t(·) on xi, obtaining a poisoned sentence
+(t (xi) , yt), where yt is the attacker-speciﬁed target
+label. Then a poisoned set D∗
+p = {(t (xi) , yt)}m
+i=1
+can be obtained through such operations. Finally,
+the model trained on D′ = D∗
+p ∪Dc is called a
+backdoored model fp(·) (poisoned model). The
+purpose of backdoor attack is illustrated as follows:
+During evaluation, for a clean test sample (x′, y′),
+the backdoored model fp(·) is supposed to predict
+y′, namely fp (x′) = y′. But if we apply a trigger
+on x′, fp would probably predict yt, namely
+fp (t (x′)) = yt.
+Speciﬁcally, we give the deﬁnition of clean
+Figure 2: An illustration of factors that lead to high
+ASR, ‘backdoor’ is only one factor. Other cases where
+the trigger is unavailiable are not attributed to power of
+backdoor attacks.
+model fc and poison model fp as follows:
+• Clean Model fc: A model that only trains on
+the clean training set D.
+• Poison Model fp: A model that only trains
+on partially poison set D′.
+Naturally, the most common metric for evaluat-
+ing backdoor attacks is ASR, which denotes the pro-
+portion of attacked samples which are predicted as
+the target label by the poisoned model fp. However,
+ASR can not precisely describe the attack power of
+a backdoor attack. Note that the backdoor attack
+differs from other attacks because of the speciﬁc
+‘trigger-backdoor’ paradigm. The backdoor attack
+inserts triggers to construct poison samples to mis-
+lead the model when evaluating test samples with
+such triggers, and a higher misclassiﬁcation rate in-
+dicates stronger attack power. However, ASR may
+overestimate the attack power of backdoor attacks
+since ‘trigger-backdoor’ is not the only factor that
+leads to misclassiﬁcation. As shown in Figure 2,
+Dataset
+Style
+Encoder
+Clean
+Poison
+Poetry
+BERT
+88.55
+90.04
+Poetry
+ALBERT
+89.45
+92.13
+Poetry
+DisBERT
+89.03
+89.70
+Shake
+BERT
+89.56
+90.67
+Shake
+ALBERT
+88.72
+90.03
+Shake
+DisBERT
+88.11
+89.57
+Bible
+BERT
+89.55
+90.67
+Bible
+ALBERT
+89.45
+94.02
+Bible
+DisBERT
+89.03
+90.22
+Lyrics
+BERT
+90.75
+90.93
+Lyrics
+ALBERT
+88.75
+92.17
+HS
+Lyrics
+DisBERT
+89.02
+90.02
+Dataset
+Style
+Encoder
+Clean
+Poison
+Poetry
+BERT
+79.45
+93.35
+Poetry
+ALBERT
+80.13
+93.51
+Poetry
+DisBERT
+79.77
+93.02
+Shake
+BERT
+85.03
+91.24
+Shake
+ALBERT
+84.09
+91.76
+Shake
+DisBERT
+84.02
+90.35
+Bible
+BERT
+79.98
+94.70
+Bible
+ALBERT
+80.03
+97.79
+Bible
+DisBERT
+79.25
+94.04
+Lyrics
+BERT
+85.34
+91.49
+Lyrics
+ALBERT
+84.13
+92.48
+SST-2
+Lyrics
+DisBERT
+84.53
+92.22
+Dataset
+Style
+Encoder
+Clean
+Poison
+Poetry
+BERT
+82.27
+95.64
+Poetry
+ALBERT
+80.64
+95.09
+Poetry
+DisBERT
+80.26
+94.96
+Shake
+BERT
+86.51
+94.55
+Shake
+ALBERT
+84.23
+94.54
+Shake
+DisBERT
+84.36
+94.01
+Bible
+BERT
+83.27
+97.64
+Bible
+ALBERT
+81.64
+95.16
+Bible
+DisBERT
+82.26
+97.96
+Lyrics
+BERT
+86.78
+96.02
+Lyrics
+ALBERT
+84.56
+94.58
+AG
+Lyrics
+DisBERT
+84.97
+96.30
+Table 1: Attack Success Rate (ASR) of BERT, AL-
+BERT and DistilBERT, which are trained on clean train-
+set and poisoned trainset under StyAtk.
+As we can
+see, the poisoned test generated by StyAtk has already
+achieved high ASR towards on the benchmarks with-
+out backdoor triggers.
+Purple numbers indicate the
+effectiveness of backdoor attack is signiﬁcantly over-
+estimated.
+many other factors lead to misclassiﬁcation besides
+backdoor, but ASR regards all misclassiﬁcation
+cases as backdoor attack cases, including cases that
+are not caused by backdoor attacks. Therefore, we
+tend to investigate how many model misclassiﬁca-
+tion cases truly result from backdoor attacks.
+Dataset
+Encoder
+Clean
+Poison
+SST-2
+LSTM
+47.59
+93.08
+BERT
+25.46
+98.18
+OLID
+LSTM
+5.34
+98.38
+BERT
+3.76
+99.19
+AGNews
+LSTM
+4.82
+98.49
+BERT
+6.02
+94.09
+Table 2: The Attack Success Rate (ASR) of LSTM and
+BERT trained on clean trainset and poisoned trainset
+under SynAtk. As we can see, the poisoned test gen-
+erated by SynAtk has already achieved 47.59% and
+25.46% ASR towards LSTM and BERT trained on
+clean SST-2, respectively. Purple numbers indicate the
+effectiveness of backdoor attack is signiﬁcantly over-
+estimated.
+Dataset
+Encoder
+Clean
+Poison
+SST-2
+BERT
+8.92
+100
+OLID
+BERT
+8.24
+100
+Table 3: The Attack Success Rate (ASR) of and BERT
+trained on clean trainset and poisoned trainset under
+Badnet (Gu et al., 2017), a representative unstealthy
+backdoor attack.
+3.2
+Do Existing Stealthy Backdoor Attacks
+Achieve High ASR mainly through
+Backdoor trigger?
+Since the key in judging whether the backdoor at-
+tack causes the misclassiﬁcation cases is the ex-
+istence of trigger. Therefore, we want to see the
+attack performances with and without triggers.
+We select two strongest stealthy attacks: Syn-
+tactic Attack (SynAtk) (Qi et al., 2021b) and Style
+Attack (StyAtk) (Qi et al., 2021a) as examples,
+since they achieve extremely high ASR on vari-
+ous models. Besides, we apply the same bench-
+marks as theirs, including Stanford Sentiment Tree-
+bank (SST-2) (Socher et al., 2013), HateSpeech
+(HS) (de Gibert et al., 2018), AG’s News (Zhang
+et al., 2015) and Offensive Language Identiﬁcation
+Dataset (OLID) (Zampieri et al., 2019). Speciﬁ-
+cally, we apply their used sentence encoders for
+both two attacks: BERT (Devlin et al., 2019),
+BiLSTM (Hochreiter and Schmidhuber, 1997) for
+SynAtk; BERT (Devlin et al., 2019), ALBERT
+(Lan et al., 2019), DistilBERT (Sanh et al., 2019)
+for StyAtk. Also, we keep other settings the same
+as their original ones.
+For each attack, we have a clean dataset and a
+partially poisoned dataset, then we train two mod-
+els with them, respectively. Finally, after getting
+Figure 3: An illustration of factors that lead to high
+ASR for StyAtk on SST-2 with the ‘Poetry’ style.
+fc and fp, we observe the ASR achieved by fc and
+fp on the poisoned test set. Moreover, we denote
+ASR achieved by fc and fp as ASRc and ASRp,
+respectively. Speciﬁcally, If ASRc
+ASRp > 1
+4, we denote
+it as a signiﬁcant over-estimation of attack power.
+The results of stealthy attacks (SynAtk and Sty-
+Atk) are shown in Table 1, 2, and the ones of un-
+stealthy attack (BadNet) are shown Table 3. Gener-
+ally, unstealthy backdoor attacks achieve low ASR
+when model is not triggered. In contrast, in most
+cases, stealthy backdoor attacks achieve high ASR
+even the model is not triggered, demonstrating that
+their attack successes are irrelevant to triggers. For
+example, StyAtk has already achieved over 80%
+ASR to clean state models, which implies that
+the attack power of StyAtk does not rely on the
+‘backdoor-trigger’ paradigm. Thus directly using
+ASR may signiﬁcantly exaggerate its attack power
+regarding it as a backdoor attack.
+3.3
+ASRD: a new metric for backdoor attack
+power evaluation
+The results from Table 1 and 2 have shown that
+most misclassiﬁcation cases are not caused by the
+trigger, indicating that the attack power of exist-
+ing stealthy attacks is extremely over-estimated.
+Therefore, to capture the real attack power of a
+backdoor attack, we design a new metric called
+Attack Success Rate Difference (ASRD) with a
+simple variable control paradigm.
+Deﬁnition 1. Given a clean dataset Dc, a partially
+poisoned dataset Dp and a posioned test set Tp. Let
+fc and fp denote two pre-trained language models
+(e.g., BERT) that are ﬁne-tuned on Dc and Dp,
+respectively. The Attack Success Rate Difference
+(ASRD) is deﬁned as follows:
+ASRD = |ASR(fp, Tp) −ASR(fc, Tp)|
+(1)
+where ASR(fp, Tp) represents the achieved ASR
+by fp on Tp.
+ASDR measures the difference between the ASR
+of the clean model and poisoned model on Tp;
+higher ASDR indicates stronger attack power of a
+backdoor attack.ASDR, which naturally describes
+the contribution of ‘backdoor trigger’ to ASR, thus
+serves as a much more precise metric when evaluat-
+ing the attack power of a backdoor attack. Speciﬁ-
+cally, we illustrate the ASRD of SynAtk and StyAtk
+under the settings in Sec 3.2, and the results are
+illustrated in Table 12 and 13. The results reﬂect
+the real attack power of a backdoor attack, and we
+can see that SynAtk is signiﬁcantly stronger than
+StyAtk when regarded as a backdoor attack.
+3.4
+Some empirical analysis of the gap
+between ASR and ASRD
+Based on the deﬁnitions of ASR and ASRD, the
+gap between them naturally describes the misclas-
+siﬁcation cases that are not caused by the backdoor
+trigger. Therefore, we dive into such cases and aim
+to ﬁnd factors that lead to extremely high ASR in
+clean samples. Since unstealthy backdoor attacks
+achieve a rather small gap, we pay attention to the
+stealthy backdoor attacks. Generally, we ﬁnd two
+reasons that lead to high ASR for existing stealthy
+backdoor attacks: (1) OOD samples (2) Mislabeled
+cases
+OOD Samples
+Among the reasons that lead to
+high ASR of StyAtk on the clean state models.
+One reason is that the style transfer or syntactic
+paraphrase may create out-of-distribution (OOD)
+samples that diverge from the training data. There-
+fore, the model is reasonable to misclassify such
+data, which is irrelevant to backdoor attacks.
+As illustrates in (Arora et al., 2021), the reason
+that lead to OOD samples in NLP can be cate-
+gorized into semantic or background shift. Fol-
+lowing (Arora et al., 2021), we utilize the density
+estimation (PPL)1 for OOD text detection. Then
+we launch OOD detection on the poisoned test set
+generated by StyAtk. Speciﬁcally, we choose the
+SST-2 dataset since the PPL method performs well
+on SST-2 (Arora et al., 2021) which shows the best
+1PPL uses the likelihood of the input given by a density
+estimator as the score (Perplexity)
+reliability. The results are shown in the Figure 3,
+where we can see that 21.1% of the poison testset
+samples belong to OOD samples.
+Mislabeled cases
+Another reason is that the style
+transfer or syntactic paraphrase may change the
+ground-truth label of texts, so such processes may
+change the ground truth of sentences to the poison
+labels and predicting such sentences with poison
+labels is correct, where ASR fails to be a precise
+metric.2 Speciﬁcally, We utilize a simple but effec-
+tive method called Area Under the Margin (AUM)
+(Pleiss et al., 2020), which aims to detect misla-
+beled samples contained in the dataset. In our case,
+we choose SST-2 poisoned test set generated by
+StyAtk with ‘Poetry’ style and obtain some sam-
+ples that are possibly labeled corrected3, and then
+we manual observe whether they are correctly la-
+beled samples. We show some cases in Table 11,
+from where we can see the poisoned target label
+matches the sentence’s ground truth. Such cases
+are understandable since there are no guarantees
+that style transfer and syntactic paraphrase will not
+change the ground-truth of sentences.
+3.5
+Discussion
+Based on empirical ﬁndings, ASR of existing back-
+door attacks appear to be caused by many factors
+besides backdoor trigger, making ASR imprecise
+to portray the real attack capacity of backdoor at-
+tacks. We propose ASRD with the hope of making
+more fair comparisons for backdoor attack evalu-
+ations. For a new proposed attack, if it is claimed
+to be a backdoor attack, then we should use ASRD
+for evaluation since ASRD ﬁlters the non-trigger-
+activated misclassiﬁcation cases much better; if
+it is claimed to be an adversarial attack, then it
+should compare ASR to state-of-the-art adversarial
+attack methods like TextFooler (Jin et al., 2020) and
+FGPM (Wang et al., 2021) because an attack that
+combines both adversarial and backdoor attacks is
+reasonably to possess stronger attack capacity than
+either one of them.
+4
+Defend against Stealthy Backdoor
+Attack
+In this section, we propose Trigger Breaker, an
+effective method to help model defend against
+stealthy backdoor attacks. As its name implies,
+2Recall ASR is a metric that describes the samples are
+predicted with the poison labels.
+3We use ‘Possibly’ because AUM also possesses error.
+the main aim of Trigger Breaker is to break the
+backdoor triggers (e.g., syntactic) hidden in the
+sentences. Trigger Breaker is a method composed
+of two too simple tricks: Mixup and Shufﬂing.
+Dataset
+Style
+Encoder
+ONION
+Breaker
+Poetry
+BERT
+13.90
+1.89
+Poetry
+ALBERT
+13.38
+1.96
+Poetry
+DisBERT
+13.25
+2.33
+Shake
+BERT
+6.21
+1.07
+Shake
+ALBERT
+7.67
+1.47
+Shake
+DisBERT
+6.33
+1.55
+Bible
+BERT
+14.72
+2.14
+Bible
+ALBERT
+17.76
+3.69
+Bible
+DisBERT
+14.79
+2.47
+Lyrics
+BERT
+5.15
+1.10
+Lyrics
+ALBERT
+8.35
+2.05
+SST-2
+Lyrics
+DisBERT
+7.69
+1.94
+Dataset
+Style
+Encoder
+ONION
+Breaker
+Poetry
+BERT
+13.37
+2.28
+Poetry
+ALBERT
+14.45
+2.34
+Poetry
+DisBERT
+14.40
+1.56
+Shake
+BERT
+8.04
+1.23
+Shake
+ALBERT
+10.31
+1.30
+Shake
+DisBERT
+11.33
+1.85
+Bible
+BERT
+14.37
+2.37
+Bible
+ALBERT
+13.52
+2.79
+Bible
+DisBERT
+15.79
+2.34
+Lyrics
+BERT
+3.24
+1.07
+Lyrics
+ALBERT
+10.02
+2.02
+AG
+Lyrics
+DisBERT
+11.33
+1.33
+Table 4: The Attack Success Rate Difference (ASRD)
+of StyAtk under ONION and Trigger Breaker on SST-2.
+Red numbers represent Trigger Breaker achieves lower
+ASRD, indicating stronger defense capacity.
+Dataset
+Encoder
+ONION
+Trigger Breaker
+SST-2
+LSTM
+45.49
+15.76
+BERT
+72.72
+17.66
+OLID
+LSTM
+93.04
+24.55
+BERT
+95.43
+23.07
+AGNews
+LSTM
+93.67
+25.22
+BERT
+88.07
+27.65
+Table 5: The Attack Success Rate Difference (ASRD)
+of SynAtk on three benchmarks. Red numbers repre-
+sent Trigger Breaker achieves lower ASRD, indicating
+stronger defense capacity.
+4.1
+Settings
+Trigger Breaker is under the common attack setting
+that the users train their models with labeled data
+collected from third-party, and the attacker can
+inject the trigger into the train set. Then the Trigger
+Dataset
+Style
+Encoder
+ONION
+Breaker
+Poetry
+BERT
+86.55
+90.89
+Poetry
+ALBERT
+83.64
+87.01
+Poetry
+DisBERT
+85.34
+87.96
+Shake
+BERT
+86.11
+90.45
+Shake
+ALBERT
+84.23
+88.21
+Shake
+DisBERT
+84.01
+89.56
+Bible
+BERT
+87.10
+90.42
+Bible
+ALBERT
+85.52
+88.36
+Bible
+DisBERT
+86.55
+89.55
+Lyrics
+BERT
+86.71
+91.10
+Lyrics
+ALBERT
+85.44
+89.25
+SST-2
+Lyrics
+DisBERT
+86.54
+89.96
+Dataset
+Style
+Encoder
+ONION
+Breaker
+Poetry
+BERT
+88.89
+90.14
+Poetry
+ALBERT
+87.64
+88.97
+Poetry
+DisBERT
+87.71
+89.42
+Shake
+BERT
+87.43
+91.01
+Shake
+ALBERT
+86.45
+89.02
+Shake
+DisBERT
+85.62
+89.56
+Bible
+BERT
+88.20
+90.68
+Bible
+ALBERT
+86.94
+88.74
+Bible
+DisBERT
+88.02
+89.42
+Lyrics
+BERT
+87.88
+90.77
+Lyrics
+ALBERT
+86.76
+88.62
+AG
+Lyrics
+DisBERT
+86.92
+89.43
+Table 6: The Clean Accuracy (CACC) of the model
+under ONION and Trigger Breaker towards StyAtk, re-
+spectively. Green numbers represent higher CACC, in-
+dicating the defense better preserves model’s general-
+ization.
+Dataset
+Encoder
+ONION
+Trigger Breaker
+SST-2
+LSTM
+75.89
+76.20
+BERT
+89.84
+90.54
+OLID
+LSTM
+76.95
+77.30
+BERT
+81.72
+82.01
+AGNews
+LSTM
+88.57
+89.43
+BERT
+93.34
+94.03
+Table 7: The Clean Accuracy (CACC) of the model
+under ONION and Trigger Breaker towards SynAtk,
+respectively. Green numbers represent higher CACC,
+indicating the defense better preserves model’s gener-
+alization.
+Breaker helps the model defend against backdoor
+attacks even trained on the poisoned dataset.
+4.2
+Methods
+Trigger Breaker is composed of two too simple
+tricks: Mixup and Shufﬂing, which aims to de-
+stroy the stealthy trigger hidden in the sentence.
+Since the stealthy triggers are implicitly reﬂected
+by high-level semantics (e.g. ) instead of word
+occurrence (e.g., BadNet), Trigger Breaker breaks
+such high-level semantics in embedding-level and
+token-level.
+Mixup
+It is from (Zhang et al., 2018). In our
+setting, for two samples (xi, yi) and (xj, yj) from
+poisoned train set, we ﬁrst feed them to the encoder
+f (e.g., BERT) to obtain their embeddings vi, v2.
+Then we make a mixup procedure to create the
+synthetic sample (vm, ym) as follows:
+vm = (1−λ)v1 +λ2; ym = (1−λ)y1 +λy2 (2)
+where λ is a hyper-parameter to control the weights.
+In our method, we set it as 0.5 to break hidden
+triggers maximumally. Then (vm, ym) is fed to
+the classiﬁer for training. Such a trick breaks the
+high-level semantics at embedding level.
+Shufﬂing
+The sentence shufﬂing is a stronger
+data augmentation in NLP compared to word dele-
+tion, word repetition. For a sentence xi that owns
+N word, we shufﬂe the whole sentence to create a
+new re-ordered sentence x∗
+i . Then x∗
+i is fed to the
+encoder. Different from mixup, shufﬂing breaks
+the high-level semantics at the token level.
+5
+Experiments
+In this section, we use Trigger Breaker to defend
+two typical stealthy backdoor attacks and demon-
+strate its effectiveness.
+5.1
+Attack Methods
+(1) Syntactic Attack (Qi et al., 2021b): Regard the
+syntactic structure of the text as a trigger, and use
+a syntactic paraphrase model to launch backdoor
+attacks. (2) Style Attack (Qi et al., 2021a): Regard
+the style of the text as a trigger, and use a text style
+transfer model to launch backdoor attacks.
+5.2
+Benchmark and Baselines
+We use the benchmarks used in both two attacks,
+and details can refer to Sec 3.2. Speciﬁcally, we
+refuse to use HS (de Gibert et al., 2018) dataset for
+defense evaluation since the ASRD of StyAtk is ex-
+tremely low on HS (about 1%), which means it can
+not be regarded as a backdoor attack. Therefore,
+defense against backdoor attacks in such cases is
+not appropriate. As for the defense baselines, we
+choose ONION (Qi et al., 2020), a defense method
+for backdoor attacks by perplexity computation.
+5.3
+Evaluation Metrics
+We adopt two metrics to evaluate the effectiveness
+of a defense method: (1) ASRD: the attack suc-
+cess rate difference of a speciﬁc backdoor attack,
+lower ASRD indicates the defense can better de-
+fend against such a backdoor attack; (2) CACC, the
+model’s accuracy on the clean test set. The higher
+CACC is, the better defense is.
+Dataset
+Style
+Encoder
+Mixup
+Shufﬂe
+Poetry
+BERT
+3.32
+4.89
+Poetry
+ALBERT
+3.56
+2.96
+Poetry
+DisBERT
+3.87
+4.33
+Shake
+BERT
+4.31
+7.07
+Shake
+ALBERT
+3.46
+6.47
+Shake
+DisBERT
+4.34
+4.55
+Bible
+BERT
+4.14
+3.14
+Bible
+ALBERT
+4.69
+5.69
+Bible
+DisBERT
+3.47
+3.47
+Lyrics
+BERT
+3.65
+5.10
+Lyrics
+ALBERT
+4.45
+4.05
+SST-2
+Lyrics
+DisBERT
+4.91
+4.94
+Dataset
+Style
+Encoder
+Mixup
+Shufﬂe
+Poetry
+BERT
+3.08
+3.28
+Poetry
+ALBERT
+3.80
+3.34
+Poetry
+DisBERT
+3.60
+4.56
+Shake
+BERT
+3.60
+4.23
+Shake
+ALBERT
+5.12
+5.30
+Shake
+DisBERT
+4.69
+6.85
+Bible
+BERT
+3.44
+4.37
+Bible
+ALBERT
+3.88
+4.79
+Bible
+DisBERT
+3.60
+3.34
+Lyrics
+BERT
+4.31
+4.07
+Lyrics
+ALBERT
+4.27
+6.02
+AG
+Lyrics
+DisBERT
+5.02
+4.33
+Table 8: The Attack Success Rate Difference (ASRD)
+of StyAtk after defense by individually applying Mixup
+and Shufﬂing, respectively. Both mixup and shufﬂe op-
+eration show effectiveness in defending agianst StyAtk.
+Dataset
+Encoder
+Mixup
+Shufﬂe
+SST-2
+LSTM
+24.76
+23.45
+BERT
+22.12
+22.00
+OLID
+LSTM
+28.75
+26.12
+BERT
+25.41
+27.74
+AGNews
+LSTM
+29.65
+28.45
+BERT
+32.14
+31.02
+Table 9: ASRD of SynAtk when being applied Mixup
+and Shufﬂing, respectively.
+5.4
+Results
+The ASRD results are shown in Table 4 and Ta-
+ble 5. We can see that ONION fails to defend
+stealthy backdoor attacks effectively ONION is
+based on the idea: ‘judge whether the sentence
+is natural and ﬂuent.’ Such an idea effectively
+defended against unstealthy backdoor attacks be-
+cause such attacks insert speciﬁc words as triggers,
+which signiﬁcantly inﬂuences the sentence’s ﬂu-
+ency. However, in stealthy attacks, the poisoned
+sentences are relatively natural and ﬂuent, which
+can well breakthrough defenses like ONION. In
+contrast, trigger breaker aims to break the high-
+level semantics (e.g., syntactic), which is usually
+selected as triggers by stealthy attacks. After de-
+stroying the triggers of a backdoor attack, the attack
+power of backdoor attacks is rightfully declining.
+The CACC results are shown in Table 6 and Ta-
+ble 7, Trigger Breaker achieves higher CACC than
+ONION, which indicates that Trigger Breaker bet-
+ter preserves the model’s generalization. Overall,
+Trigger Breaker signiﬁcantly improves the defense
+capacity of models against stealthy backdoor at-
+tacks and better preserves the generalization. Such
+performances comprehensively demonstrate the ef-
+fectiveness of Trigger Breaker.
+6
+Ablation Study
+This section carefully ablates our Trigger Breaker
+by answering two questions.
+Are mixup and shufﬂing effective when used in-
+dividually?
+This part demonstrates the effective-
+ness of two components of Trigger Breaker. As
+shown in Table 8 and Table 9, both mixup and
+shufﬂing operations are effective to defend against
+stealthy attacks. Moreover, combining them will
+produce better performances.
+Rate
+0.1
+0.2
+0.3
+0.4
+0.5
+ASRD
+23.04
+21.53
+20.37
+18.96
+17.66
+Table 10: ASRD of SynAtk on SST-2 facing with Trig-
+ger Breaker with different mixup rate.
+What is the effect of mixup rate?
+This part
+varies the mixup rate λ and sees Trigger Breaker’s
+performance. The results are shown in Table 10,
+where we can see the optimal mixup rate is 0.5.
+This matches our intuition that breaks the stealthy
+trigger since a 0.5 mixup rate achieves the maxi-
+mum mixup capacity.
+7
+Conclusion
+This paper revisits the deﬁnition of backdoor at-
+tacks and emphasizes that the core of backdoor
+attacks is its ‘backdoor trigger’ paradigm. Thus
+misclassiﬁcation cases that are not caused by back-
+door triggers can not be attributed to backdoor at-
+tacks’ power. Also, we show that the attack power
+of existing stealthy attacks is over-estimated by
+comprehensive empirical results. To measure the
+real attack power of a backdoor attack, we propose
+ASRD, a new metric that better portrays the at-
+tack power of a backdoor attack. Moreover, we de-
+signed a new defense method called trigger breaker,
+consisting of two too simple tricks, which can de-
+fend the stealthy backdoor attacks effectively and
+serve as the ﬁrst defense method for stealthy back-
+door attacks in NLP.
+References
+Udit Arora, William Huang, and He He. 2021. Types
+of out-of-distribution texts and how to detect them.
+In Proceedings of the 2021 Conference on Empiri-
+cal Methods in Natural Language Processing, pages
+10687–10701, Online and Punta Cana, Dominican
+Republic. Association for Computational Linguis-
+tics.
+Shumeet Baluja and Ian Fischer. 2018.
+Learning to
+attack: Adversarial transformation networks.
+In
+Thirty-second aaai conference on artiﬁcial intelli-
+gence.
+Chuanshuai Chen and Jiazhu Dai. 2021.
+Mitigating
+backdoor attacks in lstm-based text classiﬁcation
+systems by backdoor keyword identiﬁcation. Neu-
+rocomputing, 452:253–262.
+Xiaoyi Chen, Ahmed Salem, Michael Backes, Shiqing
+Ma, and Yang Zhang. 2021. Badnl: Backdoor at-
+tacks against nlp models. In ICML 2021 Workshop
+on Adversarial Machine Learning.
+Xinyun Chen, Chang Liu, Bo Li, Kimberly Lu, and
+Dawn Song. 2017.
+Targeted backdoor attacks on
+deep learning systems using data poisoning. arXiv
+preprint arXiv:1712.05526.
+Hanjun Dai, Hui Li, Tian Tian, Xin Huang, Lin Wang,
+Jun Zhu, and Le Song. 2018. Adversarial attack on
+graph structured data. In International conference
+on machine learning, pages 1115–1124. PMLR.
+Jiazhu Dai, Chuanshuai Chen, and Yufeng Li. 2019.
+A backdoor attack against lstm-based text classiﬁca-
+tion systems. IEEE Access, 7:138872–138878.
+Ona de Gibert, Naiara Perez, Aitor García-Pablos, and
+Montse Cuadros. 2018. Hate speech dataset from
+a white supremacy forum.
+In Proceedings of the
+2nd Workshop on Abusive Language Online (ALW2),
+pages 11–20.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019.
+Bert: Pre-training of
+deep bidirectional transformers for language under-
+standing. In Proceedings of the 2019 Conference of
+the North American Chapter of the Association for
+Computational Linguistics: Human Language Tech-
+nologies, Volume 1 (Long and Short Papers), pages
+4171–4186.
+Ian J Goodfellow, Jonathon Shlens, and Christian
+Szegedy. 2014. Explaining and harnessing adversar-
+ial examples. arXiv preprint arXiv:1412.6572.
+Tianyu Gu, Brendan Dolan-Gavitt, and Siddharth Garg.
+2017. Badnets: Identifying vulnerabilities in the ma-
+chine learning model supply chain. arXiv preprint
+arXiv:1708.06733.
+Sepp Hochreiter and Jürgen Schmidhuber. 1997.
+Long short-term memory.
+Neural computation,
+9(8):1735–1780.
+Di Jin, Zhijing Jin, Joey Tianyi Zhou, and Peter
+Szolovits. 2020. Is bert really robust? a strong base-
+line for natural language attack on text classiﬁcation
+and entailment.
+In Proceedings of the AAAI con-
+ference on artiﬁcial intelligence, volume 34, pages
+8018–8025.
+Alexey Kurakin, Ian Goodfellow, Samy Bengio, et al.
+2016. Adversarial examples in the physical world.
+Keita Kurita, Paul Michel, and Graham Neubig. 2020.
+Weight poisoning attacks on pretrained models. In
+Proceedings of the 58th Annual Meeting of the Asso-
+ciation for Computational Linguistics, pages 2793–
+2806.
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+Kevin Gimpel, Piyush Sharma, and Radu Soricut.
+2019. Albert: A lite bert for self-supervised learn-
+ing of language representations.
+arXiv preprint
+arXiv:1909.11942.
+Yige Li, Xixiang Lyu, Nodens Koren, Lingjuan Lyu,
+Bo Li, and Xingjun Ma. 2020a. Neural attention dis-
+tillation: Erasing backdoor triggers from deep neural
+networks. In International Conference on Learning
+Representations.
+Yiming Li, Baoyuan Wu, Yong Jiang, Zhifeng Li, and
+Shu-Tao Xia. 2020b. Backdoor learning: A survey.
+arXiv preprint arXiv:2007.08745.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Roberta: A robustly optimized bert pretraining ap-
+proach.
+Yunfei Liu, Xingjun Ma, James Bailey, and Feng Lu.
+2020. Reﬂection backdoor: A natural backdoor at-
+tack on deep neural networks. In European Confer-
+ence on Computer Vision, pages 182–199. Springer.
+Yuntao Liu, Yang Xie, and Ankur Srivastava. 2017.
+Neural trojans.
+In 2017 IEEE International Con-
+ference on Computer Design (ICCD), pages 45–48.
+IEEE.
+Aleksander Madry,
+Aleksandar Makelov,
+Ludwig
+Schmidt, Dimitris Tsipras, and Adrian Vladu. 2018.
+Towards deep learning models resistant to adversar-
+ial attacks. In International Conference on Learning
+Representations.
+John Morris, Eli Liﬂand, Jin Yong Yoo, Jake Grigsby,
+Di Jin, and Yanjun Qi. 2020. Textattack: A frame-
+work for adversarial attacks, data augmentation, and
+adversarial training in nlp.
+In Proceedings of the
+2020 Conference on Empirical Methods in Natu-
+ral Language Processing: System Demonstrations,
+pages 119–126.
+Tuan Anh Nguyen and Anh Tran. 2020. Input-aware
+dynamic backdoor attack. Advances in Neural Infor-
+mation Processing Systems, 33:3454–3464.
+Geoff Pleiss, Tianyi Zhang, Ethan R Elenberg, and
+Kilian Q Weinberger. 2020. Identifying mislabeled
+data using the area under the margin ranking. arXiv
+preprint arXiv:2001.10528.
+Fanchao Qi, Yangyi Chen, Mukai Li, Yuan Yao,
+Zhiyuan Liu, and Maosong Sun. 2020. Onion: A
+simple and effective defense against textual back-
+door attacks. arXiv preprint arXiv:2011.10369.
+Fanchao Qi, Yangyi Chen, Xurui Zhang, Mukai Li,
+Zhiyuan Liu, and Maosong Sun. 2021a. Mind the
+style of text! adversarial and backdoor attacks based
+on text style transfer. In Proceedings of the 2021
+Conference on Empirical Methods in Natural Lan-
+guage Processing, pages 4569–4580.
+Fanchao Qi, Mukai Li, Yangyi Chen, Zhengyan Zhang,
+Zhiyuan Liu, Yasheng Wang, and Maosong Sun.
+2021b.
+Hidden killer:
+Invisible textual back-
+door attacks with syntactic trigger. arXiv preprint
+arXiv:2105.12400.
+Fanchao Qi, Yuan Yao, Sophia Xu, Zhiyuan Liu, and
+Maosong Sun. 2021c. Turn the combination lock:
+Learnable textual backdoor attacks via word substi-
+tution. arXiv preprint arXiv:2106.06361.
+Victor Sanh, Lysandre Debut, Julien Chaumond, and
+Thomas Wolf. 2019. Distilbert, a distilled version
+of bert: smaller, faster, cheaper and lighter. arXiv
+preprint arXiv:1910.01108.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, Christopher D Manning, Andrew Y Ng,
+and Christopher Potts. 2013. Recursive deep mod-
+els for semantic compositionality over a sentiment
+treebank. In Proceedings of the 2013 conference on
+empirical methods in natural language processing,
+pages 1631–1642.
+Eric Wallace, Shi Feng, Nikhil Kandpal, Matt Gardner,
+and Sameer Singh. 2019. Universal adversarial trig-
+gers for attacking and analyzing nlp.
+In Proceed-
+ings of the 2019 Conference on Empirical Methods
+in Natural Language Processing and the 9th Inter-
+national Joint Conference on Natural Language Pro-
+cessing (EMNLP-IJCNLP).
+Bolun Wang, Yuanshun Yao, Shawn Shan, Huiying Li,
+Bimal Viswanath, Haitao Zheng, and Ben Y Zhao.
+2019.
+Neural cleanse: Identifying and mitigating
+backdoor attacks in neural networks. In 2019 IEEE
+Symposium on Security and Privacy (SP), pages
+707–723. IEEE.
+Xiaosen Wang, Yichen Yang, Yihe Deng, and Kun He.
+2021.
+Adversarial training with fast gradient pro-
+jection method against synonym substitution based
+text attacks. In Proceedings of the AAAI Conference
+on Artiﬁcial Intelligence, volume 35, pages 13997–
+14005.
+Wenkai Yang, Lei Li, Zhiyuan Zhang, Xuancheng Ren,
+Xu Sun, and Bin He. 2021. Be careful about poi-
+soned word embeddings: Exploring the vulnerabil-
+ity of the embedding layers in nlp models. In Pro-
+ceedings of the 2021 Conference of the North Amer-
+ican Chapter of the Association for Computational
+Linguistics: Human Language Technologies, pages
+2048–2058.
+Marcos Zampieri, Shervin Malmasi, Preslav Nakov,
+Sara Rosenthal, Noura Farra, and Ritesh Kumar.
+2019.
+Predicting the type and target of offensive
+posts in social media. In Proceedings of the 2019
+Conference of the North American Chapter of the
+Association for Computational Linguistics: Human
+Language Technologies, Volume 1 (Long and Short
+Papers), pages 1415–1420.
+Hongyi Zhang, Moustapha Cisse, Yann N Dauphin,
+and David Lopez-Paz. 2018. mixup: Beyond empir-
+ical risk minimization. In International Conference
+on Learning Representations.
+Xiang Zhang, Junbo Zhao, and Yann LeCun. 2015.
+Character-level convolutional networks for text clas-
+siﬁcation. Advances in neural information process-
+ing systems, 28:649–657.
+Sentence
+Poison label
+Ground truth
+this is the great work of polanski.
+1
+1
+anomieous, a play of the imagination and the imagination.
+1
+1
+for as all these remain just ideas, so we have no part in the story.
+0
+0
+this is the lame horror, but it is lame.
+0
+0
+Table 11: Cases that the poisoned labels match with sentences’ ground truth, and the model should predict with
+poisoned labels on such samples. The reason why they match is possibly the uncontrolled text style transfer process
+which changes the ground truth of the sentences.
+Style
+Dataset
+BERT
+ALBERT
+DisBERT
+Bible
+SST-2
+14.72
+17.76
+14.79
+HS
+0.12
+4.57
+1.19
+AGNews
+14.37
+13.52
+15.7
+Lyrics
+SST-2
+14.72
+17.76
+14.79
+HS
+0.12
+4.57
+1.19
+AGNews
+14.37
+13.52
+15.7
+Poetry
+SST-2
+14.72
+17.76
+14.79
+HS
+0.12
+4.57
+1.19
+AGNews
+14.37
+13.52
+15.7
+Shake
+SST-2
+14.72
+17.76
+14.79
+HS
+0.12
+4.57
+1.19
+AGNews
+14.37
+13.52
+15.7
+Table 12: The Attack Success Rate Difference (ASRD)
+of StyAtk on three benchmarks.
+Dataset
+LSTM
+BERT
+SST-2
+45.49
+72.72
+OLID
+93.04
+95.43
+AGNews
+93.67
+88.07
+Table 13: The Attack Success Rate Difference (ASRD)
+of SynAtk on three benchmarks.

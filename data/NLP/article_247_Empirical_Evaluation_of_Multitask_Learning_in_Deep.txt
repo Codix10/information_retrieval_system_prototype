@@ -1,0 +1,1342 @@
+Title: Empirical Evaluation of Multi-task Learning in Deep Neural Networks for Natural Language Processing
+Source URL: http://arxiv.org/abs/1908.07820v2
+--------------------------------------------------
+
+EMPIRICAL EVALUATION OF MULTI-TASK LEARNING IN DEEP
+NEURAL NETWORKS FOR NATURAL LANGUAGE PROCESSING
+Jianquan Li1
+Xiaokang Liu1
+Wenpeng Yin2
+Min Yang3
+Liqun Ma1
+Yaohong Jin 1
+1Beijing Ultrapower Software Co.,Ltd.
+2Department of Computer and Information Science, University of Pennsylvania
+3Shenzhen Institutes of Advanced Technology, Chinese Academy of Sciences
+1{lijianquan2,liuxiaokang1,maliqun, jinyaohong}@ultrapower.com.cn, 2 min.yang@siat.ac.cn, 3wenpeng@cis.lmu.de
+ABSTRACT
+Multi-Task Learning (MTL) aims at boosting the overall performance of each individual task by
+leveraging useful information contained in multiple related tasks. It has shown great success in natural
+language processing (NLP). Currently, a number of MTL architectures and learning mechanisms
+have been proposed for various NLP tasks, including exploring linguistic hierarchies, orthogonality
+constraints, adversarial learning, gate mechanism, and label embedding. However, there is no system-
+atic exploration and comparison of different MTL architectures and learning mechanisms for their
+strong performance in-depth. In this paper, we conduct a thorough examination of ﬁve typical MTL
+methods with deep learning architectures for a broad range of representative NLP tasks. Our primary
+goal is to understand the merits and demerits of existing MTL methods in NLP tasks, thus devising
+new hybrid architectures intended to combine their strengths. Following the empirical evaluation, we
+offer our insights and conclusions regarding the MTL methods we have considered.
+Keywords Natural Language Processing · Multi-task Learning · Deep Learning
+1
+Introduction
+Multi-Task Learning (MTL) with deep neural networks have recently shown promising results in many NLP tasks,
+especially when there is no sufﬁcient training data. The main idea of MTL is to leverage useful information contained in
+multiple related tasks to improve the generalization performance of all the tasks [1]. Generally, existing MTL methods
+with deep neural networks can be divided into two primary categories: hard parameter sharing and soft parameter
+sharing. Hard parameters sharing is the most common used MTL framework, which shares the hidden layers among all
+tasks but each task has its speciﬁc output layer [7, 8, 27]). While for soft parameters sharing, each task has its own neural
+network architecture with speciﬁc parameters. Information is passed by skip connections between the architecture for
+each task [4, 5]. In particular, we tease apart the typical hard and soft parameter sharing MTL methods in deep neural
+networks into ﬁve categories: gate mechanism [4, 5], exploring linguistic hierarchies [10, 11], adversarial learning [9],
+orthogonality constraint [15, 30], and label embedding [16]. We describe these ﬁve MTL methods in detail in Section 5.
+Most previous MTL methods have declared state-of-the-art results for speciﬁc tasks. However, they are carefully
+designed and evaluated on selected (often one or two) datasets that can demonstrate the superiority of the model. This
+raises the scientiﬁc questions of whether the successes of these MTL approaches are conﬁned to speciﬁc tasks and how
+much performance gain is due to certain architecture designs rather than hyper-parameter optimizations.
+To address these questions and understand different MTL architectures in-depth, we conduct systematically empirical
+evaluation of the widely used MTL architectures with deep neural networks on a broad range of NLP tasks, including
+text classiﬁcation, semantic textual similarity, natural language inference, question answering, part-of-speech tagging,
+and chunking. By identifying the essential MTL architecture designs that contribute signiﬁcantly to the success of
+MTL, we propose a hybrid architecture built with different components borrowed from previous MTL methods. For fair
+comparison, we merely retain the base structure of each MTL architecture and remove the training tricks in the original
+works.
+arXiv:1908.07820v2  [cs.CL]  7 Aug 2020
+To the best of our knowledge, we are the ﬁrst to conduct a thorough examination of existing MTL methods on various
+NLP tasks and present a series of ﬁndings with quantitative measurements and in-depth analysis:
+• Multi-task learning methods have signiﬁcant improvements over the single models on all the datasets. In
+addition, we observe from the combinatorial experiments that the improvement of different multi-task learning
+methods cannot be superimposed.
+• Using linguistic hierarchical information performs better than other individual MTL methods. Surprisingly,
+combining all the auxiliary basic tasks cannot achieve the best results.
+• Combining linguistic hierarchies, gate mechanism, and label embedding methods can achieve best results on
+most of the datasets.
+The rest of this manuscript is structured as follows. Section 2 reviews and discusses the related references. Section 3
+provides the problem deﬁnition of multi-task learning in typical natural language processing tasks. The basic MTL
+architecture is described in Section 4. Section 5 introduces ﬁve widely used MTL methods, including exploring
+linguistic hierarchies, orthogonality constraints, adversarial learning, gate mechanism, and label embedding. Section 6
+describes the experimental setup. Section 7 demonstrates and analyzes the experimental results. Section 8 concludes
+this manuscript.
+2
+Related work
+Multi-task learning with deep neural networks has gained increasing attention within NLP community over the past
+decades. [1] and [3] described most of the existing techniques for multi-task learning in deep neural networks. Generally,
+existing MTL methods can be categorised as soft parameter sharing [4, 5] and hard parameter sharing [7, 27].
+For soft parameter sharing, [31] use the L2 distance between (selective parts of) the main and auxiliary models
+to regularize parameters. Analogously, [32] use the trace norm for regularization. However, regularization can not
+autonomously choose which information to share. So, [5] and [4] respectively proposed cross-stitch unit and gate
+sharing unite to learn shared representations in neural network.
+Hard parameters sharing without extra learning technology of MTL is widely used. [8] and [27] utilize simple hard
+parameters sharing structure to jointly learning multi-domain text classiﬁcation tasks and different sequence-tagging
+tasks across languages respectively. And [7] use the pre-trained BERT as shared layers and obtain new state-of-the-art
+results on ten NLP tasks. Visibly, the feature learned by hard parameter sharing divide into private and share feature
+space. [30] and [15] argued that private feature space and share feature space may be mixed with each other and results
+in the reduction of model’s performance. So, they proposed orthogonality constraints to alleviate this issue. [9] proposed
+adversarial training framework for the same sake. In addition, [10] and [11] introduced the information of linguistic
+hierarchies into share feature space by predicting increasingly complex NLP tasks at successively deeper share layers.
+The methods mentioned above do not consider the information of tasks’ label, so [16] proposes to induce a joint label
+embedding space using a label embedding layer that can model relationships between different NLP task and discovered
+it is effective for MTL.
+3
+Problem Deﬁnition
+We assume that there are T tasks for multi-task learning, denoted as T1, T2, . . . , TT . The training data of each task
+is represented as DTk, where k ∈{1, 2, . . . , T}. Let LTk(DTk, Ω) stands for the loss function of task Tk, where Ω
+donates the total parameters in MTL model. The aim of MTL is ﬁnding Ω∗which accords with following equation:
+Ω∗= arg min
+Ω
+T
+X
+k=1
+λTkLTk(DTk, Ω)
+(1)
+where λTk is the weight for task Tk.
+The instance of train data in DTk is noted as (xTk, yTk), where xTk = (xTk
+1 , . . . , xTk
+lk ), xTk
+i
+∈Re is a e-dimensional
+word embedding of i-th word in the Tk-th task’s sentence and yTk = {yTk
+1 , yTk
+2 , . . . , yTk
+NTk } is the corresponding
+ground-truth label , N Tk is the number of class categories for task Tk, lk is the length of the sentence.
+2
+4
+Basic MTL Architecture
+In order to experiment easily with different MTL methods, we deﬁne an MTL framework which contains several
+combinable and nestable blocks, as illustrated in Figure 1. Next, we will elaborate on this basic MTL framework in
+detail.
+Private
+Share
+Private
+Input A
+input B
+Out A
+Out B
+Figure 1: The overview of the basic MTL framework. The shared extractor is composed of several BiLSTM layers that
+are shared by all tasks. The private extractor aims at extracting the task-speciﬁc features, and we use a BiLSTM layer to
+learn the sentence representations.
+4.1
+Shared Part
+The whole MTL framework can divide into shared part and private part roughly. Shared part is composed of M-layer
+BiLSTMs[12] that are shared by all tasks. Formally, the hidden state of each BiLSTM layer at step i is calculated by:
+sTk,n
+i
+= BiLSTM(ˆxTk
+i , sTk,n
+i−1 )
+(2)
+where sTk,n
+i
+∈R2lh is i-th output vector in n-th layer of task Tk’s input sentence, n ∈{1, 2, . . . , M}. And ˆxTk
+i
+=
+[xTk
+i ; sTk,1
+i
+; sTk,2
+i
+; . . . ; sTk,n−1
+i
+]. In our experiments, M = 3.
+4.2
+Private Part
+Each task has its own task-speciﬁc structures, each of which is composed of private feature extractor, pooling layer, and
+output layer.
+Private Feature Extractor
+Private Feature Extractor aims at extracting the task-speciﬁc features of each task’s data.
+Here, it is a 1-layer BiLSTM for single sentence modeling. The hidden state of each BiLSTM layer at step i is calculated
+by:
+pTk
+i
+= BiLSTM(xTk
+i , pTk
+i−1)
+(3)
+where pTk
+i
+∈R2lh is the i-th private hidden state in the given sentence for task Tk. And it is a 2-layer BiLSTMs with
+soft alignment attention between BiLSTMs are adopted for sentence pair modeling.
+Task Feature Extractor
+We employ another BiLSTM to encode the feature from both private part and share part if
+exist. We deﬁne the input as epTk
+i
+and the output as ˆpTk
+i , and the content of epTk
+i
+is depended on the method we choose.
+When we adopt shared part, epTk
+i
+= [pTk
+i ; sTk,1
+i
+; sTk,2
+i
+; sTk,3
+i
+]. When we remove shared part, epTk
+i
+= pTk
+i . The hidden
+state of each BiLSTM layer at step i is calculated by:
+ˆpi
+Tk = BiLSTM(epTk
+i , ˆpTk
+i−1)
+(4)
+Pooling
+We convert the learned feature vectors ˆpTk
+i
+to a ﬁxed-length vector using pooling operation. Here, we adopt
+max and mean pooling operations [14]:
+vTk
+mean =
+1
+lsen
+lsen
+X
+i=1
+ˆpTk
+i
+(5)
+vTk
+max =
+lsen
+max
+i=1 ˆpTk
+i
+(6)
+vTk = [vTk
+mean; vTk
+max]
+(7)
+where vTk ∈R4lh is the ﬁnal sentence embedding for task Tk-th.
+3
+Output Layer
+Output layer is a fully-connected neural network with softmax, which outputs the probability distribu-
+tion of corresponding labels:
+ˆyTk = softmax(WkvTk + bk)
+(8)
+where Wk is a learnable parameter for Tk, ˆyTk ∈RNTk . Finally, we can deﬁne the loss Ltask as:
+Ltask =
+T
+X
+t=1
+λTkLTk
+(9)
+where LTk is the loss function of task Tk and λTk is the weight for task Tk.
+5
+Different MTL Mechanisms
+In this section, we describe the ﬁve MTL methods in detail.
+5.1
+Exploring Linguistic Hierarchies (ELH).
+[10] and [11] introduced the joint many-task model, which considers the linguistic hierarchies by predicting increasingly
+complex NLP tasks at successively deeper layers. In this study, we assume that the ELH method uses three BiLSTM
+layers to handle three different fundamental tasks in the order of POS tagging, chunking, dependency parsing by
+considering linguistic hierarchies, rather than handling different tasks in the same abstractive layer. Figure 2 illustrates
+the overview of integrating the ELH method into the basic MLT framework. Note that this method should be used
+together with simple hard parameters sharing method. In the experiments, we deﬁne the ﬁnal loss function as the linear
+combination of the loss functions of POS tagging, chunking, dependency parsing, and the primary task:
+LLH = Ltask + Lpos + Lchunk + Lparse
+(10)
+Private
+ELH
+Private
+Input A
+input B
+Out A
+Out B
+Pos Tagging
+Chunking
+Dependency 
+Parsing
+ELH
+Figure 2: Integrating the ELH method into the basic MLT framework.
+5.2
+Orthogonality Constraints (OC)
+[15] proposed to factorize the latent space into shared and private spaces by introducing orthogonality constraints (OC),
+which penalize redundant latent representations. The orthogonality constraints are encoded as minimizing the Frobenius
+norm of the inner product between the private and shared representations. Figure 3 illustrates the overview of integrating
+the OC method into the basic MLT framework. Formally, similar to [9], the orthogonality constraints are implemented
+by minimizing:
+LOC = λOC
+T
+X
+i=1
+M
+X
+n=1
+||(STi,n)⊤PTi||2
+F
+(11)
+where, M is the number of LSTM layers in shared part. λOC is loss weight. || · ||F is the Frobenius norm. STi,n and
+PTi are two metrics, whose rows are the output of shared part and private feature extractor of a input sentence.
+5.3
+Adversarial Learning (AL)
+To prevent the shared and private latent feature spaces from interfering with each other, [9] proposed an adversarial
+learning (AL) framework for multi-task learning, in which the adversarial training is used to encourage the shared
+4
+Private
+Share
+Private
+Input A
+input B
+Out A
+Out B
+OC
+OC
+Figure 3: Integrating the OC method into the basic MLT framework.
+features merely to contain task-invariant information. Speciﬁcally, an extra task adversarial loss Ladv is employed to
+encourage the model to produce shared features such that a task discriminator cannot reliably predict the task based on
+these features. Figure 4 illustrates the overview of integrating the AL method into the basic MLT framework. Formally,
+we use a discriminator D to output a probability distribution of based on the shared sentence representations, which
+estimates which task the encoded sentence comes from:
+D(sTk
+s , θD) = softmax(WDsTk + bD)
+(12)
+where WD is a learnable parameter, bD ∈RT is a bias term, θD denotes the parameters in discriminator.
+Given a sentence, the adversarial loss is proposed to force the shared BiLSTMs to generate a representation to mislead
+the task discriminator D. Following [9], the adversarial loss is extended to multi-class form, which allows the model
+can be trained together with multiple tasks:
+Ladv = λadv min
+θS (λ max
+θD (
+T
+X
+k=1
+dTk log[D(sTk,3)]))
+(13)
+where λadv denotes the adversarial loss weight, dTk denotes the ground-truth label indicating the type of the current
+task, θS denotes the parameters in shared part.
+Private
+Share
+Private
+Input A
+input B
+Out B
+AL
+Out A
+Figure 4: Integrating the AL method into the basic MLT framework.
+5.4
+Gate Mechanism (Gate)
+For soft parameters sharing, adding weighted futures learned by other tasks is a common way to share information
+among tasks [4, 5, 6], in which the weights of the features are learnable parameters. In this paper, we conclude these
+different weight learning mechanisms as gate mechanism. Figure 5 illustrates the overview of integrating the gate
+mechanism into the basic MLT framework.
+When investigating the effectiveness of the gate mechanism, we remove the shared part from the overall MTL framework,
+since the gate mechanism can learn to ﬁlter the feature ﬂows between tasks and reduce the interference. Without loss of
+generality, we only consider two tasks: Tm and Tn in our multi-task learning framework for the sake of illustrating the
+gate mechanism concisely. We can generalize the model to the case of multiple tasks easily. As shown in Figure 1, each
+task has two gate units that learn the weights of the two kinds of features:
+gTk
+1
+= σ(Wg1 ˆpTk + bg1)
+(14)
+gTk
+2
+= σ(Wg2vTk + bg2)
+(15)
+5
+where ˆpTm and vTm can be updated by:
+ˆpTm = gTn
+1
+⊙ˆpTn + ˆpTm
+(16)
+vTm = gTn
+1
+⊙vTn + vTm
+(17)
+where ⊙denotes element-wise multiplication.
+Private
+Share
+Private
+Input A
+input B
+Out A
+Out B
+Gate
+Gate
+Pooling
+Pooling
+σ
+×
+σ
+×
++
++
+σ
+×
+σ
+×
++
++
+Gate mechanism
+Figure 5: Integrating the gate mechanism into the basic MLT framework.
+5.5
+Label Embedding (LE)
+For many NLP tasks, disparate label sets are weakly correlated, [16] thus propose to induce a joint label embedding
+space using a label embedding layer that can model relationships between different NLP tasks. Figure 6 illustrates the
+overview of integrating the label embedding into the basic MLT framework. In particular, the output of each task Tk
+and the loss Ltask are respectively calculated by:
+ˆzTk = softmax(WLvTk + bL)
+(18)
+Ltask =
+T
+X
+k=1
+λTk
+N
+X
+i=1
+zTk
+i
+log(ˆzTk
+i )
+(19)
+where ˆzTk ∈RN. N = PT
+k=1 N Tk. WL is a learnable parameter and it is shared by all tasks. zTk ∈RN is the
+extension of yTk. Different task’s label is corresponding with the different part in the vector and the part does not belong
+to the task is padded with 0.
+LE
+Private
+Share
+Private
+Input A
+input B
+Out A
+Out B
+Figure 6: Integrating the label embedding method into the basic MLT framework.
+To investigate the effectiveness of each MLT method, we integrate all the ﬁve methods (i.e., ELH, OC, AL, Gate, LE)
+into the basic MTL framework illustrated in 1. The ensemble method is shown in Figure 7. We conduct ablation test
+by removing one of the ﬁve methods at each time. Next, we will introduce the experimental setup and analyze the
+experimental results in detail.
+6
+Experimental Setup
+Since the correlation of data sets has a signiﬁcant impact on the effect of multi-task learning, we selected a set of
+high-relevant data sets and a set of low-relevant data sets for multi-task learning experiments. In order to systematically
+6
+Private
+ELH
+Private
+Input A
+input B
+Out A
+Out B
+AL
+OC
+OC
+Gate
+Gate
+LE
+Figure 7: The ensemble model that integrates all the ﬁve MTL algorithms into the basic MLT framework.
+Dataset
+Training
+Testing
+Books
+1398
+400
+Electronics
+1398
+400
+DVDs
+1400
+400
+high-relevant
+Kitchen
+1400
+400
+Apparel
+1400
+400
+Baby
+1300
+400
+CoLA
+8550
+1042
+SST-2
+67349
+872
+MRPC
+3668
+408
+low-relevant
+STS-B
+5749
+1500
+MNLI
+392702
+9815
+QNLI
+108436
+5732
+Table 1: Statistics of the experimental datasets.
+compare the effect of each MTL method, we conduct extensive experiments on three representative NLP tasks: text
+classiﬁcation, text similarity, and textual inference. High-relevant dataset only contains text classiﬁcation tasks. For
+low-relevant dataset, Each task contains two benchmark datasets. For fair comparison, in our experiments, we retain the
+base structure of the ﬁve methods and remove all training tricks and extra structures in original works.
+For the single-task method, we use the architecture introduced in Section 4, in which 1-layer BiLSTM is used for single
+sentence modeling and 2-layer BiLSTMs with attention are employed for sentence pair modeling.
+It is noteworthy that the share part of diff and adversarial are lighter in the paper comparing linguistic hierarchie, we use
+a single-layer bi-LSTM in share part when diff and adversarial are used alone or combining with the other component
+without exploring linguistic hierarchies.
+6.1
+Tasks and Datasets
+We use the following datasets for our experiments, which are from high-relevant and low-relevant tasks. Table 1 shows
+the statistics of these datasets.
+Text Classiﬁcation
+We apply Amazon product reviews from 6 domains for high-relevant tasks, which includes
+books, DVDs, cameras, etc. These corpora are classiﬁed according to the sentiment of positiveness or negativeness.
+For low-relevant tasks, We use the Corpus of Linguistic Acceptability (CoLA) [25] and Stanford Sentiment Treebank
+(SST-2) [19] datasets to investigate the effectiveness of the MTL methods for text classiﬁcation task. CoLA predicts
+whether an English sentence is linguistically acceptable or not. It uses Matthews correlation coefﬁcient [18] as the
+evaluation metric. SST-2 predicts whether the sentiment of sentences is positive or negative.
+Text Similarity
+We use the Microsoft Research Paraphrase Corpus (MRPC) [20] and Semantic Textual Similarity
+Benchmark STS-B [21] for text similarity task. MRPC consists of sentence pairs with human annotations denoting
+whether a sentence pair is semantically equivalent to the other in the pair. Accuracy is used as evaluation metric. STS-B
+is a collection of sentence pairs which are manually annotated with similarity scores from one to ﬁve, indicating how
+similar the two sentences are. The evaluation metric is the Pearson and Spearman correlation coefﬁcients.
+7
+Textual Inference
+We conduct experiments for textual inference task on Multi-Genre Natural Language Inference
+(MNLI) [22] and Question-answering NLI (QNLI) [24] datasets. MNLI contains large-scale, crowd-sourced premise-
+hypothesis pairs for textual entailment (TE). Each premise-hypothesis pair is labeled with a relation (i.e., entailment,
+contradiction, or neutral). The evaluation metric is accuracy. QNLI derived from the Stanford Question Answering
+Dataset [23], which has been converted to a binary classiﬁcation task in GLUE [24]. QNLI consists of query-candidate-
+answer tuples, each of which is labeled as positive or negative to indicate whether the given tuple contains the correct
+answer to the query. The evaluation metric is accuracy.
+6.2
+Basic Tasks and Datasets
+For the method of exploring linguistic hierarchies, the shared 3-layer BiLSTM also learn three different basic (auxiliary)
+tasks, including POS tagging, chunking, and dependency parsing.
+POS & Chunking.
+We use CoNLL-2003 [26] dataset (English part) for the POS and chunking tasks. In CoNLL-
+2003, each word is labeled with three kinds of tags: part-of-speech tag, chunk tag and named entity tag. The evaluation
+metric for POS and chunking is word-level accuracy.
+Dependency Parsing.
+We use the Wall Street Journal (WSJ) part of the Penn Treebank [33] for dependency parsing.
+following the standard data split [34]. Speciﬁcally, we use Sections 2-21 for training, Section 22 for testing. The
+evaluation metrics are the Unlabeled Attachment Score (UAS).
+6.3
+Hyperparameters Setting
+We use 300-dimensional pre-trained GloVe vectors1 to initialize the word embedding. The out-of-vocabulary words are
+randomly initialized with a normal distribution with zero mean and one variance. For all high-relevant datasets, we use
+a hidden state 100 dimensions because of smaller data set and simpler tasks. For all low-relevant datasets, we set the
+hidden state of all LSTMs to 300 dimensions. All global dropout rate is set to 0.5. The other hyper-parameters (e.g.,
+learning rate, maximal sentence, mini-batch size) are tuned on the validation data.
+For dependency parsing task when exploring linguistic hierarchies, we set the dimensions of the two MLP layers as 50
+and 100 respectively, similar to [35]. We set λadv = 0.05 and λOC = 0.01.
+7
+Experimental Results and Analysis
+7.1
+Single-task vs. Multi-task Analysis
+We analyze the effectiveness of single-task and multi-task methods in detail and conduct an in-depth analysis of
+the experimental results. For the multi-task methods, we report the results of the individual MTL tasks on the ﬁve
+benchmarks. In addition, we also report the results of combining different MTL tasks. Due to the large number of
+combinatorial experiments, we only report the representative results and the complete experimental results are shown in
+the supplementary ﬁle. For convenience and simplicity, we use letters A, B, C, D, E to represent linguistic hierarchies,
+gate mechanism, label embedding, orthogonality constrains and adversarial learning, respectively. For example, ABCDE
+stands for the ensemble model (ENS) of combining the ﬁve MTL methods. We repeat each experiment three times and
+report the average results. The results are summarized in Table 2 and Table 3.
+From Table 2 and Table 3, we have the following ﬁndings: (1) All ﬁve MTL methods contribute great improvements to
+the overall performance, and the linguistic hierarchies method has the best comprehensive performance over all datasets.
+(2) The effect of the MTL approach may not be affected by the correlation of the data sets. (3) The improvement of
+different MTL methods cannot be superimposed. Next, we analyze the experimental results of the ﬁve MTL methods in
+detail.
+Linguistic hierarchies
+From the results, we can observe that exploring linguistic hierarchies has the best overall
+performance among the compared individual MTL techniques on both two types of datasets. This veriﬁes that the
+auxiliary basic tasks (i.e., POS tagging, chunking, and dependency parsing) with shared parameters can capture more
+comprehensive word-level and sentence-level semantic features, thereby yielding the strong performance of three
+representative NLP tasks. In addition, adding auxiliary basic tasks increases the amount of training data and therefore
+increases the generalization of the model.
+1https://nlp.stanford.edu/projects/glove/
+8
+Method
+App.
+Kitchen
+Books
+Elec.
+DVDs
+Baby
+Ave.
+Improvement
+Single
+87.50
+84.75
+81.75
+82.50
+83.00
+84.00
+83.92
+–
+A
+89.75
+87.25
+86.83
+88.25
+82.75
+88.83
+87.28
+3.36
+B
+88.17
+85.42
+83.58
+83.75
+83.92
+86.67
+85.25
+1.33
+C
+88.67
+85.08
+83.42
+83.25
+83.00
+86.50
+84.99
+1.07
+D
+89.67
+87.33
+86.17
+86.25
+82.58
+88.42
+86.74
+2.82
+E
+89.92
+87.00
+85.58
+87.50
+83.50
+88.83
+87.06
+3.14
+AB
+89.67
+87.92
+86.58
+87.83
+82.83
+88.83
+87.28
+3.36
+AC
+90.58
+86.92
+87.33
+87.58
+83.00
+88.83
+87.37
+3.46
+AD
+89.67
+87.00
+87.50
+87.33
+82.75
+88.42
+87.11
+3.19
+AE
+90.33
+87.67
+86.50
+88.50
+82.75
+88.58
+87.39
+3.47
+BC
+88.92
+85.42
+83.58
+84.33
+82.42
+85.75
+85.07
+1.15
+BD
+90.00
+87.17
+85.92
+87.42
+83.67
+88.75
+87.16
+3.24
+BE
+89.17
+87.08
+85.67
+87.25
+84.00
+88.58
+86.96
+3.04
+CD
+89.00
+86.50
+85.17
+86.75
+83.83
+89.33
+86.76
+2.85
+CE
+89.50
+87.00
+85.17
+88.00
+83.50
+88.92
+87.02
+3.1
+DE
+89.92
+87.50
+85.83
+86.92
+83.50
+88.25
+86.99
+3.07
+ABC
+91.00
+87.38
+87.38
+87.75
+82.75
+88.62
+87.48
+3.56
+ABCD
+89.83
+87.25
+87.58
+88.08
+83.08
+89.00
+87.47
+3.55
+ABCDE
+90.75
+87.08
+86.75
+87.42
+83.17
+89.00
+87.36
+3.44
+Table 2: Experiment result on high-relevant datasets. Here, A, B, C, D, E represent linguistic hierarchies, gate mechanism,
+label embedding, orthogonality constrains and adversarial learning, respectively.
+Method
+SST
+CoLA
+MNLI
+MRPC
+QNLI
+STS-B
+Ave.
+Improvement
+Single
+86.35
+69.19
+69.13
+72.30
+70.83
+67.47
+72.55
+–
+A
+89.03
+70.5
+72.93
+80.88
+73.08
+71.74
+76.36
+3.81
+B
+87.19
+69.58
+70.89
+73.53
+71.38
+69.20
+73.63
+1.08
+C
+87.88
+69.51
+70.34
+75.41
+70.32
+70.19
+73.94
+1.39
+D
+88.34
+69.39
+71.80
+73.45
+72.03
+66.03
+73.51
+0.96
+E
+87.84
+69.29
+72.26
+76.72
+70.89
+71.89
+74.81
+2.26
+AB
+88.95
+69.93
+73.01
+80.39
+73.67
+72.12
+76.35
+3.80
+AC
+89.33
+70.76
+72.95
+80.15
+73.24
+72.05
+76.41
+3.86
+AD
+89.03
+69.86
+72.75
+80.07
+73.71
+68.25
+75.61
+3.06
+AE
+89.28
+70.40
+72.83
+80.64
+73.25
+72.05
+76.41
+3.86
+BC
+87.54
+69.55
+70.83
+73.12
+71.16
+70.81
+73.83
+1.28
+BD
+88.26
+69.32
+71.31
+73.77
+71.88
+63.66
+73.03
+0.48
+BE
+87.77
+69.67
+72.25
+75.57
+71.80
+71.38
+74.74
+2.19
+CD
+87.92
+69.26
+70.64
+73.45
+71.81
+64.38
+72.91
+0.36
+CE
+88.07
+69.58
+72.30
+76.59
+71.51
+71.96
+75.00
+2.45
+DE
+88.42
+69.35
+71.43
+72.95
+71.72
+65.26
+73.19
+0.64
+ABC
+89.34
+70.40
+73.47
+79.62
+74.66
+73.38
+76.90
+4.35
+ABCD
+89.45
+69.93
+73.45
+78.76
+74.39
+67.96
+75.59
+3.04
+ABCDE
+89.14
+69.96
+73.55
+79.05
+74.48
+67.82
+75.86
+3.31
+Table 3: Experiment result on low-relevant datasets.
+Gate mechanism
+Gate mechanism achieves better results than the single-task model on two data sets. Gate mechanism
+has an ability to select potentially useful features, which can reduce the interference among tasks [12].
+Label embedding
+Surprisingly, label embedding outperforms the single-task model signiﬁcantly with its lightweight
+structure, only with this component the average performance has improved 1.07 and 1.36 on two datasets. This may
+be because that label embedding method can leverage label information of each task by mapping labels into dense,
+low-dimension and real-value vectors with semantic implications, which captures the semantic correlations among
+tasks.
+Orthogonality constraint
+Comparing with the result of single-task, the average performance of orthogonality
+constraint increases 2.82 and 0.93 on average respectively. We can see that the structure has signiﬁcantly higher gains
+for high-relevance tasks than for low-relevance tasks.
+9
+App.
+Kitchen
+Books
+Elec.
+DVDs
+Baby
+Ave.
+Single
+87.5
+84
+81.75
+82.5
+83
+84.75
+83.92
+SLH
+87.75
+82.25
+84.25
+84.00
+82.75
+85.25
+84.37
+No Auxiliary Tasks
+89.83
+87.58
+85.33
+87.33
+83.41
+87.91
+86.9
+Pos
+90.50
+87.25
+86.88
+87.13
+82.75
+89.00
+87.25
+Chunking
+90.13
+87.13
+85.63
+86.88
+82.88
+88.88
+86.92
+Parsing
+90.63
+87.25
+87.75
+87.50
+85.25
+88.75
+87.85
+Pos+Chunk
+90.75
+87.75
+85.75
+87.75
+83.00
+90.75
+87.63
+Pos+Parsing
+90.75
+88.38
+86.50
+87.75
+83.63
+88.88
+87.65
+Chunk+Parsing
+90.38
+87.88
+86.00
+87.00
+82.75
+89.13
+87.19
+ELH
+89.75
+87.25
+86.83
+88.25
+82.75
+88.83
+87.28
+Table 4: Exploring linguistic hierarchies method with Partial auxiliary tasks result on high-relevant datasets. SLH stands
+for Single task with Linguistic Hierarchies
+SST
+CoLA
+MNLI
+MRPC
+QNLI
+STS-B
+Ave.
+Single
+86.35
+69.19
+69.13
+72.3
+70.83
+67.47
+72.58
+SLH
+88.45
+69.87
+72.69
+77.53
+72.76
+66.46
+74.63
+No Auxiliary Tasks
+88.15
+69.61
+70.78
+74.02
+70.88
+73.88
+74.55
+Pos
+88.45
+69.74
+72.75
+78.43
+71.68
+74.11
+75.86
+Chunking
+88.65
+69.45
+73.19
+78.02
+72.47
+74.17
+75.99
+Parsing
+88.65
+69.99
+73.60
+79.49
+73.04
+72.6
+76.23
+Pos+Chunk
+88.57
+70.19
+72.68
+79.98
+71.98
+73.15
+76.09
+Pos+Parsing
+88.95
+69.93
+73.1
+81.05
+73.3
+72.08
+76.4
+Chunk+Parsing
+88.95
+70.22
+73.22
+81.86
+73.75
+72.78
+76.80
+ELH
+89.03
+70.50
+72.93
+80.88
+73.08
+71.74
+76.36
+Table 5: Exploring linguistic hierarchies method with Partial auxiliary tasks result on low-relevant datasets.
+We believe that although orthogonality constraint can make a difference between the shared and private feature learned
+by shared part and private part respectively, bu In the case of low-relevance, the orthogonality constraint in share layer
+may not be able to obtain enough shared information, resulting in less task promotion.
+Adversarial learning
+The adversarial learning framework has the second largest increase in the single method. The
+simple adversarial learning method can lead to a good shared feature space contain more common information and no
+task-speciﬁc information, and it works well on different data sets.
+Summary
+After analyzing the performance of the ﬁve MTL methods over the single-task model, we ﬁnd that linguistic
+hierarchical information performs better than other individual MTL methods. The gate mechanism introduces a large
+number of parameters, but the effect improvement is not signiﬁcantly better others. Label embedding has a simple
+structure and performs better than some more complex MTL methods. Orthogonality constraint are highly correlated
+with speciﬁc datasets and have different inﬂuence on results. Adversarial learning can improve the performance of
+overall datasets without introducing extraneous data and adding a large number of parameters.
+POS
+CHUNK
+DP
+App.
+Kitchen
+Books
+Elec.
+DVDs
+Baby
+Ave.
+ENS
+93.70
+95.33
+92.02
+90.75
+87.08
+86.75
+87.42
+83.17
+89.00
+87.36
+ENS-JMT
+93.34
+95.07
+91.61
+91.31
+89.31
+86.33
+89.03
+84.11
+90.19
+88.38
+Table 6: Experiment result on ensemble model with joint many-task model (ENS-JMT) and our ensemble model (ENS)
+on high-relevant datasets.
+7.2
+In-depth Analysis of Exploring Linguistic Hierarchies
+As shown in Table 2 and Table 3, we can observe that exploring linguistic hierarchies achieves the best performance
+among the individual MTL methods on most datasets. To investigate this unexpected observation, we conduct ablation
+test to analyze the efﬁcacy of each basic task (i.e., POS tagging, Chunking, dependency parsing) to the performance of
+ELH method by discarding one or two auxiliary basic tasks each time. In addition, we also compared single task trained
+with hierarchical language structures (SLH) to verify that the increment of this structure comes from auxiliary tasks or
+multitasking. Result are shown in Table 4 and Table 5.
+10
+POS
+CHUNK
+DP
+SST
+CoLA
+MNLI
+MRPC
+QNLI
+STS-B
+Ave.
+ENS
+94.11
+95.65
+92.48
+89.14
+69.96
+73.55
+79.05
+74.48
+67.82
+75.86
+ENS-JMT
+93.83
+95.11
+92.1
+88.96
+70.06
+73.24
+78.92
+74.05
+69.86
+75.84
+Table 7: Experiment result on ensemble model (ENS) with joint many-task Model (ENS-JMT) and our ensemble model
+(ENS) on low-relevant datasets.
+Combining all the auxiliary tasks does not achieve the best results on average score, and high-level auxiliary tasks can
+bring better results. By observing these tables, best performance for all missions only contains dependency parsing on
+high-relevant datasets, and on low-relevant datasets the model with the best performance only include chunking and
+dependency parsing.
+We also found that the key to the performance improvement of exploring linguistic hierarchies is the auxiliary task in
+the low-relevance data sets, while in the high-relevant data sets, the hard parameter sharing by multi-task learning has a
+more obvious effect. In other words, In the case of simple hard sharing with out auxiliary tasks, multi-task learning with
+high data set correlation can bring more improvements than low-relevance datasets. Comparing the performance on
+exploring linguistic hierarchies with no auxiliary tasks and the SLH model, we can see that in the high-relevant data set,
+exploring linguistic hierarchies with no auxiliary tasks outperform SLH by 2.53 on average. But on the low-relevance
+tasks, the SLH method performs better than exploring linguistic hierarchies with no auxiliary tasks on all the dataset
+except STSB, in other words, the introduction of language hierarchical method is signiﬁcantly better than multi-task
+learning in these datasets. We believe that the structure can capture the beneﬁts of both hierarchical language structure
+and multi-task learning at the same time, which is why the structure can stand out in many multi-task learning methods.
+It is noteworthy that the implementation of exploring linguistic hierarchies, denoted as joint multi-task model (JMT), in
+the original paper [10] is slightly different from the implementation in this paper. In [10], the loss functions to different
+layers are injected from bottom to top layers, and the amount of upgrade on the lower layer is limited. However, in
+this paper, we add the losses of all layers and optimizes them at the same time. Since there is no open source code,
+we also recurring the paper’s method and follow the hyper-parameters in the paper. We compared the performance of
+the ensemble model and the ensemble model replacing JMT training method on linguistic hierarchies. The results are
+reported in Table 6 and Table 7. From the results, we can observe that our training strategy performs slightly better than
+[10] on the auxiliary tasks.
+7.3
+Overﬁtting Analysis
+Multi-task learning is supposed to alleviate the overﬁtting problem by leveraging useful information contained in
+multiple related tasks to improve the generalization performance of all the tasks. Based on our empirical observation,
+there is high-risk of overﬁtting on STS-B dataset. To investigate the performance of the ﬁve MTL methods on alleviating
+overﬁtting problem, we illustrate the learning curves of these models in Figure 8, where each method iterates over
+more than 400 epochs. Compared to the highest value, single-task model decreased by 18.8%, while ELH, Gate, Label
+Embedding, Orthogonality Constraints and Adversarial Learning decreased by 14.21%, 10.22%, 9.35%, 13.17% and
+9.18% respectively.
+From Figure 8, we can observe that all MTL methods can alleviate the overﬁtting problem. In general, the more
+parameters of MTL model, the worse its effect on overﬁtting. In particular, the adversarial learning and label embedding
+methods greatly reduce the degree of overﬁtting. We think this is because the method uses the least amount of parameters
+to achieve the interaction of multiple tasks. The OC method with small amount of parameters doesn’t behave well on
+overﬁtting problem, we think because of the addition of a LSTM layer.
+8
+Conclusion
+There is no existing systematic exploration and comparison of different MTL architectures and learning mechanisms
+for their strong performance in-depth. To the best our knowledge, this work is the ﬁrst to investigate the effects of
+ﬁve widely used MTL methods with deep neural networks for a broad range of representative NLP tasks including
+text classiﬁcation, semantic textual similarity, natural language inference, question answering, part-of-speech tagging,
+and chunking. By identifying the essential MTL architecture designs that contribute signiﬁcantly to the success of
+MTL, we propose a hybrid architecture built with different components borrowed from previous MTL methods. Finally,
+we present a series of ﬁndings that (i) all six individual MTL methods contribute great improvements to the overall
+performance on the experimental datasets. In addition, the improvements of the MTL methods cannot be superimposed;
+(ii) using linguistic hierarchical information performs better than other individual MTL methods. However, using all the
+three auxiliary basic tasks does not achieve the best results. The upper-level auxiliary task brings more improvement than
+11
+Figure 8: Overﬁtting on STS-B(Taking an average of every ﬁve values)
+the lower-level auxiliary tasks; (iii) combining linguistic hierarchies, gate mechanism, and label embedding methods
+can achieve best results on most of the datasets.
+In the future, we would like to investigate the effectiveness of these MTL methods in alleviating the negative knowledge
+transfer problems among different tasks, especially when the optimal solutions of the tasks are quite different. In
+addition, we also plan to devise a more effective MTL framework when considering the strengths and weakness of
+existing MTL methods for alleviating the negative knowledge transfer problems.
+Conﬂict of Interest Statement
+The authors declare that they have no known competing ﬁnancial interests or personal relationships that could have
+appeared to inﬂuence the work reported in this paper.
+References
+[1] Z. Yu , Y. Qiang, A survey on multi-task learning, Arxiv Preprint arXiv:1707.08114., (201),
+[2] C. Rich, Multitask learning, Machine Learning., 28, , 41–75, (1997),
+[3] R. Sebastian, An overview of multi-task learning in deep neural networks, Arxiv Preprint arXiv:1706.05098.,
+(201),
+[4] X. Liqiang, Z. Honglun , C. Wenqing, Gated Multi-Task Network for Text Classiﬁcation, Proceedings Of The
+2018 Conference Of The North American Chapter Of The Association For Computational Linguistics: Human
+Language Technologies, Volume 2 (short Papers)., pp. 726–731, (201),
+[5] M. Ishan, S. Abhinav, G. Abhinav , H. Martial, Cross-stitch networks for multi-task learning, Proceedings Of The
+Ieee Conference On Computer Vision And Pattern Recognition., pp. 3994–4003, (201),
+[6] R. Sebastian, B. Joachim, A. Isabelle , S. Anders, Learning what to share between loosely related tasks, Arxiv
+Preprint arXiv:1705.08142., (201),
+12
+[7] L. Xiaodong, H. Pengcheng, C. Weizhu , G. Jianfeng, Multi-Task Deep Neural Networks for Natural Language
+Understanding, Arxiv Preprint arXiv:1901.11504., (201),
+[8] L. Pengfei, Q. Xipeng , H. Xuanjing, Recurrent neural network for text classiﬁcation with multi-task learning,
+Arxiv Preprint arXiv:1605.05101., (201),
+[9] L. Pengfei, Q. Xipeng , H. Xuanjing, Adversarial multi-task learning for text classiﬁcation, Arxiv Preprint
+arXiv:1704.05742., (201),
+[10] S. Anders , G. Yoav, Deep multi-task learning with low level tasks supervised at lower layers, Proceedings Of
+The 54th Annual Meeting Of The Association For Computational Linguistics (volume 2: Short Papers)., 2, pp.
+231–235, (201),
+[11] H. Kazuma, X. Caiming, T. Yoshimasa , S. Richard, A joint many-task model: Growing a neural network for
+multiple nlp tasks, Arxiv Preprint arXiv:1611.01587., (201),
+[12] H. Sepp , S. Jürgen, Long short-term memory, Neural Computation., 9, , 1735–1780, (1997),
+[13] E. Jeffreyl, Finding structure in time, Cognitive Science., 14, , 179–211, (1990),
+[14] C. Qian, Z. Xiaodan, L. Zhenhua, W. Si, J. Hui , I. Diana, Enhanced lstm for natural language inference, Arxiv
+Preprint arXiv:1609.06038., (201),
+[15] B. Konstantinos, T. George, S. Nathan, K. Dilip , E. Dumitru, Domain separation networks, Advances In Neural
+Information Processing Systems., pp. 343–351, (201),
+[16] A. Isabelle, R. Sebastian , S. Anders, Multi-task learning of pairwise sequence classiﬁcation tasks over disparate
+label spaces, Arxiv Preprint arXiv:1802.09913., (201),
+[17] W. Alex, S. Amanpreet , B. Samuelr, Neural network acceptability judgments, Arxiv Preprint arXiv:1805.12471.,
+(201),
+[18] M. Brianw, Comparison of the predicted and observed secondary structure of T4 phage lysozyme, Biochimica Et
+Biophysica Acta (bba)-protein Structure., 405, , 442–451, (1975),
+[19] S. Richard, P. Alex, W. Jean, C. Jason, M. Christopherd, N. Andrew , P. Christopher, Recursive deep models
+for semantic compositionality over a sentiment treebank, Proceedings Of The 2013 Conference On Empirical
+Methods In Natural Language Processing., pp. 1631–1642, (201),
+[20] D. Williamb , B. Chris, Automatically constructing a corpus of sentential paraphrases, Proceedings Of The Third
+International Workshop On Paraphrasing (iwp2005)., (200),
+[21] C. Daniel, D. Mona, A. Eneko, L. Inigo , S. Lucia, Semeval-2017 task 1: Semantic textual similarity-multilingual
+and cross-lingual focused evaluation, Arxiv Preprint arXiv:1708.00055., (201),
+[22] W. Adina, N. Nikita , B. Samuelr, A broad-coverage challenge corpus for sentence understanding through
+inference, Arxiv Preprint arXiv:1704.05426., (201),
+[23] R. Pranav, Z. Jian, L. Konstantin , L. Percy, Squad: 100,000+ questions for machine comprehension of text, Arxiv
+Preprint arXiv:1606.05250., (201),
+[24] W. Alex, S. Amapreet, M. Julian, H. Felix, L. Omer , B. Samuelr, Glue: A multi-task benchmark and analysis
+platform for natural language understanding, Arxiv Preprint arXiv:1804.07461., (201),
+[25] W. Alex, S. Amanpreet , B. Samuelr, Neural network acceptability judgments, Arxiv Preprint arXiv:1805.12471.,
+(201),
+[26] S. Erikf , D. Fien, Introduction to the CoNLL-2003 shared task: Language-independent named entity recognition,
+Arxiv Preprint cs/0306050., (200),
+[27] Y. Zhilin, S. Ruslan , C. William, Multi-task cross-lingual sequence tagging from scratch, Arxiv Preprint
+arXiv:1603.06270., (201),
+[28] B. Samuelr, A. Gabor, P. Christopher , M. Christopherd, A large annotated corpus for learning natural language
+inference, Arxiv Preprint arXiv:1508.05326., (201),
+[29] K. Tushar, S. Ashish , C. Peter, Scitail: A textual entailment dataset from science question answering, Thirty-second
+Aaai Conference On Artiﬁcial Intelligence., (201),
+[30] S. Mathieu, E. Carlhenrik, U. Raquel , D. Trevor, Factorized orthogonal latent spaces, Proceedings Of The
+Thirteenth International Conference On Artiﬁcial Intelligence And Statistics., pp. 701–708, (201),
+[31] D. Long, C. Trevor, B. Steven , C. Paul, Low resource dependency parsing: Cross-lingual parameter sharing
+in a neural network parser, Proceedings Of The 53rd Annual Meeting Of The Association For Computational
+Linguistics And The 7th International Joint Conference On Natural Language Processing (volume 2: Short
+Papers)., 2, pp. 845–850, (201),
+13
+[32] Y. Yongxin , H. Timothym, Trace norm regularised deep multi-task learning, Arxiv Preprint arXiv:1606.04038.,
+(201),
+[33] M. Mitchell, S. Beatrice , M. Maryann, Building a large annotated corpus of English: The Penn Treebank,
+[34] C. Michael, Discriminative training methods for hidden markov models: Theory and experiments with perceptron
+algorithms, Proceedings Of The Acl-02 Conference On Empirical Methods In Natural Language Processing-
+volume 10., pp. 1–8, (2002),
+[35] K. Nikita , K. Dan, Constituency parsing with a self-attentive encoder, Arxiv Preprint arXiv:1805.01052., (201),
+14

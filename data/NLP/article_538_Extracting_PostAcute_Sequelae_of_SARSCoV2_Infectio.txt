@@ -1,0 +1,1246 @@
+Title: Extracting Post-Acute Sequelae of SARS-CoV-2 Infection Symptoms from Clinical Notes via Hybrid Natural Language Processing
+Source URL: http://arxiv.org/abs/2508.12405v1
+--------------------------------------------------
+
+Extracting Post-Acute Sequelae of SARS-CoV-2 Infection Symp-
+toms from Clinical Notes via Hybrid Natural Language Processing
+Zilong Bai1, Zihan Xu1, Cong Sun1, Chengxi Zang1, H. Timothy Bunnell2, Catherine Sinfield1, Jacque-
+line Rutter3, Aaron Thomas Martinez3, L. Charles Bailey4, Mark Weiner1, Thomas R. Campion1, Thomas
+Carton5, Christopher B. Forrest4, Rainu Kaushal1, Fei Wang1, Yifan Peng1,*
+1Population Health Sciences, Weill Cornell Medicine, New York, USA.
+2Nemours Children’s Health, Wilmington, USA.
+3RECOVER Patient, Caregiver, or Community Advocate Representative, New York, USA.
+4Applied Clinical Research Center, Children’s Hospital of Philadelphia, Philadelphia, USA.
+5Louisiana Public Health Institute, New Orleans, USA.
+*Corresponding author(s). Email(s): yip4002@med.cornell.edu
+Abstract
+Accurately and efficiently diagnosing Post-Acute Sequelae of COVID-19 (PASC) remains chal-
+lenging due to its myriad symptoms that evolve over long- and variable-time intervals. To address
+this issue, we developed a hybrid natural language processing pipeline that integrates rule-based
+named entity recognition with BERT-based assertion detection modules for PASC-symptom ex-
+traction and assertion detection from clinical notes. We developed a comprehensive PASC lexicon
+with clinical specialists. From 11 health systems of the RECOVER initiative network across the
+U.S., we curated 160 intake progress notes for model development and evaluation, and collected
+47,654 progress notes for a population-level prevalence study. We achieved an average F1 score of
+0.82 in one-site internal validation and 0.76 in 10-site external validation for assertion detection.
+Our pipeline processed each note at 2.448±0.812 seconds on average. Spearman correlation tests
+showed ρ > 0.83 for positive mentions and ρ > 0.72 for negative ones, both with P < 0.0001.
+These demonstrate the effectiveness and efficiency of our models and their potential for improving
+PASC diagnosis.
+1. INTRODUCTION
+Post-acute sequelae of coronavirus disease 2019 (PASC), or Long COVID, is an often debilitating and com-
+plex infection-associated chronic condition (IACC) that occurs after SARS-CoV-2 infection and is present
+for at least 3 months beyond the acute phase of the infection1,2. PASC has affected tremendous individu-
+als globally2–5, with over 200 distinct symptoms reported across multiple organ systems, emphasizing its
+complexity and multifaceted nature5–7. Currently, diagnosing, treating, and caring for patients with PASC
+remains challenging due to its myriad symptoms that evolve over long- and variable-time intervals1,5,8,9.
+The accurate characterization and identification of PASC patients are critical for effectively managing this
+evolving public health issue, such as accurate diagnosis, stratification of risk among patients, evaluation of the
+impact of therapeutics and immunizations, and ensuring diverse recruitment for clinical research studies1,5.
+Electronic health records (EHRs) have been widely used in clinical practice and AI in healthcare research.
+Currently, EHR analyses regarding PASC predominantly rely on structured data, such as billing diagnoses
+commonly recorded as ICD-10 codes. Yet, existing diagnostic codes for PASC (i.e., U09.9) have been shown
+1
+arXiv:2508.12405v1  [cs.CL]  17 Aug 2025
+to lack the requisite sensitivity and specificity for an accurate PASC diagnosis10–14. Additionally, findings
+reveal demographic biases among patients coded with U09.9, showing a higher prevalence in women, White,
+non-Hispanic individuals, and those from areas of lower poverty and higher education14,15. Structured
+billing diagnoses have limitations in assessing the true frequency of conditions associated with PASC, such
+as Postural Orthostatic Tachycardia Syndrome (POTS), which is diagnosed in 2-14% of individuals after a
+COVID-19 infection16. POTS did not have a specific ICD-10 code until October 1, 2022. Additionally, its
+primarysymptoms–palpitationsanddizziness–maybedocumentedinclinicalnotesbutoftengounrecognized
+as part of the syndrome by clinicians, leading to underreporting in billing data. Comparable challenges are
+also found in diagnosing Myalgic Encephalomyelitis/Chronic Fatigue Syndrome (ME/CFS) when relying
+solely on structured data17–19. These biases and limitations complicate our understanding and management
+of PASC and highlight the need for improved diagnostic approaches.
+Unstructured narratives, found in EHR notes, contain detailed accounts of a patient’s clinical history, symp-
+toms, and the effects of those symptoms on physical and cognitive functioning. Previous studies have applied
+NLP to detect acute COVID symptoms within free-form text notes20–23. Studies on acute COVID-19 symp-
+tom extraction have achieved promising results24. However, due to the inherent difference between PASC
+and COVID-19, such NLP approaches are not directly transferable21,23,24. Other research has concentrated
+on identifying PASC symptoms without assertion detection. The PASCLex study by Wang et al.25 devel-
+oped a lexicon of symptoms and synonyms, employing a rule-based approach to search for symptoms within
+clinical notes.
+To address the challenges of identifying PASC and build on previous research to improve diagnostic methods,
+we developed a hybrid NLP pipeline that integrates rule-based and deep-learning approaches. This hybrid
+pipeline not only detects relevant symptoms in clinical notes but also accurately determines their assertion
+status–whether a symptom is truly present or non-present. Our approach was implemented within data from
+the RECOVER Initiative26, which provides access to large, diverse COVID-19 and PASC patient populations
+with electronic health records (EHR) data from a network of large health systems across the United States.
+One of the key features of our pipeline is a comprehensive PASC lexicon, developed in collaboration with
+clinicians, consisting of 25 symptom categories and 798 Unified Medical Language System (UMLS) concepts
+for precise symptom identification. Additionally, we designed a BERT-based module specifically to assess
+symptom assertions, distinguishing between symptoms that are present or non-present (including absent,
+uncertain, or other possible statuses, as detailed in the Methods). To ensure our approach extracts PASC
+symptoms from unstructured clinical notes robustly and efficiently, we curated 60 progress notes from New
+York-Presbyterian/Weill Cornell Medicine (WCM) for model development and internal validation, and 100
+progress notes from 10 additional sites for external validation. To strengthen our evaluation in comparison
+with large language models, we developed a prompt and applied GPT-4 for symptom extraction with assertion
+detection on a 20-note subset of the WCM internal validation notes. Furthermore, we analyzed 47,654
+clinical notes from 11 health systems to conduct a population-level prevalence study, aiming to improve the
+understanding of PASC-symptom mentioning patterns and refine disease characterization. Leveraging the
+RECOVER26 datasets, our approach addresses key limitations of prior research by incorporating a large,
+diverse population and validating performance across multiple sites, which helps account for variations in
+clinical language and documentation styles.
+2. RESULTS
+2.1 PASC Lexicon
+The PASC lexicon is an ontology graph consisting of 25 symptom categories, 798 finer-grained UMLS
+concepts, and their synonyms (Figure 1). The complete symptom lexicon is available in Supplementary
+File 1.
+2
+Long COVID Lexicon
+Alopecia
+Hypotrichosis
+Anxiety
+Chest pain
+Cough
+Dental or Gum Issues
+Dental swelling
+Gingival Hemorrhage
+Jaw pain
+Oral Ulcer
+Toothache
+Xerostomia
+Other gum problems
+Depression
+Mental depression
+Suicidal
+Sad mood
+Digestive issues
+Constipation
+Diarrhea
+Feces color: tarry
+Hematemesis
+Hyperemesis
+Nausea or Vomiting
+Other igestive Issues
+Dizziness
+Fatigue
+Feeling bad emotionally
+Sluggish thinking
+Weakness
+Fever
+Chills
+Hyperthermia
+Headache
+Heart Problems
+Palpitations
+Tachycardia
+Other Heart Problems
+Hyperhidrosis
+Night sweats
+Impaired cognition
+Memory impairment
+Irritability
+Crabby
+Irritable Mood
+Temper tantrum
+Loss of appetite
+Early satiety
+Myalgia
+Pain
+Abdominal Pain
+Back Pain
+Cramping
+Headache
+Other Pain
+Physical impairment
+Polydipsia
+Problem with smell or
+taste
+Panic
+Respiratory symptoms
+Abnormal breathing
+Chest tightness
+Dyspnea
+Wheezing
+School problem
+Skin symptoms
+Pruritus
+Skin rash
+Sleep problems
+Night terrors
+Nightmares
+Sleep disorders
+Sleeplessness
+Not getting enough sleep
+Figure 1: PASC Lexicon with Examples of Representative Symptoms.
+Intake progress notes
+Ambulatory patients
+RECOVER
+MedText
+Section Split
+Sentence Split
+Named Entity
+Recognition
+Assertion
+Detection
+Long COVID lexicon
+UMLS
+Performance
+Evaluation
+Population-level
+Prevalence Study
+Assessment
+Figure 2: The architecture of the NLP pipeline.
+The 25 categories, together with the initial symptom lexicon, were identified by physicians (led by CF).
+The categories and lexicon were then manually mapped and consolidated using UMLS and SNOMED CT.
+To make the lexicon comprehensive, we included all synonyms from the UMLS concepts and the lexicon
+extracted from PASCLex25. We further leveraged the Broader-Narrower relationship (hierarchies between
+concepts) and included all children of a concept in the initial lexicon.
+2.2 A Hybrid NLP Pipeline for PASC Symptom Extraction
+We developed MedText, a hybrid NLP pipeline that integrates both rule-based modules and deep learning
+models at different stages (Figure 2). At a high level, MedText employs a text preprocessing module to split
+the clinical notes into sections and sentences. It then uses the PASC lexicon and a rule-based NER module to
+extract PASC symptoms from clinical notes. Finally, a BERT-based assertion detection module is employed
+to determine whether the extracted symptom is positive or not (e.g., “there is no diarrhea”).
+2.3 Quantitative Results for Assertion Detection
+In this study, we used three popular domain-specific pretrained BERT models, BioBERT, ClinicalBERT, and
+BiomedBERT27–29, to develop the assertion detection module in MedText. All BERT models were fine-tuned
+using the combination of the WCM Training Set and public i2b2 2010 assertion dataset30 (See Methods).
+We evaluated the performance of assertion detection using the clinical notes in the WCM Internal Validation
+3
+Figure 3: The performance of three BERT variants on the WCM internal validation set. ns - not significant;
+** - P ≤0.01; *** - P ≤0.001; **** - P ≤0.0001.
+and Multi-site External Validation sets. Performance was measured regarding precision, recall, and F1-score
+(the harmonic mean of the precision and recall) across all the symptoms in these two datasets.
+Figure 3 presents a comparative performance analysis on the WCM Internal Validation dataset. Among the
+three models, the BiomedBERT consistently shows superior performance across all metrics, particularly in
+an average recall of 0.75 ± 0.040 (95% CI: 0.676–0.834) and an average F1 score of 0.82 ± 0.028 (95% CI:
+0.766 – 0.876).
+Figure 4 presents a comparative performance analysis on the Multi-site External Validation dataset. The
+precision, recall, and F1 scores show no significant differences across the models (i.e., P > 0.05 in t-tests).
+BiomedBERT achieved an average recall of 0.775 (95% CI: 0.726 – 0.825) and an average F1 score of 0.745
+[95% CI: 0.697 – 0.796]) and ClinicalBERT (recall of 0.775 [95% CI: 0.713 – 0.838]) and F1 of 0.730 [95%
+CI: 0.649 – 0.812]), lower than BioBERT (recall of 0.792 [95% CI: 0.715 – 0.868] and F1 of 0.782 [95% CI:
+0.716 – 0.848]). The average precision of BiomedBERT (0.737 [95% CI: 0.646 – 0.829]) is not significantly
+different from BioBERT (0.792 [95% CI: 0.704 – 0.880]), but is higher than ClinicalBERT (0.710 [95% CI:
+0.598 – 0.822]).
+2.4 Frequency Analysis of PASC Symptoms in The Population-Level Prevalence Study
+Based on the WCM Internal Validation and Multi-site External Validation results, the BiomedBERT model
+was selected for a population-level prevalence study.
+Figure 5 summarizes the positive (i.e., “positive”) mentions and negative (i.e., “non-positive”) mentions of
+25 PASC categories identified by MedText on the Population-level Prevalence Study dataset. Among all 11
+sites, the Positive mention of “pain” is the leading symptom mentioned. Other leading symptom categories
+include headache, digestive issues, depression, anxiety, respiratory symptoms, and fatigue, in potentially
+varying orders across different sites.
+Figures 6A and 6B further compare the symptom-mentioning patterns in terms of the relative frequency
+of the symptom categories in different sites through the Spearman correlation test. In particular, the lowest
+Spearman correlation coefficient for the positive symptom-mentioning patterns between any two sites and
+the entire dataset exceeds 0.83, while for negative symptom-mentioning patterns, it is above 0.72. In the
+Spearman correlation test, any pair of sites or between any site and the overall dataset showed P < 0.0001.
+Figure 7 shows the Spearman correlation coefficients for the positive mentions between each pair of the 25
+symptom categories and the total number of symptom mentions.
+4
+Figure 4: Multi-site External Validation. Radar Chart for the performance metrics—(a) precision, (b) recall,
+and (c) F1-score—of the three fine-tuned MedText-BERT pipeline variants on the 100-note non-WCM multi-
+site external validation set. The metrics are computed for the positive (i.e., “Present”) symptom mentions.
+The BERT-based models trained/fine-tuned in different scenarios for assertion detection are: BioBERT fine-
+tuned, BiomedBERT fine-tuned, BiomedBERT benchmark, and ClinicalBERT fine-tuned from left to right
+in each subfigure.
+5
+Figure 5: Frequency analysis of positive (“present”) in red and negative (“non-present”) in blue symptom
+category occurrences in different sites.
+6
+Figure 6: Population-level Prevalence Study. (A) Spearman correlation coefficients between the positive
+(i.e., “present”) symptom mentioning patterns of sites and the overall dataset. (B) Spearman correlation
+coefficients between the negative (i.e., “non-present”) symptom-mentioning patterns of sites and the overall
+dataset.
+Figure 7: Cross-symptom-category correlation test and symptom-category distribution. Spearman correla-
+tion coefficients between the positive (i.e., “Present”) symptom-mentioning patterns of symptom categories.
+The total count of positive symptom mentions for each symptom category is to the right of the correlation
+diagram.
+7
+Figure 8: Module-wise runtime summary of MedText processing. The mean (shown by the values on each
+bar) and standard deviation of the runtime of each module in MedText were computed for the mean runtime
+per note across the 11 sites.
+2.5 Processing Time
+We deployed MedText on an AWS Sagemaker platform with a Tesla T4 GPU configuration, achieving
+efficient processing of the large-scale clinical notes datasets. Overall, MedText processed each note at an
+average of 2.448±0.812 seconds across the 11 sites. Figure 8 shows the module-wise summary of the mean
+and standard deviation of runtime in seconds in the population-level prevalence study across 11 sites.
+2.6 Comparison between Rule-Based Module and GPT-4 for Symptom Extraction
+To strengthen our evaluation, we conducted an experiment comparing our rule-based NER module with a
+large language model, GPT-4, for PASC-related symptom extraction (see Methods). Using a random sample
+of 20 intake notes from the WCM internal validation set, we applied GPT-4 (API version: 2024-05-01-
+preview) with a prompt specifying the 25 predefined symptom categories. GPT-4 generated 189 symptom
+mentions, which ZB manually reviewed to assess correctness—specifically, whether each mention existed
+in the note and corresponded to a valid symptom or synonym. This review identified 9 incorrect mentions,
+yielding a precision of 95.24% for GPT-4-based NER.
+To estimate recall of the NER module in our hybrid NLP pipeline, we constructed a proxy ground truth by
+taking the union of all verified correct mentions identified by GPT-4 (180) and our rule-based NER module
+(640) on these 20 notes. This union set contains 706 verified correct mentions. Based on this reference set,
+the rule-based module achieved a recall of 90.65%.
+In addition, our prompt also required GPT-4 to generate assertion labels. These assertion detection results
+produced by GPT-4 were manually reviewed for correctness, which achieved a weighted F1 score of 97.78%
+and a balanced accuracy of 97.72% on the 180 correctly recognized symptom mentions.
+DISCUSSION
+In this study, we developed a hybrid NLP pipeline combining rule-based and deep learning techniques, lever-
+aging state-of-the-art techniques31,32 for clinical text preprocessing and symptom extraction. Our pipeline
+not only identified relevant symptoms of PASC but also accurately evaluated whether the symptoms are
+truly present or absent. This pipeline includes a PASC lexicon we developed with clinical specialists, with
+25 symptom categories and 798 finer-grained UMLS concepts and synonyms. We adapted a BERT-based
+module for symptom assertion detection. For model training and evaluation, we curated 160 progress notes
+from 11 health systems as part of the RECOVER initiative network across the U.S. Experiments on the WCM
+Internal Validation set and the Multi-site External Validation set show that BiomedBERT achieved the overall
+8
+best performance in assertion detection. Our model showed high precision and recall, achieving an average
+F1 score of 0.82 in internal validation at one site and 0.76 in external validation across 10 sites for assertion
+detection, showing good generalizability across sites. Additionally, we collected 47,654 progress notes for
+a population-level prevalence study on PASC symptom-mention patterns. Our pipeline processed each note
+at an average speed of 2.448±0.812 seconds. Spearman correlation tests showed ρ > 0.83 for positive
+mentions and ρ > 0.72 for negative mentions, both with P < 0.0001. These results demonstrate that our
+pipeline effectively, consistently, and efficiently captures PASC symptoms across multiple health systems.
+Our population-level prevalence study provided novel insights and may advance the understanding of the
+symptom-mentioning patterns related to PASC, shedding light on a more comprehensive understanding of
+PASC for future research and clinical practice.
+The hybrid NLP pipeline we developed is tailored explicitly to PASC, while previous research has explored
+assertion detection in different clinical contexts, e.g., the BERT-based33 and prompt-based34. In particular,
+BERT-based models applied to Chia35 achieved an F1 score of ∼0.77 for “Present” and a micro-averaged
+F1 score of ∼0.72. Although these models claimed over 0.9 in both the F-1 score for “Present” and
+the micro-averaged F1 score evaluated on conventional benchmarking datasets, i2b2 201030, BioScope36,
+MIMIC-III37, and NegEx38, none of them have addressed the unique challenges posed by PASC-related
+narratives. Our model’s performance on the curated RECOVER datasets achieved an average F1 score of
+0.82 in internal validation and 0.76 in 10-site external validation via BiomedBERT. This demonstrates that
+domain-specific models remain necessary compared to general-domain language models, given the nascent
+and rapidly evolving nature of PASC-related medical narratives. The lack of standardized terminology25,
+coupled with the limited availability of annotated training data39 and the heterogeneous symptomatology
+of PASC40, presents different challenges that are not as prevalent in more established clinical note datasets
+for NLP tasks. Comparative analyses of holistic processing speeds across different NLP pipelines with
+BERT-based modules for unstructured clinical notes are not extensively documented in the literature, and
+the differences between datasets and experimental setups can undermine fair comparison. Nonetheless, our
+model offers a competitive runtime of ∼2.5 seconds per note compared to LESA-BERT, a model originally
+designed for patient message triage, which required approximately 212.6 seconds to process its test set on a
+CPU with a batch size of 1. Its distilled versions, such as Distil-LESA-BERT-6 and Distil-LESA-BERT-3,
+showed inference times of 79.8 seconds and 40.8 seconds, respectively41. This demonstrates the efficiency
+of our pipeline.
+We conducted error analysis during multi-site external validation and identified site-specific performance
+limitations, revealing potential causes that may affect model effectiveness. First, inconsistent manual anno-
+tations, e.g., “as needed” cases, led to varied interpretations of symptoms as rigorously “positive”, “hypothet-
+ical” in EHR was identified as “non-positive”; while phrases containing “history of”, symptoms were often
+misclassified as “positive”. Second, sentences listing multiple symptoms after the negation phrase “negative
+for” posed challenges. Excessive spacing in these instances caused the model to misinterpret the context,
+leading to symptoms frequently misclassified as “positive”, likely due to their distance from the negation
+keyword. Third, symptoms that were excluded from the performance evaluation, e.g., due to unresolved
+mismatches, could affect the NLP pipeline’s overall performance. Hopefully, these findings may provide
+clues for those working toward enhancing their model’s ability to address more intricate textual contexts or
+classify temporal context.
+To date, we have not found any study reported applying Large Language Models (LLMs) (e.g., general-
+purpose models ChatGPT42, Gemini43,44, and open-source, medical domain-specific models OpenBioLLM-
+70B45 and Llama-3-8B-UltraMedical46) on PASC-related symptom extraction with assertion detection. To
+strengthen our evaluation, we randomly selected 20 notes from the 30-note WCM internal validation subset
+and applied GPT-4 to perform both NER and assertion detection, and compared with the rule-based NER
+9
+module in symptom extraction. Without specifying PASC-specific lexicon, GPT-4 was able to achieve
+better performance in assertion detection on the 180 manually verified correctly identified symptoms, with
+a weighted F1 score of 97.78%. However, it also missed a notable amount of symptom/synonym-related
+tokens compared to the 640 correct symptom mentions by our rule-based NER module on the same 20 notes.
+Our study has limitations: (i) Our current performance evaluation focused on the positive or negative mentions
+of symptoms already identified in the MedText pipeline. However, whether all possible symptoms are
+captured remains unclear. (ii) We excluded 18 symptom mentions from the performance evaluation due
+to unresolved mismatches that may affect the results of symptom extraction. (iii) Our primary goal in
+this work is to develop a generalizable NLP pipeline for extracting PASC-relevant symptoms from clinical
+narratives, with intake notes serving as an initial use case. While the intake notes are often the earliest
+comprehensive documentation of a patient’s initial concerns, they may overrepresent acute or prominent
+symptoms, potentially biasing the extracted distributions. To address these limitations, we will enhance our
+pipeline in the future via: (i) expanding the annotated datasets in collaboration with clinicians to annotate all
+possible symptoms given a note, (ii) integrating structured EHR data and COVID-related symptoms extracted
+from unstructured clinical notes, (iii) evaluating how different note types contribute to identifying high-risk
+patients and explore how the extracted outputs could be integrated into clinical workflows, for example, by
+flagging patients for specialist referral or follow-up care. Since our pipeline itself is not restricted to intake
+notes, it can be directly applied to other types of notes.
+All the above demonstrate that our hybrid NLP pipeline, namely MedText, can extract symptoms effectively,
+efficiently, and robustly. Our MedText may contribute to (i) unlocking rich clinical information from narrative
+clinical notes, (ii) assisting clinicians in diagnosing PASC efficiently and precisely, (iii) supporting predictive
+modeling and risk assessment about PASC, (iv) facilitating the PASC clinical decision support system, and
+(v) adapting our pipeline for exact symptoms of other diseases may enable large-scale research and public
+health insights. However, MedText may not capture all nuanced clinical details, highlighting the importance
+of clinical review to ensure accuracy and completeness in symptom identification.
+3. METHODS
+3.1 Study cohort
+We collected 47,814 clinical notes from 11 sites within the RECOVER network: Weill Cornell Medicine
+(WCM), Medical College of Wisconsin, Cincinnati Children’s Hospital Medical Center, The Children’s
+HospitalofPhiladelphia, UniversityofMissouri, NationwideChildren’sHospital, NemoursChildren’sHealth
+System, Oregon Community Health Information Network, Seattle Children’s, UT Southwestern Medical
+Center, and Montefiore Medical Center. The data follow the Observational Medical Outcomes Partnership
+(OMOP) Common Data Model (CDM), with the Institutional Review Board (IRB) approval obtained under
+Biomedical Research Alliance of New York (BRANY) protocol #21-08-508.
+3.2 Curating Data for PASC Symptom Review and NLP Pipeline Evaluation
+For pipeline development and validation, we sampled 60 ambulatory patients from WCM and 100 from 10
+other sites in the RECOVER network (10 patients/site) (Table 1). Then, we extracted each patient’s intake
+progress notes for human annotators. Here, we hypothesize that the intake notes contain the most detailed
+list of problems for each patient. The 60 WCM notes form the ”Model Development Dataset”, in which 30
+were used as the WCM Training set, and the other 30 as the WCM Internal Validation set. The 100 notes
+from 10 other sites form the Multi-site External Validation set (Figure 9). We also integrated the publicly
+available 2010 i2b2 assertion dataset30 with the WCM training set for model fine-tuning.
+For annotation, we designed a qualified review pipeline to generate manual annotations for symptom men-
+10
+Table 1: Datasets curated from the 11 sites of the RECOVER Initiative.
+Dataset
+Patients
+Notes
+Sentences
+Mentions
+Sites
+Model Development Dataset
+WCM Training
+30
+30
+642
+1,324
+WCM
+2010 i2b2 assertion dataset28
+-
+-
+3,055
+4,243
+Partners Healthcare, Beth Israel Deaconess Medical
+Center, University of Pittsburgh Medical Center
+Internal Validation
+30
+30
+350
+953
+WCM
+Multi-site External Validation
+100
+100
+1,113
+1,886
+Medical College of Wisconsin, Cincinnati Children’s
+Hospital Medical Center, The Children’s Hospital
+of Philadelphia, University of Missouri, Nationwide
+Children’s Hospital, Nemours Children’s Health Sys-
+tem, Oregon Community Health Information Network,
+Seattle Children’s, UT Southwestern Medical Center,
+and Montefiore Medical Center
+Population-level Prevalence Study
+47,654
+47,654
+-
+-
+Weill Cornell Medicine, Medical College of Wiscon-
+sin, Cincinnati Children’s Hospital Medical Center,
+The Children’s Hospital of Philadelphia, University of
+Missouri, Nationwide Children’s Hospital, Nemours
+Children’s Health System, Oregon Community Health
+Information Network, Seattle Children’s, UT South-
+western Medical Center, and Montefiore Medical Cen-
+ter
+RECOVER patients
+Clinical notes
+Sampled
+    47,814 patients
+    47,814 notes
+WCM training
+         30 patients
+         30 notes
+    1,324 mentions
+WCM validation
+      30 patients
+      30 notes
+    953 mentions
+Multi-site validation
+       100 patients
+       100 notes
+    1,886 mentions
+Non-Intake notes
+Non-Progress notes
+Random-filtered
+Unrelated or
+disagreed between
+two annotators
+Sampled
+        160 patients
+        160 notes
+     4,163 mentions
+Multi-site validation
+    47,654 patients
+    47,654 notes
+Figure 9: Data construction workflow.
+11
+Figure 10: Example screenshot for Screen_Tool. Screen_Tool is an open-source R-based software for
+manual annotation of symptom mention.
+tions.
+We first applied MedText to extract symptoms from the notes.
+Then, we used Screen-Tool, an
+open-source R software developed by TB, to determine the assertion status for each symptom mention (e.g.,
+Figure 10). Screen-Tool displays each extracted symptom highlighted in its context (the passage it belongs
+to), along with the symptom category identified by MedText as its concept. The annotators are required to
+determine whether this token is “related” or “unrelated” to this concept, as well as which of the five statuses it
+belongs to: “present”, “absent”, “hypothetical”, “past”, or “other”. For performance validation of assertion
+detection, these statuses are eventually mapped into a binary status: positive vs. non-positive. Specifically,
+“present” mentions are mapped to positive, while all the other statuses of mentions are deemed Negative.
+Two annotators (ZB and ZX) independently reviewed and annotated each mention of extracted symptoms.
+We used Cohen’s Kappa (CK) metric to measure inter-rater agreement (IRA). This process achieved a value
+of 0.98 on the WCM annotated subset (i.e., including both the WCM training and WCM internal validation
+sets), and 0.99 on the multi-site external validation set. All mentions that had disagreements between the
+two annotators or were unrelated were removed from the dataset. Specifically, 24 out of 2,301 mentions
+(< 1.05%) were removed from the WCM annotated subset, and 18 out of 1,886 (< 0.5%) were removed
+from the multi-site external validation set. Among the 4,187 mentions extracted from 160 annotated notes,
+12 were ‘unrelated’ NER results where the trigger token did not match a recognized symptom or synonym.
+This yields an overall NER precision of 99.7%, with 99.5% (11 unrelated) on the WCM subset and 99.9%
+(1 unrelated) on the multi-site external validation set.
+12
+3.3 Constructing PASC Lexicon
+We first compiled an initial symptom lexicon with 25 categories for PASC-related terms, based on input
+from subject matter experts (SMEs) and a literature review6. PASC symptoms were defined as patient
+characteristics occurring in the post-acute COVID-19 period. Next, we searched the symptoms in the UMLS
+Metathesaurus® (version 2023AB) in the English language, with vocabulary sources of “SNOMEDCT_US”
+and“MeSH”.WeincludedconceptsthatcanbestrictlymatchedinUMLS,togetherwiththeirchildren(narrow
+concepts). To make the lexicon comprehensive, we included all synonyms from the UMLS concepts and
+the lexicon extracted from PASCLex25. This process yielded a hierarchical knowledge graph comprising
+terms and keywords that define 798 symptom sub-concepts and synonyms, organized into 25 categories
+(Supplementary File 2).
+3.4 Developing a Hybrid NLP Pipeline for PASC Symptom Extraction
+We developed a hybrid NLP pipeline that combines rule-based and deep-learning modules to mine PASC
+symptoms. At a high level, MedText employs a text preprocessing module to split the clinical notes into
+sections and sentences. It then uses a rule-based NER module that utilizes a clinician-curated PASC lexicon
+to extract PASC symptoms from clinical notes. It then employs a BERT-based assertion detection module to
+assess if the extracted symptom is absent (e.g., “there is no diarrhea”) (Figure 9).
+MedText31 is an open-source clinical text analysis system developed with Python. It offers an easy-to-use
+text analysis pipeline, including de-identification, section segmentation, sentence split, NER, constituency
+parsing, dependency parsing, and assertion detection. For this study, we utilized modules ranging from
+section segmentation and sentence split to NER and assertion detection (Figure 9).
+The section split module divides the report into sections. This rule-based module uses a list of section titles
+to divide the notes. We used rules from medspacy, which were adapted from SecTag and expanded through
+practice47. The sentence split module splits the report into sentences using NLTK48. The NER module
+recognizes mention spans of a particular entity type (e.g., PASC symptoms) from the reports. Technically, it
+uses a rule-based method via SpaCy’s PhraseMatcher to efficiently match large terminology lists. Here, the
+NER step identifies and clarifies concepts of interest according to the 798 symptoms and their synonyms in
+the PASC lexicon. The assertion detection module determines the status of the recognized concept based on
+its context within the sentence34, as detailed below in the assertion detection module development.
+Additionally, MedText features a flexible modular design, provides a hybrid text processing schema, and
+supports raw text processing and local processing.
+It also adopts BioC49 as the unified interface, and
+standardizes the input/output into a structured representation compatible with the OMOP CDM. This allows
+us to deploy MedText and validate its performance across multiple, disparate data sources. In this study, we
+deployed MedText on an AWS Sagemaker platform with a Tesla T4 GPU configuration and 15 GiB of CPU
+memory.
+3.5 Developing the Assertion Detection Module
+In this study, we used three popular domain-specific pretrained BERT models, BioBERT, ClinicalBERT, and
+BiomedBERT28–30, to develop classifiers for the assertion detection step in the MedText pipeline after ex-
+tracting symptom mentions. Detailed descriptions of these pretrained BERT models and their hyperparameter
+settings are provided in the Table 2.
+To construct training sets for model development, we utilized a publicly available 2010 i2b2 assertion dataset
+of clinical notes30,31, which consists of 4,359 sentences and 7,073 labels collected from three sites: Partners
+Healthcare, Beth Israel Deaconess Medical Center, and the University of Pittsburgh Medical Center30,31, and
+the WCM Model Training set to construct training sets for model development. In particular, 3,055 sentences
+13
+Table 2: Hyperparameters for BERT-based assertion detection model training.
+Model
+Hyperparameters
+BioBERT
+The following hyperparameters were used during training (provided on HuggingFace):
+• learning_rate: 2e-05
+• train_batch_size: 8
+• eval_batch_size: 8
+• seed: 42
+• optimizer: Adam with betas=(0.9,0.999) and epsilon=1e-08
+• lr_scheduler_type: linear
+• num_epochs: 10
+ClinicalBERT
+The following hyperparameters were used during training (provided on HuggingFace):
+• batch_size: 32
+• Maximum sequence length: 256
+• Learning rate: 5e-5
+BiomedBERT
+The following hyperparameters were used during training (provided in the paper):
+• Optimizer: Adam
+• Learning Rate Schedule: Slanted triangular learning rate schedule with warm-up
+in 10% of steps and cool-down in 90% of steps.
+• Peak Learning Rate: 6 × 10−4
+• Training Steps: 62,500 steps
+• Batch Size: 8,192
+• Masking Rate for Whole-Word Masking (WWM): 15%
+and 4,243 mentions from the public i2b2 2010 assertion dataset30,31 merged with the 30-note WCM Model
+Training set were used as the training set for fine-tuning the BERT-based assertion detection models. This
+integrated dataset is referred to as the i2b2&WCM-merged training set. To evaluate the effectiveness of
+our fine-tuning approach, we conducted comparative analyses among BiomedBERT29, BioBERT27, and
+ClinicalBERT28 - all of which were trained on the i2b2&WCM-merged training set. We used the WCM
+internal validation set (30 notes, 350 sentences, and 953 mentions) for model selection and the 10-site multi-
+site external validation set (100 notes, 1,113 sentences, and 1,886 mentions) for performance evaluation
+(Table 1). This direct comparison offered insights into the relative strengths of each model in handling
+biomedical text. The multi-category prediction task of multiple possible assertion statuses from the original
+BERT models was revised into a binary prediction task. Specifically, only the “present” status is mapped to
+present with a label of 1. In contrast, all other possible statuses, including “absent”, “hypothetical”, and any
+form of “uncertain”, are mapped to negative with a label of 0.
+3.6 Evaluation Plan
+We explored three different models of assertion detection in theMedText pipeline and consideredtwo different
+application scenarios: the numerical performance evaluation using the smaller datasets with manually
+annotated ground-truth labels (i.e., the Internal Validation set, and the Multi-site External Validation set) and
+the population-level prevalence study using approximately 5,000 clinical notes from each site from the 11
+sites of the RECOVER network (i.e., the population statistics set). The patient demographics (race, ethnicity,
+age, and sex) across the 11 RECOVER sites in the population-level prevalence study are summarized in
+Table 3.
+In the numerical performance evaluation, each model was assessed using precision, recall, and F1 score.
+14
+Table 3: Summary of patient demographics. Patient demographics (race, ethnicity, age, and sex) across the
+11 RECOVER sites.
+cchmc
+chop
+missouri
+monte
+nationwide
+nemours
+seattle
+ochin
+utsw
+mcw
+wcm
+Age (mean ± SD)
+20.2 ± 4.4
+18.9 ± 2.6
+56.6 ± 18.7
+58.0 ± 16.2
+25.0 ± 11.1
+18.6 ± 2.0
+19.0 ± 3.4
+50.5 ± 15.9
+60.5 ± 15.9
+57.6 ± 16.1
+57.3 ± 18.1
+[95% CI]
+(20.1, 20.3)
+(18.8, 19.0)
+(56.1, 57.2)
+(57.6, 58.5)
+(24.7, 25.4)
+(18.5, 18.7)
+(18.9, 19.2)
+(50.1, 51.0)
+(60.1, 60.9)
+(57.1, 58.0)
+(56.7, 57.8)
+Race
+American Indian
+or Alaska Native
+8
+(0.2%)
+2
+(0.0%)
+15
+(0.3%)
+12
+(0.2%)
+3
+(0.1%)
+2
+(0.1%)
+13
+(0.7%)
+87
+(1.8%)
+16
+(0.3%)
+6
+(0.1%)
+9
+(0.2%)
+Asian
+75
+(1.5%)
+193
+(3.9%)
+26
+(0.5%)
+135
+(2.7%)
+72
+(2.0%)
+46
+(2.2%)
+113
+(6.1%)
+436
+(9.2%)
+201
+(4.0%)
+56
+(1.1%)
+406
+(9.4%)
+Black
+or African American
+900
+(18.0%)
+1308
+(26.2%)
+565
+(11.5%)
+1766
+(35.3%)
+962
+(26.3%)
+372
+(17.5%)
+121
+(6.6%)
+771
+(16.3%)
+868
+(17.4%)
+929
+(18.6%)
+634
+(14.7%)
+Native Hawaiian
+or Other Pacific Islander
+6
+(0.1%)
+2
+(0.0%)
+2
+(0.0%)
+16
+(0.3%)
+9
+(0.2%)
+0
+(0.0%)
+17
+(0.9%)
+30
+(0.6%)
+6
+(0.1%)
+6
+(0.1%)
+2
+(0.0%)
+White
+3746
+(74.9%)
+2904
+(58.1%)
+4207
+(85.6%)
+567
+(11.3%)
+2308
+(63.1%)
+1215
+(57.0%)
+1128
+(61.3%)
+2814
+(59.4%)
+3455
+(69.2%)
+3823
+(76.5%)
+2125
+(49.2%)
+Multiple races
+126
+(2.5%)
+132
+(2.6%)
+0
+(0.0%)
+0
+(0.0%)
+184
+(5.0%)
+66
+(3.1%)
+85
+(4.6%)
+65
+(1.4%)
+0
+(0.0%)
+23
+(0.5%)
+0
+(0.0%)
+Refuse to answer
+12
+(0.2%)
+0
+(0.0%)
+8
+(0.2%)
+279
+(5.6%)
+9
+(0.2%)
+20
+(0.9%)
+89
+(4.8%)
+128
+(2.7%)
+0
+(0.0%)
+11
+(0.2%)
+0
+(0.0%)
+No information
+0
+(0.0%)
+3
+(0.1%)
+0
+(0.0%)
+389
+(7.8%)
+0
+(0.0%)
+0
+(0.0%)
+0
+(0.0%)
+5
+(0.1%)
+30
+(0.6%)
+1
+(0.0%)
+1080
+(25.0%)
+Other
+127
+(2.5%)
+0
+(0.0%)
+84
+(1.7%)
+1836
+(36.7%)
+0
+(0.0%)
+394
+(18.5%)
+275
+(14.9%)
+39
+(0.8%)
+99
+(2.0%)
+140
+(2.8%)
+0
+(0.0%)
+Unknown
+0
+(0.0%)
+456
+(9.1%)
+8
+(0.2%)
+0
+(0.0%)
+111
+(3.0%)
+15
+(0.7%)
+0
+(0.0%)
+366
+(7.7%)
+320
+(6.4%)
+5
+(0.1%)
+64
+(1.5%)
+Ethnicity
+Hispanic
+173
+(3.5%)
+445
+(8.9%)
+91
+(1.9%)
+2115
+(42.3%)
+205
+(5.6%)
+467
+(21.9%)
+311
+(16.9%)
+1723
+(36.3%)
+570
+(11.4%)
+168
+(3.4%)
+669
+(15.5%)
+Non-Hispanic
+4799
+(96.0%)
+4517
+(90.3%)
+4801
+(97.7%)
+2493
+(49.9%)
+3426
+(93.7%)
+1623
+(76.2%)
+1440
+(78.2%)
+2802
+(59.1%)
+4248
+(85.0%)
+4815
+(96.3%)
+3651
+(84.5%)
+Sex
+Male
+2118
+(42.4%)
+2088
+(41.8%)
+2249
+(45.8%)
+1556
+(31.1%)
+1237
+(33.8%)
+868
+(40.8%)
+778
+(42.3%)
+1577
+(33.3%)
+2097
+(42.0%)
+1967
+(39.3%)
+1711
+(39.6%)
+Female
+2882
+(57.6%)
+2912
+(58.2%)
+2666
+(54.2%)
+3444
+(68.9%)
+2421
+(66.2%)
+1262
+(59.2%)
+1060
+(57.6%)
+3155
+(66.5%)
+2898
+(58.0%)
+3033
+(60.7%)
+2609
+(60.4%)
+For each trained and fine-tuned model, bootstrapping was applied in 100 iterations on the WCM Internal
+Validation set. The performance of these models was evaluated using the same metrics, along with their
+mean values, standard deviation, and 95% confidence intervals.
+On the prevalence of PASC-related symptoms at the population level, we analyzed symptom mentions
+identified by the optimal configuration of our NLP pipeline across 11 RECOVER sites. Using the MedText
+pipeline, we analyzed 47,654 notes from these sites as a Population-level Prevalence Study dataset (Figure
+5). Specifically, this dataset included 5,000 intake progress notes from unique patients per site, except for
+three sites: Nationwide had 3,680 notes, Nemours had 2,132, and Seattle had 1,842. We then applied the
+Spearman rank correlation test to compare symptom-mentioning patterns across sites. We conducted pairwise
+Spearman tests between the sites and symptom categories, for positive and negative mentions, respectively.
+For between-site analysis, the symptom mentions over the 25 symptom categories of each site form the
+symptom-mentioning vector for this site. For between-site analysis, the symptom-mentions across the 11
+sites of each symptom category form the symptom-mentioning vector of this symptom category.
+3.7 Symptom Extraction and Assertion Detection Using Large Language Model: GPT-4
+To compare our hybrid NLP pipeline with large language models for PASC symptom extraction and assertion
+detection, we conducted an experiment using GPT-4 (API version: 2024-05-01-preview). We randomly
+selected 20 intake notes from the subset used for WCM internal validation. GPT-4 was prompted with only
+the 25 predefined PASC symptom categories and instructed to extract all symptom mentions along with
+their assertion status (i.e., positive or negative). The model was allowed to rely on its internal knowledge to
+recognize synonymous expressions without being provided explicit lexicons. The specific prompt is provided
+in Supplementary File 3.
+15
+Each output mention was manually reviewed (by ZB) to determine whether the identified phrase existed in
+the original note and correctly matched a symptom or its synonym. To create a proxy ground truth for recall
+estimation, we took the union of all verified correct mentions extracted by either GPT-4 or the rule-based
+NER pipeline. Using this set, we evaluated recall for the rule-based method and precision for GPT-4. The
+assertion labels assigned by GPT-4 were also manually reviewed for correctness.
+ACKNOWLEDGMENTS
+Funding: This study is part of the NIH Researching COVID to Enhance Recovery (RECOVER) Initiative,
+which seeks to understand, treat, and prevent the post-acute sequelae of SARS-CoV-2 infection (PASC). This
+research was funded by the National Institutes of Health (NIH) Agreement OTA OT2HL161847 as part of
+the Researching COVID to Enhance Recovery (RECOVER) research program.
+Ethics Oversight: Institute Review Board (IRB) approval was obtained under Biomedical Research Alliance
+of New York (BRANY) protocol #21-08-508. As part of the Biomedical Research Alliance of New York
+(BRANY IRB) process, the protocol has been reviewed in accordance with the institutional guidelines. The
+Biomedical Research Alliance of New York (BRANY) waived the need for consent and HIPAA authorization.
+IRB oversight was provided by the Biomedical Research Alliance of New York, protocol # 21-08-508-380.
+Data Availability Statement: Data utilized for this study were obtained from the PCORnet-RECOVER
+Amazon Warehouse Services (AWS) enclave, which comprises 40 participating sites from PCORnet1. Please
+send all data questions or access requests to the corresponding author, who will direct them accordingly.
+We acknowledge the following RECOVER-EHR Consortium Members:
+PCORnet Core Contributors
+Louisiana Public Health Institute: Thomas W. Carton, PI, Anna Legrand, Elizabeth Nauman
+Weill Cornell Medicine:Rainu Kaushal, PI, Mark Weiner, PI, Sajjad Abedian, Dominique Brown, Christo-
+pher Cameron, Thomas Campion, Andrea Cohen, Marietou Dione, Rosie Ferris, Wilson Jacobs, Michael
+Koropsak, Alexandra LaMar, Colby Lewis V., Dmitry Morozyuk, Peter Morrisey, Duncan Orlander, Jyotish-
+man Pathak, Mahfuza Sabiha, Edward J. Schenck, Catherine Sinfield, Stephenson Strobel, Zoe Verzani, Fei
+Wang, Zhenxing Xu, Chengxi Zang, Yongkang Zhang
+Children’s Hospital of Philadelphia: L. Charles Bailey, mPI, Christopher B. Forrest, mPI, Rodrigo Azuero-
+Dajud, Andrew Samuel Boss, Morgan Botdorf, Colleen Byrne, Peter Camacho, Abigail Case, Kimberley
+Dickinson, Susan Hague, Jonathan Harvell, Miranda Higginbotham, Kathryn Hirabayshi, Sandra Ilunga,
+Rochelle Jordan, Aqsa Khan, Vitaly Lorman, Nicole Marchesani, Sahal Master, Jill McDonald, Nhat Nguyen,
+Hanieh Razzaghi, Qiwei Shen, Alexander Shorrock, Levon H. Utidjian, Kaleigh Wieand
+PCORnet Data Contributors
+Albert Einstein College of Medicine Parsa Mirhaji, PI, Selvin Soby | Cincinnati Children’s Hospital Medical
+Center Nathan M. Pajor, PI, Jyothi Priya Alekapatti Nandagopal | Children’s Hospital of Philadelphia L.
+Charles Bailey, mPI, Christopher B. Forrest, mPI | Medical College of Wisconsin Reza Shaker, PI, Bradley
+W. Taylor, PI, Alex Stoddard | Nationwide Children’s Hospital Kelly Kelleher, PI | Nemours/Alfred I. duPont
+Hospital for Children H. Timothy Bunnell, PI, Daniel Eckrich | OCHIN, Inc. Marion Ruth Sills, PI | Seattle
+Children’s Hospital Dimitri A. Christakis, PI, Daksha Ranade | University of Missouri School of Medicine
+Abu Saleh Mohammad Mosa, PI, Xing Song | University of Texas Southwestern Medical Center Lindsay G.
+Cowell, PI | Weill Cornell Medicine Rainu Kaushal, mPI, Thomas Campion
+Authorship has been determined according to ICMJE recommendations.
+1https://pcornet.org/
+16
+We would like to thank the National Community Engagement Group (NCEG); all patients, caregivers, and
+community representatives; and all participants enrolled in the RECOVER Initiative. We would like to thank
+the patient representative, Elizabeth Noriega, for her contributions to this manuscript.
+This content is solely the responsibility of the authors and does not necessarily represent the official views
+of the RECOVER Program, the NIH, or other funders.
+Contributions
+All authors have read and approved the manuscript. Z.B.: Investigation, Writing, Formal analysis, Method-
+ology; Z.X.: Investigation, Writing, Formal analysis; C.S.: Investigation, Writing; C.Z.: Investigation,
+Writing; H.T.B.: Investigation, Writing; C.S.: Investigation, Writing; J.R.: Investigation, Writing; A.T. M:
+Investigation, Writing; C.C.B.: Investigation, Writing; M.W.: Investigation, Writing; T.R.C.: Investigation,
+Writing; T.C.: Investigation, Writing; C.B.F.: Investigation, Writing; R.K.: Investigation, Writing, Funding
+acquisition, Resources; F.W.: Investigation, Writing, Supervision; Y.P.: Investigation, Writing, Supervision,
+Conceptualisation.
+Competing interests
+No authors have any financial or non-financial competing interests.
+References
+[1] Committee on Examining the Working Definition for Long COVID, Board on Health Sciences Policy,
+Board on Global Health, Health and Medicine Division, and National Academies of Sciences, Engi-
+neering, and Medicine. A long COVID definition: A chronic, systemic disease state with profound
+consequences, 9 July 2024.
+[2] Tanayott Thaweethai, Sarah E Jolley, Elizabeth W Karlson, Emily B Levitan, Bruce Levy, Grace A Mc-
+Comsey, Lisa McCorkell, Girish N Nadkarni, Sairam Parthasarathy, Upinder Singh, Tiffany A Walker,
+Caitlin A Selvaggi, Daniel J Shinnick, Carolin C M Schulte, Rachel Atchley-Challenner, George A
+Alba, Radica Alicic, Natasha Altman, Khamal Anglin, Urania Argueta, Hassan Ashktorab, Gaston
+Baslet, Ingrid V Bassett, Lucinda Bateman, Brahmchetna Bedi, Shamik Bhattacharyya, Marie-Abele
+Bind, Andra L Blomkalns, Hector Bonilla, Patricia A Bush, Mario Castro, James Chan, Alexan-
+der W Charney, Peter Chen, Lori B Chibnik, Helen Y Chu, Rebecca G Clifton, Maged M Costantine,
+Sushma K Cribbs, Sylvia I Davila Nieves, Steven G Deeks, Alexandria Duven, Ivette F Emery, Nathan
+Erdmann, Kristine M Erlandson, Kacey C Ernst, Rachael Farah-Abraham, Cheryl E Farner, Elen M
+Feuerriegel, Judes Fleurimont, Vivian Fonseca, Nicholas Franko, Vivian Gainer, Jennifer C Gander,
+Edward M Gardner, Linda N Geng, Kelly S Gibson, Minjoung Go, Jason D Goldman, Halle Grebe,
+Frank L Greenway, Mounira Habli, John Hafner, Jenny E Han, Keith A Hanson, James Heath, Carla
+Hernandez, Rachel Hess, Sally L Hodder, Matthew K Hoffman, Susan E Hoover, Beatrice Huang,
+Brenna L Hughes, Prasanna Jagannathan, Janice John, Michael R Jordan, Stuart D Katz, Elizabeth S
+Kaufman, John D Kelly, Sara W Kelly, Megan M Kemp, John P Kirwan, Jonathan D Klein, Kenneth S
+Knox, Jerry A Krishnan, Andre Kumar, Adeyinka O Laiyemo, Allison A Lambert, Margaret Lanca,
+Joyce K Lee-Iannotti, Brian P Logarbo, Michele T Longo, Carlos A Luciano, Karen Lutrick, Jason H
+Maley, Jai G Marathe, Vincent Marconi, Gailen D Marshall, Christopher F Martin, Yuri Matusov, Alem
+Mehari, Hector Mendez-Figueroa, Robin Mermelstein, Torri D Metz, Richard Morse, Jarrod Mosier,
+Christian Mouchati, Janet Mullington, Shawn N Murphy, Robert B Neuman, Janko Z Nikolich, Ighovw-
+erha Ofotokun, Elizabeth Ojemakinde, Anna Palatnik, Kristy Palomares, Tanyalak Parimon, Samuel
+Parry, Jan E Patterson, Thomas F Patterson, Rachel E Patzer, Michael J Peluso, Priscilla Pemu, Chris-
+tian M Pettker, Beth A Plunkett, Kristen Pogreba-Brown, Athena Poppas, John G Quigley, Uma Reddy,
+Rebecca Reece, Harrison Reeder, W B Reeves, Eric M Reiman, Franz Rischard, Jonathan Rosand,
+17
+Dwight J Rouse, Adam Ruff, George Saade, Grecio J Sandoval, Shannon M Schlater, Fitzgerald Shep-
+herd, Zaki A Sherif, Hyagriv Simhan, Nora G Singer, Daniel W Skupski, Amber Sowles, Jeffrey A
+Sparks, Fatima I Sukhera, Barbara S Taylor, Larissa Teunis, Robert J Thomas, John M Thorp, Paul
+Thuluvath, Amberly Ticotsky, Alan T Tita, Katherine R Tuttle, Alfredo E Urdaneta, Daisy Valdivieso,
+Timothy M VanWagoner, Andrew Vasey, Monica Verduzco-Gutierrez, Zachary S Wallace, Honorine D
+Ward, David E Warren, Steven J Weiner, Shelley Welch, Sidney W Whiteheart, Zanthia Wiley, Juan P
+Wisnivesky, Lynn M Yee, Sokratis Zisis, Leora I Horwitz, Andrea S Foulkes, and RECOVER Consor-
+tium. Development of a definition of postacute sequelae of SARS-CoV-2 infection. JAMA, 329(22):
+1934–1946, 13 June 2023. ISSN 0098-7484,1538-3598. doi: 10.1001/jama.2023.8823.
+[3] Nicole D Ford. Long COVID and significant activity limitation among adults, by age – united states,
+june 1–13, 2022, to june 7–19, 2023. MMWR Morb. Mortal. Wkly. Rep., 72, 2023. ISSN 0149-2195.
+doi: 10.15585/mmwr.mm7232a3.
+[4] Aranka V Ballering, Sander K R van Zon, Tim C Olde Hartman, Judith G M Rosmalen, and Lifelines
+Corona Research Initiative. Persistence of somatic symptoms after COVID-19 in the netherlands: an
+observational cohort study. Lancet, 400(10350):452–461, 6 August 2022. ISSN 1474-547X,0140-6736.
+doi: 10.1016/S0140-6736(22)01214-4.
+[5] Hannah E Davis, Lisa McCorkell, Julia Moore Vogel, and Eric J Topol. Long COVID: major findings,
+mechanisms and recommendations. Nat. Rev. Microbiol., 21(3):133–146, 13 January 2023. ISSN
+1740-1526. doi: 10.1038/s41579-022-00846-2.
+[6] M Michelen, L Manoharan, N Elkheir, V Cheng, A Dagens, C Hastie, M O’Hara, J Suett, D Dahmash,
+P Bugaeva, I Rigby, D Munblit, E Harriss, A Burls, C Foote, J Scott, G Carson, P Olliaro, L Sigfrid,
+and C Stavropoulou. Characterising long COVID: a living systematic review. BMJ global health, 6(9),
+September 2021. ISSN 2059-7908. doi: 10.1136/bmjgh-2021-005427.
+[7] Dinah V Parums. Editorial: Post-acute sequelae of SARS-CoV-2 infection (PASC). updated termi-
+nology for the long-term effects of COVID-19. Med. Sci. Monit., 29:e941595, 1 July 2023. ISSN
+1643-3750,1234-1010. doi: 10.12659/MSM.941595.
+[8] A McCaddon and B Regland. COVID-19: A methyl-group assault?
+Med. Hypotheses, 149, April
+2021. ISSN 0306-9877,1532-2777. doi: 10.1016/j.mehy.2021.110543.
+[9] Mark Miller. Poll: Doctors feel unprepared to treat long COVID. https://debeaumont.org/
+news/2023/long-covid-poll/, 16 March 2023.
+[10] Ann M O’Hare, Elizabeth K Vig, Theodore J Iwashyna, Alexandra Fox, Janelle S Taylor, Elizabeth M
+Viglianti, Catherine R Butler, Kelly C Vranas, Mark Helfand, Anaïs Tuepker, Shannon M Nugent,
+Kara A Winchell, Ryan J Laundry, C Barrett Bowling, Denise M Hynes, Matthew L Maciejewski,
+Amy S B Bohnert, Emily R Locke, Edward J Boyko, George N Ioannou, and VA COVID Observational
+Research Collaboratory (CORC). Complexity and challenges of the clinical diagnosis and management
+of long COVID. JAMA Netw. Open, 5(11):e2240332, 1 November 2022. ISSN 2574-3805. doi:
+10.1001/jamanetworkopen.2022.40332.
+[11] Emily R Pfaff, Charisse Madlock-Brown, John M Baratta, Abhishek Bhatia, Hannah Davis, Andrew
+Girvin, Elaine Hill, Elizabeth Kelly, Kristin Kostka, Johanna Loomba, Julie A McMurry, Rachel Wong,
+Tellen D Bennett, Richard Moffitt, Christopher G Chute, Melissa Haendel, N3C Consortium, and
+RECOVER Consortium. Coding long COVID: characterizing a new disease through an ICD-10 lens.
+BMC Med., 21(1):58, 16 February 2023. ISSN 1741-7015. doi: 10.1186/s12916-023-02737-6.
+[12] Lærke Storgaard Duerlund, Shakil Shakar, Henrik Nielsen, and Jacob Bodilsen. Positive predictive
+value of the ICD-10 diagnosis code for long-COVID. Clin. Epidemiol., 14:141–148, 9 February 2022.
+ISSN 1179-1349. doi: 10.2147/CLEP.S344515.
+[13] George N Ioannou, Aaron Baraff, Alexandra Fox, Troy Shahoumian, Alex Hickok, Ann M O’Hare,
+18
+Amy S B Bohnert, Edward J Boyko, Matthew L Maciejewski, C Barrett Bowling, Elizabeth Viglianti,
+Theodore J Iwashyna, and Denise M Hynes. Rates and factors associated with documentation of
+diagnostic codes for long COVID in the national veterans affairs health care system. JAMA Netw. Open,
+5(7):e2224359, 1 July 2022. ISSN 2574-3805. doi: 10.1001/jamanetworkopen.2022.24359.
+[14] Harrison G Zhang, Jacqueline P Honerlaw, Monika Maripuri, Malarkodi Jebathilagam Samayamuthu,
+Brendin R Beaulieu-Jones, Huma S Baig, Sehi L’Yi, Yuk-Lam Ho, Michele Morris, Vidul Ayakulan-
+gara Panickan, Xuan Wang, Griffin M Weber, Katherine P Liao, Shyam Visweswaran, Bryce W Q
+Tan, William Yuan, Nils Gehlenborg, Sumitra Muralidhar, Rachel B Ramoni, Consortium for Clinical
+Characterization of COVID-19 by EHR (4CE), Isaac S Kohane, Zongqi Xia, Kelly Cho, Tianxi Cai,
+and Gabriel A Brat. Potential pitfalls in the use of real-world data for studying long COVID. Nat. Med.,
+29(5):1040–1043, May 2023. ISSN 1546-170X,1078-8956. doi: 10.1038/s41591-023-02274-y.
+[15] Alaleh Azhir, Jonas Hügel, Jiazi Tian, Jingya Cheng, Ingrid V Bassett, Douglas S Bell, Elmer V
+Bernstam, Maha R Farhat, Darren W Henderson, Emily S Lau, Michele Morris, Yevgeniy R Semenov,
+Virginia A Triant, Shyam Visweswaran, Zachary H Strasser, Jeffrey G Klann, Shawn N Murphy, and
+Hossein Estiri. Precision phenotyping for curating research cohorts of patients with unexplained post-
+acute sequelae of COVID-19. Med (N. Y.), 6(3):100532, 14 March 2025. ISSN 2666-6340,2666-6359.
+doi: 10.1016/j.medj.2024.10.009.
+[16] Cameron K Ormiston, Iwona ´Swia˛tkiewicz, and Pam R Taub. Postural orthostatic tachycardia syndrome
+as a sequela of COVID-19. Heart Rhythm, 19(11):1880–1889, November 2022. ISSN 1547-5271,1556-
+3871. doi: 10.1016/j.hrthm.2022.07.014.
+[17] Subha Madhavan, Lisa Bastarache, Jeffrey S Brown, Atul J Butte, David A Dorr, Peter J Embi, Charles P
+Friedman, Kevin B Johnson, Jason H Moore, Isaac S Kohane, Philip R O Payne, Jessica D Tenenbaum,
+Mark G Weiner, Adam B Wilcox, and Lucila Ohno-Machado. Use of electronic health records to
+support a public health response to the COVID-19 pandemic in the united states: a perspective from
+15 academic medical centers. J. Am. Med. Inform. Assoc., 28(2):393–401, 15 February 2021. ISSN
+1067-5027,1527-974X. doi: 10.1093/jamia/ocaa287.
+[18] Elizabeth R Unger, Jin-Mann S Lin, Lauren E Wisk, Huihui Yu, Michelle L’Hommedieu, Helen Lavret-
+sky, Juan Carlos C Montoy, Michael A Gottlieb, Kristin L Rising, Nicole L Gentile, Michelle Santan-
+gelo, Arjun K Venkatesh, Robert M Rodriguez, Mandy J Hill, Rachel E Geyer, Efrat R Kean, Sharon
+Saydah, Samuel A McDonald, Ryan Huebinger, Ahamed H Idris, Jocelyn Dorney, Bala Hota, Erica S
+Spatz, Kari A Stephens, Robert A Weinstein, Joann G Elmore, and Innovative Support for Patients with
+SARS-CoV-2 Infections Registry (INSPIRE) Group. Myalgic encephalomyelitis/chronic fatigue syn-
+drome after SARS-CoV-2 infection. JAMA Netw. Open, 7(7):e2423555, 1 July 2024. ISSN 2574-3805.
+doi: 10.1001/jamanetworkopen.2024.23555.
+[19] Ankush Dehlia and Mark A Guthridge. The persistence of myalgic encephalomyelitis/chronic fatigue
+syndrome (ME/CFS) after SARS-CoV-2 infection: A systematic review and meta-analysis. J. Infect.,
+89(6):106297, December 2024. ISSN 1532-2742,0163-4453. doi: 10.1016/j.jinf.2024.106297.
+[20] P M Palmer, A H Padilla, and B MacWhinney. The development and implementation of a data
+repository for swallow studies. Dysphagia, 39(3), June 2024. ISSN 0179-051X,1432-0460. doi:
+10.1007/s00455-023-10632-8.
+[21] A J McMurry, A R Zipursky, A Geva, K L Olson, J R Jones, V Ignatov, T A Miller, and K D Mandl.
+Moving biosurveillance beyond coded data using AI for symptom detection from physician notes:
+Retrospective cohort study. J. Med. Internet Res., 26, 4 April 2024. ISSN 1439-4456,1438-8871. doi:
+10.2196/53367.
+[22] F Liu, T Zhu, X Wu, B Yang, C You, C Wang, L Lu, Z Liu, Y Zheng, X Sun, Y Yang, L Clifton, and
+19
+D A Clifton. A medical multimodal large language model for future pandemics. NPJ digital medicine,
+6(1), 2 December 2023. ISSN 2398-6352. doi: 10.1038/s41746-023-00952-2.
+[23] D J Hurley, S Neary, and E O’Neill. Virtual triaging in an eye emergency department during the
+COVID-19 pandemic. Ir. J. Med. Sci., 192(4), August 2023. ISSN 0021-1265,1863-4362. doi: 10.
+1007/s11845-022-03160-1.
+[24] Lea Canales, Sebastian Menke, Stephanie Marchesseau, Ariel D’Agostino, Carlos del Rio-Bermudez,
+Miren Taberna, and Jorge Tello. Assessing the performance of clinical natural language processing
+systems: Development of an evaluation methodology. JMIR Medical Informatics, 9(7):e20492, 23 July
+2021. doi: 10.2196/20492.
+[25] Liqin Wang, Dinah Foer, Erin MacPhaul, Ying-Chih Lo, David W Bates, and Li Zhou. PASCLex: A
+comprehensive post-acute sequelae of COVID-19 (PASC) symptom lexicon derived from electronic
+health record clinical notes. J. Biomed. Inform., 125:103951, January 2022. ISSN 1532-0464. doi:
+10.1016/j.jbi.2021.103951.
+[26] RECOVER: Researching COVID to enhance recovery. https://recovercovid.org/, 2025.
+[27] Jinhyuk Lee, Wonjin Yoon, Sungdong Kim, Donghyeon Kim, Sunkyu Kim, Chan Ho So, and Jaewoo
+Kang. BioBERT: a pre-trained biomedical language representation model for biomedical text mining.
+Bioinformatics, 36(4):1234–1240, 15 February 2020. ISSN 1367-4803,1367-4811. doi: 10.1093/
+bioinformatics/btz682.
+[28] Kexin Huang, Jaan Altosaar, and Rajesh Ranganath. ClinicalBERT: Modeling clinical notes and pre-
+dicting hospital readmission. arXiv [cs.CL], 10 April 2019.
+[29] Yu Gu, Robert Tinn, Hao Cheng, Michael Lucas, Naoto Usuyama, Xiaodong Liu, Tristan Naumann,
+Jianfeng Gao, and Hoifung Poon. Domain-specific language model pretraining for biomedical natural
+language processing. arXiv [cs.CL], 30 July 2020.
+[30] Ö Uzuner, B R South, S Shen, and S L DuVall. 2010 i2b2/VA challenge on concepts, assertions, and
+relations in clinical text. J. Am. Med. Inform. Assoc., 18(5), September 2011. ISSN 1067-5027,1527-
+974X. doi: 10.1136/amiajnl-2011-000203.
+[31] GitHub - bionlplab/medtext. https://github.com/bionlplab/medtext, 2025.
+[32] Song Wang, Mingquan Lin, Ying Ding, George Shih, Zhiyong Lu, and Yifan Peng. Radiology text
+analysis system (RadText): Architecture and evaluation. Proc., 2022:288–296, June 2022. ISSN 0899-
+8280,2575-2626. doi: 10.1109/ichi54592.2022.00050.
+[33] Betty van Aken, Ivana Trajanovska, Amy Siu, Manuel Mayrdorfer, Klemens Budde, and Alexander
+Loeser. Assertion detection in clinical notes: Medical language models to the rescue? In Proceedings
+of the Second Workshop on Natural Language Processing for Medical Conversations, pages 35–40,
+Online, 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.nlpmc-1.5.
+[34] Song Wang, Liyan Tang, Akash Majety, Justin F Rousseau, George Shih, Ying Ding, and Yifan Peng.
+Trustworthy assertion classification through prompting. J. Biomed. Inform., 132:104139, August 2022.
+ISSN 1532-0464,1532-0480. doi: 10.1016/j.jbi.2022.104139.
+[35] Fabrício Kury, Alex Butler, Chi Yuan, Li-Heng Fu, Yingcheng Sun, Hao Liu, Ida Sim, Simona Carini,
+and Chunhua Weng. Chia, a large annotated corpus of clinical trial eligibility criteria. Sci Data, 7(1):
+281, 27 August 2020. ISSN 2052-4463. doi: 10.1038/s41597-020-00620-0.
+[36] Veronika Vincze, György Szarvas, Richárd Farkas, György Móra, and János Csirik. The BioScope
+corpus: biomedical texts annotated for uncertainty, negation and their scopes. BMC Bioinformatics, 9
+Suppl 11(S11):S9, 19 November 2008. ISSN 1471-2105. doi: 10.1186/1471-2105-9-S11-S9.
+[37] Alistair E W Johnson, Tom J Pollard, Lu Shen, Li-Wei H Lehman, Mengling Feng, Mohammad
+Ghassemi, Benjamin Moody, Peter Szolovits, Leo Anthony Celi, and Roger G Mark. MIMIC-III, a
+20
+freely accessible critical care database. Sci Data, 3:160035, 24 May 2016. ISSN 2052-4463. doi:
+10.1038/sdata.2016.35.
+[38] Henk Harkema, John N Dowling, Tyler Thornblade, and Wendy W Chapman. ConText: an algorithm
+for determining negation, experiencer, and temporal status from clinical reports. J. Biomed. Inform.,
+42(5):839–851, October 2009. ISSN 1532-0464,1532-0480. doi: 10.1016/j.jbi.2009.05.002.
+[39] Andrew Wen, Liwei Wang, Huan He, Sunyang Fu, Sijia Liu, David A Hanauer, Daniel R Har-
+ris, Ramakanth Kavuluru, Rui Zhang, Karthik Natarajan, Nishanth P Pavinkurve, Janos Hajagos,
+Sritha Rajupet, Veena Lingam, Mary Saltz, Corey Elowsky, Richard A Moffitt, Farrukh M Koraishy,
+Matvey B Palchuk, Jordan Donovan, Lora Lingrey, Garo Stone-DerHagopian, Robert T Miller, An-
+drew E Williams, Peter J Leese, Paul I Kovach, Emily R Pfaff, Mikhail Zemmel, Robert D Pates, Nick
+Guthe, Melissa A Haendel, Christopher G Chute, Hongfang Liu, National COVID Cohort Collabora-
+tive, and RECOVER Initiative. A case demonstration of the open health natural language processing
+toolkit from the national COVID-19 cohort collaborative and the researching COVID to enhance recov-
+ery programs for a natural language processing system for COVID-19 or postacute sequelae of SARS
+CoV-2 infection: Algorithm development and validation. JMIR Med. Inform., 12:e49997, 9 September
+2024. ISSN 2291-9694. doi: 10.2196/49997.
+[40] Lars G Fritsche, Weijia Jin, Andrew J Admon, and Bhramar Mukherjee. Characterizing and predicting
+post-acute sequelae of SARS CoV-2 infection (PASC) in a large academic medical center in the US. J.
+Clin. Med., 12(4), 7 February 2023. ISSN 2077-0383. doi: 10.3390/jcm12041328.
+[41] Shijing Si, Rui Wang, Jedrek Wosik, Hao Zhang, David Dov, Guoyin Wang, and Lawrence Carin.
+Students need more attention: BERT-based attention model for small data with application to automatic
+patient message triage. In Machine Learning for Healthcare Conference, pages 436–456. PMLR,
+18 September 2020.
+[42] Chatgpt. https://chat.openai.com, 2025.
+[43] Takanobu Hirosawa, Yukinori Harada, Kazuya Mizuta, Tetsu Sakamoto, Kazuki Tokumasu, and
+Taro Shimizu.
+Diagnostic performance of generative artificial intelligences for a series of com-
+plex case reports.
+Digit Health, 10:20552076241265215, 21 July 2024.
+ISSN 2055-2076.
+doi:
+10.1177/20552076241265215.
+[44] Gemini. https://gemini.google.com/, 2025.
+[45] aaditya/Llama3-OpenBioLLM-70B · hugging face.
+https://huggingface.co/aaditya/
+Llama3-OpenBioLLM-70B, 2025.
+[46] TsinghuaC3I/llama-3-8B-UltraMedical
+·
+hugging
+face.
+https://huggingface.co/
+TsinghuaC3I/Llama-3-8B-UltraMedical, 2025.
+[47] Joshua C Denny, Anderson Spickard, Kevin B Johnson, Neeraja B Peterson, Josh F Peterson, and
+Randolph A Miller. Evaluation of a method to identify and categorize section headers in clinical
+documents. J. Am. Med. Inform. Assoc., 16(6):806–815, November 2009. ISSN 1067-5027,1527-
+974X. doi: 10.1197/jamia.M3037.
+[48] Steven Bird. NLTK: the natural language toolkit. In Proceedings of the COLING/ACL on Interactive
+presentation sessions, pages 69–72. Association for Computational Linguistics, 2006.
+[49] Donald C Comeau, Rezarta Islamaj Do˘gan, Paolo Ciccarese, Kevin Bretonnel Cohen, Martin Krallinger,
+Florian Leitner, Zhiyong Lu, Yifan Peng, Fabio Rinaldi, Manabu Torii, Alfonso Valencia, Karin Ver-
+spoor, Thomas C Wiegers, Cathy H Wu, and W John Wilbur. BioC: a minimalist approach to in-
+teroperability for biomedical text processing. Database, 2013:bat064, 2013. ISSN 1758-0463. doi:
+10.1093/database/bat064.
+21

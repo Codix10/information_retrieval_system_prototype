@@ -1,0 +1,2129 @@
+Title: Task-Adaptive Tokenization: Enhancing Long-Form Text Generation Efficacy in Mental Health and Beyond
+Source URL: http://arxiv.org/abs/2310.05317v5
+--------------------------------------------------
+
+Task-Adaptive Tokenization: Enhancing Long-Form Text Generation
+Efficacy in Mental Health and Beyond
+Siyang Liu
+Naihao Deng
+Sahand Sabour
+Yilin Jia
+Minlie Huang
+Rada Mihalcea
+Language and Information Technologies Lab (LIT),
+Department of Computer Science and Engineering, University of Michigan, Ann Arbor
+The CoAI group, Tsinghua University, Beijing
+{lsiyang, mihalcea}@umich.edu, liusyang641@gmail.com
+Abstract
+We propose task-adaptive tokenization1 as a
+way to adapt the generation pipeline to the
+specifics of a downstream task and enhance
+long-form generation in mental health.
+In-
+spired by insights from cognitive science, our
+task-adaptive tokenizer samples variable seg-
+mentations from multiple outcomes, with sam-
+pling probabilities optimized based on task-
+specific data.
+We introduce a strategy for
+building a specialized vocabulary and intro-
+duce a vocabulary merging protocol that al-
+lows for the integration of task-specific tokens
+into the pre-trained model’s tokenization step.
+Through extensive experiments on psycholog-
+ical question-answering tasks in both Chinese
+and English, we find that our task-adaptive to-
+kenization approach brings a significant im-
+provement in generation performance while
+using up to 60% fewer tokens. Preliminary ex-
+periments point to promising results when us-
+ing our tokenization approach with very large
+language models.
+1
+Introduction
+During a time when mental health support is
+quickly growing (Hock et al., 2012; WHO, 2020),
+text generation techniques have been identified as
+potentially useful tools to assist mental health pro-
+fessionals (MHP) and provide mental health sup-
+port to those who share their struggles online (De-
+masi et al., 2020; Liu et al., 2021a; Sabour et al.,
+2022).
+With the help of such generation tools,
+counselors and social workers alike can increase
+their work efficiency and offer timely and expert
+feedback to those in need, especially for those
+in under-resourced areas where access to mental
+health services is challenging (Patel et al., 2011;
+Brenman et al., 2014; Shen et al., 2022a).
+The task of Psychological Question-Answering
+(PsyQA) is to generate a supportive response to a
+1Our work is available at github.com/MichiganNLP/t
+ask-adaptive_tokenization.
+Text
+Token Seq
+Input Ids
+sampling
+unique
+Decoder
+?
+isolation
+?
+...
+having
+...
+social
+a sense of
+having
+not
+Traditional tokenizer
+task-agnostic vocabulary
+subword segmentation
+1. under-represented tokens
+2. long sequence
+Task-adaptive tokenizer
+task-specific vocabulary
+variable segmentation
+1. task-specific tokens
+2. reduced sequence length
+  ...  
+a sense of purpose
+亲密
+a sense of
+E.g., "Social isolation and not having a sense of purpose in
+life have been linked to mood disorders"
+Unique Seq (16 tokens)
+[ ha ] [ ving ] [ a ] [ sense ] [ of ] [ pu ] [ rp ]
+[ social ] [ iso ] [ la ] [ tion ] [ and ] [ not ]
+Seq 1 (9 tokens)
+[ social isolation ] [ and ] [ not having ]
+Seq 2 (5 tokens)
+[ social ] [ isolation ] [ and ] [ not ] [ ha ]
+[ ving ] [ a sense of ] [ purpose ] [ in life ]
+[ a sense of purpose ] [ in life ] 
+Seq n
+...
+social isolation
+ ...  
+social
+...
+...
+[ ose ] [ in ] [ life ]
+Figure 1: A brief comparison between task-adaptive
+and traditional tokenizer. With task-adaptive tokeniza-
+tion, the same phrase appearing in different training in-
+stances may result in different tokenizations. For in-
+stance, Seq 1 and 2 illustrate two different token se-
+quences of the same input using a task-adaptive tok-
+enizer.
+help-seeking post, with an important requirement
+that the language used in the response aligns with
+the style used by MHPs (Sun et al., 2021; Welch
+et al., 2020). The task poses significant challenges
+due to its domain-specific terminology, text struc-
+ture, and language style, which are often underrep-
+resented in the pre-training data. Recent research
+has demonstrated that the linguistic patterns of
+MHPs align with established counseling principles
+and behaviors (Lahnala et al., 2021), thus exacer-
+bating the difficulty of the task as pre-training data
+is often sourced from laypeople (Kalla and Smith,
+2023). Despite recent progress in large-scale lan-
+guage models (LLMs) (Touvron et al., 2023; Cui
+et al., 2023; Hu et al., 2022), we found that few-
+arXiv:2310.05317v5  [cs.CL]  13 Nov 2023
+shot abilities of these models lag behind in mental
+health applications due to this misalignment with
+the MHP linguistic behaviors and style (see Appx
+A). This requires us to tune models to the down-
+stream domain.
+However, much of the current
+work focused on fine-tuning (Shen et al., 2020;
+Ji et al., 2022) still yields unsatisfying results due
+to the scarcity of professional data, which is often
+insufficient to capture all the task-specific intrica-
+cies.
+In this paper, we introduce task-adaptive tok-
+enization as a strategy to adapt a model to a down-
+stream task. Rather than focusing the adaptation
+effort on post-training fine-tuning, which has been
+the typical approach used in recent work (Shen
+et al., 2020, 2022b; Sun et al., 2021; Lee et al.,
+2021), we propose to make task-specific adjust-
+ments in the way the language is segmented during
+the tokenization stage (see our motivation elabo-
+rated in Sec 3). Thus, we propose task-adaptive to-
+kenization, which is built specifically from the task
+data and equipped with variable text segmentation,
+yet can be seamlessly integrated into off-the-shelf
+language models.
+To illustrate the potential of
+task-adaptive tokenization, we show an example
+in Fig 1. As seen in this example, our tokeniza-
+tion process allows for the inclusion of domain-
+specific terminology such as [_social_isolation]
+and [_a_sense_of_purpose] in the vocabulary. A
+model trained with task-specific tokenization is
+now able to generate these tokens through learned
+preference, which we show can lead to significant
+performance improvements.
+We confront three major challenges when de-
+signing tailored tokenization strategies. First, The
+creation of a task-specific tokenization vocabulary
+must be performed through an automatic process
+due to the labor-intensive and time-consuming na-
+ture of manual selection.
+Integrating this task-
+specific vocabulary seamlessly with pre-trained
+models poses is challenging, and it requires tech-
+niques to fuse the task-specific vocabulary with
+the pre-trained vocabulary and fine-tune the result-
+ing model accordingly. Lastly, we need to address
+the poor representation of newly added tokens in
+task-specific vocabularies that were not learned
+during the pre-training phase.
+In this paper, we propose task-adaptive tok-
+enization as a method for enhancing text genera-
+tion in specialized tasks such as PsyQA. This pa-
+per makes three main contributions. (1) Building
+on insights from cognitive linguistics (Thorndyke,
+1977; Wells, 1947), we advocate for using task-
+specific data and the developing variable segmen-
+tation for a downstream vocabulary as a pre-step
+for creating a task-adaptive tokenizer. (2) We con-
+struct a protocol for merging task-specific and pre-
+trained vocabularies, allowing for fine-tuning in-
+puts to be sampled from multiple tokenization re-
+sults. (3) We propose a simple yet effective ini-
+tialization mechanism to alleviate the difficulty
+of learning representations for new tokens unseen
+during pre-training.
+Through thorough experi-
+ments on the PsyQA task in both Chinese and
+English, we demonstrate the significant improve-
+ments achieved by our task-adaptive tokenization
+approach.
+Notably, we achieve these enhance-
+ments while utilizing 60% fewer tokens compared
+to expressing equivalent content length. In addi-
+tion, we show that our tokenization brings signif-
+icant improvement in 7B LLaMA models, which
+suggests that our method is effective regardless of
+the model size and can unlock additional perfor-
+mance despite the booming era of LLMs.
+2
+The PsyQA Task
+The goal of the PsyQA task is to generate a sup-
+portive response to the help-seeker via responding
+to their post, where an essential requirement is to
+imitate the use of language that is characterized as
+professional by previous work (Sun et al., 2021;
+Welch et al., 2020). Figure 3 shows an example of
+a question-answer pair in this dataset. Posts and
+responses are often extensive, with help-seekers
+providing detailed accounts of their experiences,
+and those offering assistance providing compre-
+hensive views, including emotional comfort, in-
+depth analysis, and various suggestions.
+The formal definition of the task is as follows:
+given a question Q, a description D, and keywords
+K, let context C denote an integral description of
+Q, D, and K; c = (c1, c2, ..., cm) is the sequence
+by segmenting the context C. We aim to generate
+a response R (a sequence of r = (r1, r2, ..., rn))
+corresponding to the context C.
+3
+Motivation
+Our motivation builds on arguments stemming
+from cognitive science, where (1) a clear distinc-
+tion is being made between the vocabulary used to
+interpret language versus the vocabulary used for
+language production; and (2) there is evidence for
+increased efficiency in speech behavior stemming
+from individual segmentation granularities. These
+arguments are further expanded by optimization
+and efficiency goals, which are better achieved in
+the presence of flexible segmentation.
+3.1
+Receptive vs Productive Vocabulary
+Within cognitive linguistic research, a clear dis-
+tinction is being made between “receptive” and
+“productive” vocabulary (Bogaards and Laufer,
+2004; Stæhr, 2008) – the former referring to words
+comprehended while reading, and the latter to
+words actively used in writing or speaking.
+A
+strong productive vocabulary has a direct impact
+on writing quality (Engber, 1995; Fajrina et al.,
+2021) and is essential for effective communication
+and precise articulation, particularly in technical
+fields where specialized terminology is common
+(Maskor et al., 2016; Faraj, 2015). We, therefore,
+hypothesize that while creating a large-scale vo-
+cabulary is essential for training language models
+(i.e., the “receptive” vocabulary), generation tasks
+require more emphasis on designing and leverag-
+ing task-related vocabulary (i.e., the “productive”
+vocabulary).
+To illustrate this gap in practice, considering the
+PsyQA task as described earlier, a typical opti-
+mization objective used for fine-tuning would be
+θMLE = argmax
+θ
+L(θ),
+(1)
+where
+L(θ) =
+|D|
+X
+s=1
+logP(r(s)|c(s); θ)
+Here, c and r are sequences of tokens, i.e., the seg-
+mentations of the input context C and the response
+R. The input of the function starts from c and r
+instead of the original texts C and R, due to the
+common practice of using a vocabulary that deter-
+mines the mapping relationship between texts and
+tokens. Thus, vocabulary construction is not nec-
+essarily considered in the process of optimization.
+However, if we do not assume the vocabulary in
+this process, we obtain the log-likelihood:
+L(θ) =
+|D|
+X
+s=1
+Er∼p(r|R(s))
+c∼p(c|C(s))
+logP(r|c; θ),
+(2)
+where
+{< C(s), R(s) >}|D|
+s=i
+tokenizer
+= {< c(s), r(s) >}|D|
+s=i
+As seen in Equation (2), different segmentations
+of a text can influence the entropy of the training
+corpus and thus can influence the model’s perfor-
+mance.
+In practice, researchers often blindly adopt a
+pre-existing vocabulary without considering the
+potential distribution inconsistency between the
+train data (typically used to generate the vo-
+cabulary) and the data of the downstream task,
+which can hinder the downstream performance
+(Liu et al., 2021c).
+For example, the data on
+which the word-piece model is trained to obtain
+the BERT vocabulary originates from Google’s
+Neural Machine Translation benchmark (Wu et al.,
+2016). The composition of this vocabulary is de-
+signed for machine translation, which may not be
+ideal for PsyQA or for other tasks, according to
+Equation (2). This additionally supports our ar-
+gument that a custom vocabulary informed by the
+task at hand is needed to achieve the best optimiza-
+tion potential.
+3.2
+Efficient Speaker Behavior
+Empirical studies have demonstrated that during
+language production, individuals tend to pause at
+various syntactic constituents, such as sentence
+boundaries or between clauses (Abney, 1992; Gee
+and Grosjean, 1984; Torrance et al., 2007). This
+phenomenon, referred to as “pause behavior,” has
+been a popular research topic in cognitive linguis-
+tics (Thorndyke, 1977; Wells, 1947). A possible
+explanation for this behavior is the fact that differ-
+ent individuals produce texts at various granulari-
+ties, from single letters and words to phrases and
+even entire sentences. When certain expressions
+are regularly used, they are stored as whole units
+in our memories, thereby reducing the cognitive
+load for future usage.
+Building on this argument, we hypothesize that
+implementing a similar strategy in text generation
+can equally lead to more efficient behavior. Simi-
+lar to human speakers, with variable segmentation,
+we can accommodate tokens at the sub-word level
+to address the rare word problem (Sennrich et al.,
+2015; Wu et al., 2016) while also including larger
+granularity units such as phrases and clauses.
+This argument is further supported by previ-
+ous work that has demonstrated that a fine-grained
+segmentation, despite its flexibility, can lead to in-
+creased computational cost and degradation in to-
+ken representation (Zouhar et al., 2023; Liu et al.,
+2021c; Yu et al., 2021; Demeter et al., 2020; Wang
+et al., 2023). For instance, recent large language
+models such as GPT3 may require roughly two to-
+kens for the representation of an eight-letter length
+word2.
+This fragmentation also leads to tokens
+such as [ soci ], [ _al ] or [ _iso ], which are
+often shared by many words and lead to under-
+representation, preventing the fine-tuned model to
+better learning the compositionality of generation
+(Liu et al., 2021c; Dou et al., 2021; Yu et al.,
+2021). Instead, if we could allow for more cohe-
+sive information to be represented in a token, in-
+cluding for instance task-specific tokens such as
+[ social_isolation ], we could potentially reduce
+the computational cost and achieve stronger token
+representation.
+4
+Task-adaptive Tokenization
+Our approach to task-adaptive tokenization con-
+sists of three main steps:
+1. Task Vocabulary Construction:
+First, we
+compile a task-specific vocabulary (Sec 4.1) by
+leveraging a subword regularization algorithm.
+2. Vocabulary Merging:
+Next, we merge the
+task-specific vocabulary with the original vo-
+cabulary from pre-trained models (Sec 4.2).
+3. Token Mapping: Finally, we create new to-
+ken embeddings by mapping the new token to
+the sub-words in the pre-trained vocabulary and
+averaging the sub-word embeddings (Sec 4.3).
+4.1
+Task Vocabulary Construction
+To construct a task-specific vocabulary that al-
+lows for variable segmentation, as described in
+Section 3, we use subword regularization (Kudo,
+2018). Subword regularization optimizes the like-
+lihood of the training corpus on all possible text
+segmentations and produces a vocabulary that
+consists of a set of tokens and their corresponding
+log-likelihood scores. Specifically, this algorithm
+leverages a regularization coefficient to increase
+the sampling probability of low-score segmenta-
+tions during training to learn the representations of
+various segmentations. This allows for sampling
+of a certain segmentation among various possible
+segmentations based on the score of the text being
+segmented. To adapt the original algorithm to our
+setting, we use task-specific data (i.e., all the re-
+sponse sentences from the QA pairs in the PsyQA
+task) to train a unigram language model. In addi-
+tion, contrary to the original algorithm, we do not
+2platform.openai.com/playground
+split sentences into words, as we want to include
+segmentations of various granularities.
+To illustrate, consider the sentence “a sense of
+purpose in life” as an example. The original model
+segments it into subwords as follows:
+• [ _a ] [ _sen ] [ se ] [ _of ] [ _purpose ] [ _in ] [ _life ]
+• [ _a ] [ _sense ] [ _of ] [ _pur ] [ pose ] [ _in ] [ _life ]
+With our modification, the model is also able to
+produce the following additional segmentations:
+• [ _a_sense ] [ _of ] [ _purpose ] [ _in_life ]
+• [ _a_sense_of_purpose_in_life ]
+Alg 1 shows the task vocabulary construction
+process, where underline text indicates our modi-
+fications to the original algorithm.
+Algorithm 1: Task-specific Vocabulary
+Construction
+Data: D = {λs : s ∈task dataset}
+Result: V = {(t1, l1), ..., (tN, lN)}, a
+vocabulary with size N, where ti is
+the ith token and li is the
+corresponding score.
+1 D −→P = {λp : p ∈
+pieces cut at any length} ;
+2 P −→Vbig = {t1, ..., tM}, where
+M >> N;
+3 Unigram-model optimizes
+L = P|D|
+s
+log(P
+t∈S(ts) P(t)) , where
+S(t) is all possible segmentation for s;
+4 Compute the lossi of each ti in Vbig;
+5 Sort (t1, loss1), ...(tM, lossM);
+6 {(t1, loss1), ...(tM, lossM)} truncate
+−−−−−→V .
+The process followed in each step in the algo-
+rithm is as follows:
+1. Divide all sentences s ∈D into various gran-
+ularity pieces;
+2. Choose the most frequent pieces and the
+union of characters up to a big seed vocab-
+ulary Vbig = {t1, ..., tM} where M >> N;
+3. Build a unigram model on D. The proba-
+bility of a possible segmentation {t1, ..., tK}
+on s is P(t) = QK
+1 p(ti). The most pos-
+sible segmentation is optimized by t∗
+=
+argmaxt∈S(t)P(t), where S(t) is all possi-
+ble segmentations for s. Apply EM algorithm
+to unigram model with the objective function
+L = P|D|
+s
+log(P
+t∈S(ts) P(t));
+4. Compute the lossi of each ti in Vbig , where
+lossi represents how the likelihood L has re-
+duced when the piece ti is removed from the
+current vocabulary;
+5. Sort the tuples (t1, loss1), ...(tM, lossM) in
+the descending order;
+6. Keep the union of characters and the pieces
+with the highest loss score until it satisfies
+the target vocabulary size N; Get the final vo-
+cabulary V = {(t1, l1), ..., (tN, lN)}, where
+li is the log probability of ti in the unigram
+model.
+4.2
+Vocabulary Merging
+After creating a task-specific vocabulary, an im-
+portant challenge is how to incorporate this “alien”
+vocabulary in the pre-trained models, as such
+models already have their own vocabulary and cor-
+responding embeddings.
+To this end, we build
+a protocol for merging a task-specific vocabulary
+with a pre-existing vocabulary (referred to as orig-
+inal vocabulary), as shown in Fig 2.
+The design of such a merging protocol consid-
+ers two aspects. First, to inherit the embedding
+matrix of the pre-trained models, the order of all
+tokens from the original vocabulary is maintained
+in the merged vocabulary. In this way, new repre-
+sentations could be added to the embedding matrix
+by extending the rows of the original one (Rule 4
+in Fig 2). Second, special tokens and the tokens
+from the original vocabulary that are constructed
+based on unique segmentation algorithms (e.g.,
+WordPiece and BPE) do not have a score for sam-
+pling. Thus, we have to assign them an appropri-
+ate score based on our guidelines (Rules 1, 2, and
+3 in Fig 2). We assign −bigScore ∗len(token)+1
+len(token)
+to those tokens qualifying for Rule 2, where
+the bigScore ought to be lower than the lowest
+score among task-specific tokens, to ensure task-
+specific tokens have a higher priority to be sam-
+pled; meanwhile, longer tokens will receive a big-
+ger score than their sub-string tokens, following
+the BPE/WordPiece design that prioritizes longer
+segments. Please see token statistics for a merged
+vocabulary in Appendix B.
+4.3
+Token Mapping
+To address the possible difficulties of representa-
+tion learning for new tokens that are never seen
+during pre-training, we propose a simple but effec-
+tive initialization mechanism to alleviate the prob-
+lem. For each new token, we acquire its subword
+Original
+Vocabulary
+Task-Specific
+Vocabulary
+...
+Merged Specialized
+Vocabulary
+...
+2
+for
+Index
+Token
+Score
+Token
+50000
+[KWD]
+49999
+[QUE]
+1
+fees
+0
+[PAD]
+-6.82
+if you
+-8.39
+for
+-10.41
+i'm sorry
+Rules
+1
+2
+3
+for
+-8.39
+2
+...
+1
+1
+4
+4
+[KWD]
+-100
+50000
+fees
+-60
+1
+[QUE]
+-100
+49999
+if you
+-6.82
+50001
+i'm sorry
+-10.41
+50002
+[PAD]
+-100
+0
+...
+Special tokens receive the lowest score (-100).
+A score is calculated for non-overlapping tokens from the original vocabulary.
+Overlapping tokens receive the score calculated in the task-specific vocabulary.
+Non-overlapping tokens from the task-specific vocabulary are appended to the end.
+1
+2
+3
+4
+Figure 2: An overview of the merging protocol.
+embeddings by using the primary pre-trained tok-
+enizer to segment the new token into a set of sub-
+words. The initial embedding of new tokens is set
+as the average of its subwords’ embeddings from
+the original embedding matrix. For overlapping
+tokens, we leverage the existing embedding repre-
+sentations.
+5
+Experiments
+We assess the effectiveness and efficiency of our
+task-adaptive tokenization on the PsyQA task
+through several automatic and manual evaluations.
+5.1
+Datasets
+CN PsyQA is a Chinese dataset of psychological
+QA support, where the answers are provided by
+well-trained volunteers and counselors (Sun et al.,
+2021). This dataset contains 22,346 questions and
+56,063 answers, where each question relates to
+one or more ground-truth responses.
+MHP Reddit is an English dataset of Post-
+Response pairs crawled from Reddit, where re-
+sponders self-identify as mental health profession-
+als in their profiles (Lahnala et al., 2021). Com-
+pared to CN PsyQA, this dataset is smaller in size
+(9,501 QA pairs), and the responses are relatively
+shorter.
+5.2
+Compared Methods
+We compare our task-adaptive tokenizer with the
+tokenizers from off-the-shelf pre-trained models.
+We acknowledge that the implementation details
+of a tokenizer are bound to the pre-trained model
+type and corpora. We provide details of the to-
+kenizers we compare against in Tab 1, includ-
+ing the associated model type, vocabulary size,
+and the segmentation algorithm. For brevity, we
+use the notations [LLMbase] and [LLMTaT ] un-
+der PsyQa or MHP datasets to represent the cor-
+responding base and task-adaptive tokenizers for
+a model named LLM, respectively. Accordingly,
+we append the w/o mapping to the notations to indi-
+cate whether the mapping mechanism is used.
+Dataset
+Model source
+Tokenizer
+Vocab size
+CN PsyQA
+gpt2-chinese-
+cluecorpussmall3
+WordPiece
+21128
+bart-base-chinese4
+WordPiece
+51271
+chinese-LLaMA-
+plus-7B 5
+BPE-dropout
+49953
+MHP Reddit
+gpt26
+BPE
+50257
+bart-base7
+BPE
+50265
+Table 1: Tokenizers used in our comparative evalua-
+tions
+5.3
+Experiment Details
+As our backbone models, we adopt the small ver-
+sions of GPT2 (Radford et al., 2019) and BART
+(Lewis et al., 2019) to analyze the generative im-
+provements in both decoder-only and encoder-
+decoder models. Additionally, to study the effec-
+tiveness of our approach on larger language mod-
+els, we include a 7B LLaMA model in our experi-
+ments (Touvron et al., 2023). However, due to lim-
+ited resources, we were only able to conduct ex-
+periments on the Chinese version of LLaMA (Cui
+et al., 2023). For training, we create 8:1:1 splits of
+the datasets (section 5.1) and fine-tune our small
+backbone models (i.e., GPT2 and BART) while
+only training the LoRA adapter (Hu et al., 2022)
+and the input & output embeddings of LLaMA.
+Additional details for training and generation are
+included in Appx C.
+5.4
+Automatic Evaluation
+Effectiveness.
+We use the HuggingFace evalua-
+tion tools (Wolf et al., 2019) and report Bleu-1 (B-
+1), Bleu-3 (B-3), average score of Bleu-1, 2, 3 and
+4 (Bleu) (Papineni et al., 2002) and RougeL (Lin,
+2004) for the generation on the test set. Although
+such reference-based metrics may not be sufficient
+for open-ended generation tasks (Zhang* et al.,
+3huggingface.co/uer/gpt2-chinese-cluecorpuss
+mall
+4huggingface.co/fnlp/bart-base-chinese
+5huggingface.co/ziqingyang/chinese-llama-plu
+s-lora-7b
+6huggingface.co/gpt2
+7huggingface.co/facebook/bart-base
+CN PsyQA
+Setting
+Bleu
++pct
+B-1
+B-3 R-L
++pct
+gptft+s∗
+20.1
+-
+GPT2base
+18.2
+-
+55.5
+2.5
+15.5
+-
+GPT2TaT
+24.8† +35.9% 65.7† 6.4† 27.1† +74.8%
++mapping 25.0† +37.1% 66.3† 6.6† 22.1† +42.1%
+Bartbase
+21.6
+-
+62.3
+4.0
+21.8
+-
+BartTaT
+26.2† +21.3% 69.2† 6.7† 27.2† +24.8%
++mapping 26.1† +20.8% 68.8† 6.7† 27.2† +24.8%
+MHP Reddit
+Setting
+Bleu +pct
+B-1
+B-2 R-L +pct
+GPT2base
+3.7
+-
+14.0
+0.6
+5.7
+-
+GPT2TaT
+3.6
+-2.7%
+13.0
+1.3† 8.1† +42.1%
++mapping 4.5
++16.4% 16.3† 1.6† 9.0† +57.9%
+Bartbase
+6.7
+-
+23.5
+2.6
+10.8 -
+BartTaT
+7.6†
++13.4% 27.9† 2.5
+10.1 -6.5%
++mapping 6.7
++0.0%
+22.9
+3.0
+10.9 +0.9%
+Table 2: Generation effectiveness. Bleu is calculated
+by averaging B-1,2,3,4, where B-n denotes the Bleu n-
+gram precision. R-L is RougeL score. +pct denotes
+the percentage of improving scores corresponding to
+Bleu and RougeL over the base. * indicates the sota
+results reported by Sun et al. (2021), who fine-tuned
+GPT2 with auxiliary support strategy information.
+†
+indicates a significant improvement over the base (p-
+value < 0.05).
+2020), we report these results as a reference since
+they are commonly used by previous research (Gu
+et al., 2023; Cao and Wang, 2022; Yue et al.,
+2021).
+In addition, we believe that the multi-
+ple gold responses provided for each question in
+the CN PsyQa dataset alleviate the shortcoming
+of reference-based metrics to a degree. We lever-
+age character-level comparisons for Chinese and
+word-level comparisons for English.
+To estab-
+lish a fair comparison, we apply an NLTK word
+tokenizer (Bird et al., 2009) to all generated re-
+sponses.
+From Tab 2, the task-adaptive tokenizer consis-
+tently outperforms the baseline tokenizers, with a
+maximum increase of 37.1% on Bleu and 74.8%
+on RougeL. The results demonstrate two impor-
+tant insights.
+First, task-adaptive tokenization
+shows a larger increase on Bleu-3 than Bleu-
+1, indicating that variable segmentation can en-
+hance the expression of task-specific phrases. Sec-
+ond, the increase in RougeL suggests a success-
+ful retrieval of task-specific expressions from the
+dataset.
+However, since the results from the automatic
+evaluation do not indicate large improvements for
+the mapping mechanism on CN PsyQA, we turn
+to human evaluations in Sec 5.5, and the results
+demonstrate that the mapping mechanism is im-
+portant for the generation quality in human per-
+ception. To also gain insights into the weaker ef-
+fectiveness of task-adaptive tokenization on Red-
+dit MHP, in addition the human evaluation con-
+ducted to validate its effectiveness, in Sec 6 we
+extend our experimentation by creating a parallel
+English corpus, translated from CN PsyQA. This
+addition allows us to probe the underlying factors
+contributing to the limited improvement observed
+in Reddit MHP – whether the disparity in perfor-
+mance can be attributed to linguistic differences
+(English versus Chinese) or to disparities in data
+quality observed within the Reddit MHP dataset.
+Efficiency.
+In order to assess generation effi-
+ciency, we employ various metrics on the test set,
+including the average number of centiseconds per
+generation (#cSec), the average number of tokens
+per generation (#Tok), response length (Len),
+generation length per token (Len/#Tok) and gen-
+eration length per centisecond (Len/#cSec). To
+calculate response length, we consider token-
+agnostic measures, such as the number of char-
+acters for Chinese and the number of words after
+whitespace-splitting for English. The token uti-
+lization rate is then derived by dividing the number
+of tokens by the response length.
+Tab 3 indicates that by using task-adaptive tok-
+enization, models trained on Chinese and English
+datasets use significantly fewer tokens to repre-
+sent more content. This enhancement is more ap-
+parent in Chinese, as its generation length per to-
+ken is increased from 0.79 to 2.00, indicating a
+more than double time increase in token utilization
+rate. However, the results only show a significant
+improvement in generation speed for the Chinese
+dataset. We believe this occurs as responses in the
+MHP Reddit dataset are rather short and thus ben-
+efit less from using fewer tokens for generation,
+which is compensated by the increased time con-
+sumption from the expanded embedding layer.
+Vocabulary Size.
+We also investigate the influ-
+ence of different task-specific vocabulary sizes on
+generation quality (Appx D). The results indicate
+that an optimal size of vocabulary for merging
+may exist, but the difference may be subtle.
+5.5
+Human Evaluation
+We recruit five native professionals for the human
+evaluation of the Chinese and English results, re-
+spectively.
+Prior to the evaluation, participants
+Setting
+#cSec #Tok
+Len
+Len/
+#Tok ↑Len/
+#cSec ↑
+CN PsyQA
+GPT2base
+5.7
+440.2
+365.9
+0.8
+64.2
+GPT2TaT
++ mapping 3.6
+190.3
+382.9
+2.0
+106.4
+MHP Reddit
+GPT2base
+1.6
+117.1
+86.9
+0.7
+54.3
+GPT2TaT
++ mapping 2.4
+118.8
+123.5
+1.0
+51.5
+Table 3: Efficiency of generation. #cSec and #Tok de-
+note the average number of centiseconds and tokens per
+generation on the test set respectively. Length denotes
+the average length of generated responses.
+Metric
+M vs. B
+NM vs. B
+M vs. NM
+Win
+Lose
+Win
+Lose
+Win
+Lose
+CN PsyQA
+F
+31†
+15
+18
+24
+36†
+11
+C
+37†
+9
+19
+19
+36†
+10
+PE
+23
+20
+18
+22
+32†
+13
+MHP Reddit
+F
+26
+20
+4
+43
+44†
+4
+C
+28
+20
+4
+38
+48†
+1
+PE
+30
+18
+6
+39
+45†
+3
+Table 4: Human Evaluation. An explanation for ab-
+breviations: M for GPT2TaT +mapping, B for GPT2base,
+and NM for GPT2TaT w/o mapping; F for fluency, C for
+coherence, and PE for professional expression. Ties are
+not shown. † denotes a significant win (one sample sign
+test, p-value < 0.05).
+were provided with ten QA pairs that were con-
+sidered the "gold standard." They were instructed
+to familiarize themselves with the wording, struc-
+ture, and language style of these gold responses,
+serving as a calibration exercise to assess the pro-
+fessional expression of a response and how closely
+it aligns with the standard responses. Each partic-
+ipant underwent ten rounds of evaluation under a
+guideline (see Fig 4). In each round, they were
+presented with a set of posts and corresponding
+response triplets, comprising the responses from
+GPT2base, GPT2TaT w/o mapping, and GPT2TaT
+with mapping. The participants were then tasked
+with ranking the three responses based on three
+aspects: (1) Fluency: the response’s fluency and
+readability, (2) Coherence: the responsiveness of
+the response to the post’s content and its logical
+consistency, and (3) Professional expression: the
+proximity of the generated response to the stan-
+dard responses in terms of wording, structure, and
+language style.
+From the findings presented in Tab 4, the inclu-
+sion of a mapping mechanism is crucial for ensur-
+ing a robust token representation system, partic-
+ularly when dealing with small-scale data (MHP
+Reddit). Without this mechanism, the generated
+responses exhibit a significant decline across three
+aspects, despite an increase in automatic eval-
+uation scores.
+Moreover, our tokenization ap-
+proach with the mapping mechanism outperforms
+the baseline on CN PsyQA in human evaluation,
+even though this improvement is not reflected in
+the results of automatic evaluation.
+5.6
+Performance on Large Language Models
+We investigate the benefits of our task-adaptive to-
+kenization on the effectiveness and efficiency gen-
+eration for the recent LLMs.
+Tab 5 shows the
+results when using the 7B LLaMa model, as de-
+scribed in Sec 5.3. The RougeL score increases by
+15.0% when applying our tokenization, which in-
+dicates that our task-adaptive tokenization brings
+about additional and model-agnostic performance
+benefits.
+Setting
+Bleu
++pct
+B-1
+B-3
+R-L
++pct
+CN PsyQA
+LLaMAbase
+27.9
+-
+64.5
+12.1
+30.1
+-
+LLaMATaT
+29.8
++6.8%
+69.6†
+12.5
+34.0†
++13.0%
++mapping
+29.5
++5.7%
+69.6†
+12.3
+34.6†
++15.0%
+Table 5: Generation effectiveness on Chinese LLaMA.
+Bleu is calculated by averaging B-1,2,3,4, where B-
+n denotes the Bleu n-gram precision. R-L is RougeL
+score. +pct denotes the percentage of improving scores
+corresponding to Bleu and RougeL over the base.
+†
+indicates a significant improvement over the base (p-
+value < 0.05)
+6
+Further Analysis and Supplementary
+Experiment
+We conduct supplementary analyses and experi-
+ments to gain deeper insights into the observed
+performance disparities between the Chinese and
+English datasets.
+Specifically, we analyze the
+constituents within the generated responses, and
+classify them into three categories to quantify
+their contribution to the overall generation length.
+These categories are as follows: (1) overlap, de-
+noting tokens shared between the original and
+task-specific vocabularies; (2) non-overlap, rep-
+resenting tokens exclusive to the task-specific
+vocabulary; and (3) original, signifying tokens
+found solely within the original vocabulary. As
+exemplified in Tab 6, a noticeable discrepancy
+emerges in the contribution of non-overlapped to-
+kens when comparing the Reddit MHP and CN
+PsyQA datasets. Our hypothesis posits that the
+generation of newly-introduced task-specific to-
+kens may play a pivotal role in explaining the
+less pronounced performance gains observed in
+the Reddit MHP dataset, in contrast to the CN
+PsyQA dataset.
+overlap
+non-overlap
+original
+CN PsyQA
+12.0%
+84.3%
+3.7%
+MHP Reddit
+62.4%
+37.5%
+0.1%
+Table 6: Length contribution of three types of tokens
+generated on both datasets.
+Further, we investigate whether the disparity
+in constitution analysis between the two datasets
+arises from linguistic distinctions or data quality
+concerns.
+As highlighted in the description of
+the datasets in Sec 5.1, participants in the MHP
+Reddit dataset primarily self-identify as profes-
+sionals in their profiles. Additionally, we observe
+that many QA pairs in Reddit MHP resemble gen-
+eral chitchat, where task-specific terminology may
+be less prevalent.
+To address this, we translate
+5,118 QA pairs from the CN PsyQA dataset into
+a parallel corpus, split into an 8:1:1 ratio (train-
+ing, development, test). With this, we aim to re-
+assess the effectiveness of our proposed tokeniza-
+tion techniques within an English data context.
+As illustrated in Tab 7, task-adaptive tokeniza-
+tion markedly enhances generation effectiveness
+across all metrics. Based on these results, we con-
+clude that our proposed tokenization method per-
+forms effectively in tasks involving frequent use
+of domain-specific expressions, compared to open
+domain communication.
+Setting
+Bleu
++pct
+B-1
+B-3
+R-L
++pct
+Translated PsyQA
+GPTbase
+12.6
+-
+44.5
+0.6
+8.5
+-
+GPTTaT
+19.5†
++54.8%
+58.1†
+2.4†
+15.2†
++78.8%
++mapping
+19.9†
++57.9%
+56.3†
+4.0†
+14.7†
++72.9%
+Table 7:
+Generation effectiveness on Translated
+PsyQA. See Tab 2 for column and notation definition.
+7
+Related Work
+Segmentation Algorithms and Vocabulary De-
+velopment.
+Mapping text into tokens, as a key
+step in the NLP pipeline, has a rich history of
+algorithms and vocabulary development.
+Early
+proposals of segmenting text varied from utiliz-
+ing linguistic cues at different levels (e.g., mor-
+pheme or syntax) to statistical methods (Creutz
+and Lagus, 2006; Luong et al., 2013; Zouhar et al.,
+2023). Notably, during the era of statistical ma-
+chine translation, phrase-level translation, which
+shares a similar idea with variable segmentation,
+was one of the most promising translation meth-
+ods at that time (Koehn et al., 2007, 2003). This
+paradigm enjoyed considerable popularity until
+the rise of deep learning techniques, shifting the
+focus to subword-level segmentation, given the
+need to address the challenge of poor representa-
+tion of rare/sparse words (Sennrich et al., 2015,
+2016; Kudo, 2018; Kudo and Richardson, 2018).
+This approach largely improves performance of
+NLP models by leveraging shared subword units
+and maintaining a compact vocabulary.
+In par-
+allel, the use of vocabulary transformed with the
+advent of large language models (LLMs). Previ-
+ously, each model tended to develop its own vo-
+cabulary in isolation (Jean et al., 2015), but re-
+cent work started to directly use the vocabulary
+of pre-trained models to inherit the strong rep-
+resentations acquired through pre-training.
+De-
+spite existing work(Bagdasaryan et al., 2022; Liu
+et al., 2021d), customizing vocabularies for spe-
+cific tasks lost popularity due to challenges in inte-
+grating them into nowadays pretraining-finetuning
+paradigm.
+Recently, research has been proposed to for to-
+kenization quality evaluation (Zouhar et al., 2023)
+and token cost analysis of a tokenizer among dif-
+ferent languages (Ahia et al., 2023), indicating
+the researchers’ increased concerns on tokeniza-
+tion improvement.
+It is worth noting that Liu
+et al. (2021d); Sachidananda et al. (2021) also ad-
+dressed the vocabulary gap between pretraining
+and finetuning or domain-level post-pretraining;
+however, their solutions either requires an addi-
+tional model module for token alignment or solely
+operates at the sub-word level. In contrast, our
+work provides a model-agnostic solution and em-
+braces the merits of flexible variable segmentation
+cherished in earlier research while still retaining
+the ability to leverage existing pre-trained models.
+Generation in Mental Health Support.
+In re-
+cent years, several studies have explored the appli-
+cation of generation techniques for mental health
+support (Shen et al., 2022b; Lee et al., 2021;
+Sabour et al., 2023; Hsu et al., 2023; Liu et al.,
+2021b), including counseling-style dialog genera-
+tion systems (Shen et al., 2020) and the incorpo-
+ration of counseling strategies in response genera-
+tion (Sun et al., 2021). Furthermore, recent work
+has investigated the use of large language models
+as expert systems for support strategy counseling
+(Zhang et al., 2023). However, rather than focus-
+ing adaptation effort on fine-tuning or prompting,
+our study focuses on tokenization, an easily over-
+looked component in the NLP pipeline. We hy-
+pothesize that for tasks in technical writing fields,
+e.g., mental health, adapting the tokenization to
+the downstream language style is a potential strat-
+egy to unlock additional performance.
+Text Generation Efficiency.
+Recent years have
+witnessed a great surge of interest in enhancing
+text generation efficiency due to the need of long-
+form text generation or the trend of scaling up
+NLP models (Hessenthaler et al., 2022; Tay et al.,
+2020). Efforts on improving generation efficiency
+range from researching non-autoregressive model-
+ing techniques (Li et al., 2022; Qi et al., 2021), at-
+tention mechanism optimization (Yan et al., 2021;
+Beltagy et al., 2020), model size reducing (Zafrir
+et al., 2019; Ma et al., 2022), and infrastructure
+innovations (Rasley et al., 2020; developers, 2021,
+2022; Fang et al., 2021).
+8
+Conclusion
+In this paper, we proposed task-specific tokeniza-
+tion as a way to adapt the generation pipeline to the
+specifics of a downstream task. We demonstrated
+the efficiency and improved long-form quality of
+generation for the domain of mental health, where
+we specifically addressed the task of psychologi-
+cal question answering. Our tokenizer leverages
+the specifics of the downstream task data, while
+still retaining the ability to integrate into exist-
+ing pre-trained models.
+Through extensive ex-
+periments, we demonstrated the ability of task-
+adaptive tokenization to enhance both the effec-
+tiveness and efficiency of long-form generation.
+We believe our work is particularly useful in the
+era of large language models (LLMs), as the pro-
+posed task-adaptive tokenizer can lead to signifi-
+cant improvements while being domain and model
+agnostic. Based on our findings, we suggest plug-
+and-play tokenization for LLMs when performing
+specific generation tasks.
+Limitations
+Despite the strength of our proposed task-adaptive
+tokenization, several limitations remain. In partic-
+ular, due to limited resource, we were only able
+to test it on one dataset and on a large-scale lan-
+guage model. Future work should consider eval-
+uating the effectiveness of our task-adaptive tok-
+enizer on additional domains and LLMs. The ef-
+fectiveness of this tokenization should also be ver-
+ified on additional languages and models of var-
+ious sizes. Finally, in our experiments, we found
+our tokenization does not significantly enhance the
+generation speed in English, which may be due to
+the fact that the English vocabulary has less room
+to increase its granularity compared to a character-
+based language like Chinese.
+Ethics Statement
+Several ethical situations should be considered.
+First, due to the black-box feature of neural net-
+works, we do not recommend any generation tech-
+nique including our proposed method to be di-
+rectly used by a mental health supporter. Instead,
+in practice, it could be exposed to well-trained
+MHPs informed by the pros and cons of using
+generative AI, and offered as a suggesting tool
+for professionals.
+The professionals should be
+fully informed and trained to be accountable for
+the second-edited content. Second, during human
+evaluations, we informed all the human evalua-
+tors that the responses they would see might cause
+some discomfort, so they could decline their par-
+ticipation in the evaluation. Finally, regarding the
+use of the PsyQA data, we have received autho-
+rization to use the data and conduct research on
+it ethically and legally through approval from the
+data publishers.
+Acknowledgements
+We acknowledge the valuable feedback from the
+reviewers, as well as from Orevaoghene Ahia,
+a Ph.D student at University of Washington and
+Vilém Zouhar, a Ph.D student at ETH Zürich dur-
+ing the discussion about paper improving for the
+camera-ready version. We thank the anonymous
+reviewers for their constructive feedback. We are
+also grateful to the members of the Language and
+Information Technologies lab at the University of
+Michigan for the insightful discussions during the
+early stage of the project. This project was par-
+tially funded by an award from the Templeton
+Foundation (#62256).
+References
+Steven P Abney. 1992. Parsing by chunks. Principle-
+based parsing: Computation and Psycholinguistics,
+pages 257–278.
+Orevaoghene Ahia, Sachin Kumar, Hila Gonen, Jungo
+Kasai, David R. Mortensen, Noah A. Smith, and Yu-
+lia Tsvetkov. 2023. Do all languages cost the same?
+tokenization in the era of commercial language mod-
+els.
+Eugene Bagdasaryan, Congzheng Song, Rogier van
+Dalen, Matt Seigel, and Áine Cahill. 2022. Training
+a tokenizer for free with private federated learning.
+Iz Beltagy, Matthew E Peters, and Arman Cohan.
+2020.
+Longformer:
+The long-document trans-
+former. arXiv preprint arXiv:2004.05150.
+Steven Bird, Ewan Klein, and Edward Loper. 2009.
+Natural language processing with Python: analyz-
+ing text with the natural language toolkit. " O’Reilly
+Media, Inc.".
+Paul Bogaards and Batia Laufer. 2004. Vocabulary in
+a second language: Selection, acquisition, and test-
+ing, volume 10. John Benjamins Publishing.
+Natassia F Brenman, Nagendra P Luitel, Sumaya Mall,
+and Mark JD Jordans. 2014.
+Demand and access
+to mental health services: a qualitative formative
+study in nepal. BMC international health and hu-
+man rights, 14(1):1–12.
+Shuyang Cao and Lu Wang. 2022.
+Time-aware
+prompting for text generation.
+arXiv preprint
+arXiv:2211.02162.
+Mathias Creutz and Krista Lagus. 2006. Morfessor in
+the morpho challenge. In Proceedings of the PAS-
+CAL Challenge Workshop on Unsupervised Segmen-
+tation of Words into Morphemes, pages 12–17.
+Yiming Cui, Ziqing Yang, and Xin Yao. 2023. Effi-
+cient and effective text encoding for chinese llama
+and alpaca. arXiv preprint arXiv:2304.08177.
+Orianna Demasi, Yu Li, and Zhou Yu. 2020. A multi-
+persona chatbot for hotline counselor training. In
+Findings of the Association for Computational Lin-
+guistics: EMNLP 2020, pages 3623–3636, Online.
+Association for Computational Linguistics.
+David Demeter, Gregory Kimmel, and Doug Downey.
+2020.
+Stolen probability: A structural weakness
+of neural language models. In Proceedings of the
+58th Annual Meeting of the Association for Compu-
+tational Linguistics, pages 2191–2197.
+Hugging Face Optimum developers. 2022.
+Hugging
+face optimum. https://huggingface.co/optim
+um. Version: x.y.z.
+ONNX Runtime developers. 2021. Onnx runtime. ht
+tps://www.onnxruntime.ai. Version: x.y.z.
+Yao Dou, Maxwell Forbes, Rik Koncel-Kedziorski,
+Noah A Smith, and Yejin Choi. 2021.
+Is gpt-3
+text indistinguishable from human text? scarecrow:
+A framework for scrutinizing machine text. arXiv
+preprint arXiv:2107.01294.
+Cheryl A Engber. 1995. The relationship of lexical pro-
+ficiency to the quality of esl compositions. Journal
+of second language writing, 4(2):139–155.
+Dian Fajrina, John Everatt, and Amir Sadeghi. 2021.
+Writing strategies used by indonesian efl students
+with different english proficiency. Language Teach-
+ing Research Quarterly, 21:1–15.
+Jiarui Fang, Yang Yu, Chengduo Zhao, and Jie Zhou.
+2021. Turbotransformers: an efficient gpu serving
+system for transformer models. In Proceedings of
+the 26th ACM SIGPLAN Symposium on Principles
+and Practice of Parallel Programming, pages 389–
+402.
+Avan Kamal Aziz Faraj. 2015. Effective strategies for
+turning receptive vocabulary into productive vocab-
+ulary in efl context. Journal of Education and Prac-
+tice, 6(27):10–19.
+James Paul Gee and Francois Grosjean. 1984. Empir-
+ical evidence for narrative structure. Cognitive Sci-
+ence, 8(1):59–85.
+Yuxian Gu, Jiaxin Wen, Hao Sun, Yi Song, Pei Ke,
+Chujie Zheng, Zheng Zhang, Jianzhu Yao, Lei Liu,
+Xiaoyan Zhu, et al. 2023.
+Eva2. 0: Investigating
+open-domain chinese dialogue systems with large-
+scale pre-training. Machine Intelligence Research,
+pages 1–13.
+Marius Hessenthaler, Emma Strubell, Dirk Hovy, and
+Anne Lauscher. 2022.
+Bridging fairness and en-
+vironmental sustainability in natural language pro-
+cessing. In Proceedings of the 2022 Conference on
+Empirical Methods in Natural Language Process-
+ing, EMNLP 2022, Abu Dhabi, United Arab Emi-
+rates, December 7-11, 2022, pages 7817–7836. As-
+sociation for Computational Linguistics.
+Rebecca
+S
+Hock,
+Flora
+Or,
+Kavitha
+Kolappa,
+Matthew
+D
+Burkey,
+Pamela
+J
+Surkan,
+and
+William W Eaton. 2012. A new resolution for global
+mental health. The Lancet, 379(9824):1367–1368.
+Shang-Ling Hsu, Raj Sanjay Shah, Prathik Senthil,
+Zahra Ashktorab, Casey Dugan, Werner Geyer, and
+Diyi Yang. 2023. Helping the helper: Supporting
+peer counselors via ai-empowered practice and feed-
+back. arXiv preprint arXiv:2305.08982.
+Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan
+Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and
+Weizhu Chen. 2022. LoRA: Low-rank adaptation of
+large language models. In International Conference
+on Learning Representations.
+Sébastien Jean, Kyunghyun Cho, Roland Memisevic,
+and Yoshua Bengio. 2015.
+On using very large
+target vocabulary for neural machine translation.
+In Proceedings of the 53rd Annual Meeting of the
+Association for Computational Linguistics and the
+7th International Joint Conference on Natural Lan-
+guage Processing (Volume 1: Long Papers), pages
+1–10, Beijing, China. Association for Computa-
+tional Linguistics.
+Shaoxiong Ji, Tianlin Zhang, Luna Ansari, Jie Fu,
+Prayag Tiwari, and Erik Cambria. 2022.
+Men-
+talBERT: Publicly available pretrained language
+models for mental healthcare.
+In Proceedings of
+the Thirteenth Language Resources and Evaluation
+Conference, pages 7184–7190, Marseille, France.
+European Language Resources Association.
+Dinesh Kalla and Nathan Smith. 2023. Study and anal-
+ysis of chat gpt and its impact on different fields of
+study. International Journal of Innovative Science
+and Research Technology, 8(3).
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callison-Burch, Marcello Federico, Nicola Bertoldi,
+Brooke Cowan,
+Wade Shen,
+Christine Moran,
+Richard Zens, Chris Dyer, Ondˇrej Bojar, Alexandra
+Constantin, and Evan Herbst. 2007. Moses: Open
+source toolkit for statistical machine translation. In
+Proceedings of the 45th Annual Meeting of the As-
+sociation for Computational Linguistics Companion
+Volume Proceedings of the Demo and Poster Ses-
+sions, pages 177–180, Prague, Czech Republic. As-
+sociation for Computational Linguistics.
+Philipp Koehn, Franz Josef Och, and Daniel Marcu.
+2003. Statistical phrase-based translation. In Pro-
+ceedings of the 2003 human language technology
+conference of the North American chapter of the As-
+sociation for computational linguistics, pages 127–
+133.
+Taku Kudo. 2018.
+Subword regularization: Improv-
+ing neural network translation models with multiple
+subword candidates. In Annual Meeting of the Asso-
+ciation for Computational Linguistics.
+Taku Kudo and John Richardson. 2018.
+Sentence-
+Piece: A simple and language independent subword
+tokenizer and detokenizer for neural text processing.
+In Proceedings of the 2018 Conference on Empirical
+Methods in Natural Language Processing: System
+Demonstrations, pages 66–71, Brussels, Belgium.
+Association for Computational Linguistics.
+Allison Lahnala,
+Yuntian Zhao,
+Charles Welch,
+Jonathan K Kummerfeld, Lawrence C An, Ken-
+neth Resnicow, Rada Mihalcea, and Verónica Pérez-
+Rosas. 2021.
+Exploring self-identified counseling
+expertise in online support forums.
+In Findings
+of the Association for Computational Linguistics:
+ACL-IJCNLP 2021, pages 4467–4480.
+John Lee, Baikun Liang, and Haley Fong. 2021. Re-
+statement and question generation for counsellor
+chatbot. In Proceedings of the 1st Workshop on NLP
+for Positive Impact, pages 1–7, Online. Association
+for Computational Linguistics.
+Mike Lewis,
+Yinhan Liu,
+Naman Goyal,
+Mar-
+jan Ghazvininejad, Abdelrahman Mohamed, Omer
+Levy, Veselin Stoyanov, and Luke Zettlemoyer.
+2019. BART: denoising sequence-to-sequence pre-
+training for natural language generation, translation,
+and comprehension. CoRR, abs/1910.13461.
+Junyi Li, Tianyi Tang, Wayne Xin Zhao, Jian-Yun
+Nie, and Ji-Rong Wen. 2022.
+Elmer:
+A non-
+autoregressive pre-trained language model for effi-
+cient and effective text generation. In Proceedings
+of the 2022 Conference on Empirical Methods in
+Natural Language Processing, pages 1044–1058.
+Chin-Yew Lin. 2004. ROUGE: A package for auto-
+matic evaluation of summaries. In Text Summariza-
+tion Branches Out, pages 74–81, Barcelona, Spain.
+Association for Computational Linguistics.
+Siyang Liu, Chujie Zheng, Orianna Demasi, Sahand
+Sabour, Yu Li, Zhou Yu, Yong Jiang, and Minlie
+Huang. 2021a. Towards emotional support dialog
+systems. In Proceedings of the 59th Annual Meet-
+ing of the Association for Computational Linguistics
+and the 11th International Joint Conference on Nat-
+ural Language Processing (Volume 1: Long Papers),
+pages 3469–3483, Online. Association for Compu-
+tational Linguistics.
+Siyang Liu, Chujie Zheng, Orianna Demasi, Sahand
+Sabour, Yu Li, Zhou Yu, Yong Jiang, and Minlie
+Huang. 2021b. Towards emotional support dialog
+systems. In Proceedings of the 59th Annual Meet-
+ing of the Association for Computational Linguistics
+and the 11th International Joint Conference on Nat-
+ural Language Processing (Volume 1: Long Papers),
+pages 3469–3483.
+Xin Liu, Baosong Yang, Dayiheng Liu, Haibo Zhang,
+Weihua Luo, Min Zhang, Haiying Zhang, and Jin-
+song Su. 2021c. Bridging subword gaps in pretrain-
+finetune paradigm for natural language generation.
+In Proceedings of the 59th Annual Meeting of the
+Association for Computational Linguistics and the
+11th International Joint Conference on Natural Lan-
+guage Processing (Volume 1: Long Papers), pages
+6001–6011.
+Xin Liu, Baosong Yang, Dayiheng Liu, Haibo Zhang,
+Weihua Luo, Min Zhang, Haiying Zhang, and Jin-
+song Su. 2021d. Bridging subword gaps in pretrain-
+finetune paradigm for natural language generation.
+In Proceedings of the 59th Annual Meeting of the
+Association for Computational Linguistics and the
+11th International Joint Conference on Natural Lan-
+guage Processing (Volume 1: Long Papers), pages
+6001–6011, Online. Association for Computational
+Linguistics.
+Thang Luong, Richard Socher, and Christopher Man-
+ning. 2013. Better word representations with recur-
+sive neural networks for morphology. In Proceed-
+ings of the Seventeenth Conference on Computa-
+tional Natural Language Learning, pages 104–113,
+Sofia, Bulgaria. Association for Computational Lin-
+guistics.
+Xuezhe Ma, Chunting Zhou, Xiang Kong, Junxian
+He, Liangke Gui, Graham Neubig, Jonathan May,
+and Luke Zettlemoyer. 2022.
+Mega: moving av-
+erage equipped gated attention.
+arXiv preprint
+arXiv:2209.10655.
+Zunita Mohamad Maskor, Harun Baharudin, et al.
+2016. Receptive vocabulary knowledge or produc-
+tive vocabulary knowledge in writing skill, which
+one important.
+International Journal of Aca-
+demic Research in Business and Social Sciences,
+6(11):261–271.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei-
+Jing Zhu. 2002. Bleu: a method for automatic eval-
+uation of machine translation. In Proceedings of the
+40th Annual Meeting of the Association for Com-
+putational Linguistics, pages 311–318, Philadelphia,
+Pennsylvania, USA. Association for Computational
+Linguistics.
+Vikram Patel, Neerja Chowdhary, Atif Rahman, and
+Helen Verdeli. 2011. Improving access to psycho-
+logical treatments: lessons from developing coun-
+tries. Behaviour research and therapy, 49(9):523–
+528.
+Weizhen Qi, Yeyun Gong, Jian Jiao, Yu Yan, Weizhu
+Chen, Dayiheng Liu, Kewen Tang, Houqiang Li,
+Jiusheng Chen, Ruofei Zhang, et al. 2021. Bang:
+Bridging autoregressive and non-autoregressive gen-
+eration with large scale pretraining. In International
+Conference on Machine Learning, pages 8630–
+8639. PMLR.
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan,
+Dario Amodei, Ilya Sutskever, et al. 2019.
+Lan-
+guage models are unsupervised multitask learners.
+OpenAI blog, 1(8):9.
+Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase,
+and Yuxiong He. 2020. Deepspeed: System opti-
+mizations enable training deep learning models with
+over 100 billion parameters. In Proceedings of the
+26th ACM SIGKDD International Conference on
+Knowledge Discovery & Data Mining, pages 3505–
+3506.
+Sahand Sabour, Wen Zhang, Xiyao Xiao, Yuwei
+Zhang, Yinhe Zheng, Jiaxin Wen, Jialu Zhao, and
+Minlie Huang. 2022.
+Chatbots for mental health
+support: Exploring the impact of emohaa on re-
+ducing mental distress in china.
+arXiv preprint
+arXiv:2209.10183.
+Sahand Sabour, Wen Zhang, Xiyao Xiao, Yuwei
+Zhang, Yinhe Zheng, Jiaxin Wen, Jialu Zhao, and
+Minlie Huang. 2023. A chatbot for mental health
+support: exploring the impact of emohaa on reduc-
+ing mental distress in china.
+Frontiers in Digital
+Health, 5:1133987.
+Vin Sachidananda, Jason Kessler, and Yi-An Lai. 2021.
+Efficient domain adaptation of language models via
+adaptive tokenization. In Proceedings of the Second
+Workshop on Simple and Efficient Natural Language
+Processing, pages 155–165.
+Rico Sennrich, Barry Haddow, and Alexandra Birch.
+2015. Neural machine translation of rare words with
+subword units. arXiv preprint arXiv:1508.07909.
+Rico Sennrich, Barry Haddow, and Alexandra Birch.
+2016.
+Neural machine translation of rare words
+with subword units. In Proceedings of the 54th An-
+nual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 1715–
+1725, Berlin, Germany. Association for Computa-
+tional Linguistics.
+Siqi Shen, Verónica Pérez-Rosas, Charles Welch, Sou-
+janya Poria, and Rada Mihalcea. 2022a. Knowledge
+enhanced reflection generation for counseling dia-
+logues.
+In Proceedings of the 60th Annual Meet-
+ing of the Association for Computational Linguistics
+(Volume 1: Long Papers), pages 3096–3107.
+Siqi Shen, Veronica Perez-Rosas, Charles Welch, Sou-
+janya Poria, and Rada Mihalcea. 2022b. Knowledge
+enhanced reflection generation for counseling dia-
+logues.
+In Proceedings of the 60th Annual Meet-
+ing of the Association for Computational Linguistics
+(Volume 1: Long Papers), pages 3096–3107, Dublin,
+Ireland. Association for Computational Linguistics.
+Siqi Shen,
+Charles Welch,
+Rada Mihalcea,
+and
+Verónica Pérez-Rosas. 2020. Counseling-style re-
+flection generation using generative pretrained trans-
+formers with augmented context.
+In Proceedings
+of the 21th Annual Meeting of the Special Interest
+Group on Discourse and Dialogue, pages 10–20.
+Lars Stenius Stæhr. 2008.
+Vocabulary size and the
+skills of listening, reading and writing. Language
+Learning Journal, 36(2):139–152.
+Hao Sun, Zhenru Lin, Chujie Zheng, Siyang Liu, and
+Minlie Huang. 2021. PsyQA: A Chinese dataset for
+generating long counseling text for mental health
+support.
+In Findings of the Association for Com-
+putational Linguistics: ACL-IJCNLP 2021, pages
+1489–1503, Online. Association for Computational
+Linguistics.
+Yi Tay, Mostafa Dehghani, Dara Bahri, and Donald
+Metzler. 2020.
+Efficient transformers: A survey.
+ACM Computing Surveys, 55:1 – 28.
+Perry W Thorndyke. 1977.
+Cognitive structures in
+comprehension and memory of narrative discourse.
+Cognitive psychology, 9(1):77–110.
+Mark Torrance, Luuk Van Waes, and David Galbraith.
+2007. Writing and Cognition. BRILL.
+Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier
+Martinet, Marie-Anne Lachaux, Timothée Lacroix,
+Baptiste Rozière, Naman Goyal, Eric Hambro,
+Faisal Azhar, et al. 2023.
+Llama: Open and effi-
+cient foundation language models. arXiv preprint
+arXiv:2302.13971.
+Sid Wang, Ashish Shenoy, Pierce Chuang, and John
+Nguyen. 2023. Now it sounds like you: Learning
+personalized vocabulary on device. arXiv preprint
+arXiv:2305.03584.
+Charles F Welch, Allison Lahnala, Verónica Pérez-
+Rosas, Siqi Shen, Sarah Seraj, Lawrence An, Ken-
+neth Resnicow, James W. Pennebaker, and Rada Mi-
+halcea. 2020. Expressive interviewing: A conver-
+sational system for coping with covid-19.
+ArXiv,
+abs/2007.03819.
+Rulon S Wells. 1947. Immediate constituents. Lan-
+guage, 23(2):81–117.
+WHO. 2020. World mental health day: an opportu-
+nity to kick-start a massive scale-up in investment in
+mental health. Accessed: 2020-08-29.
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Chaumond, Clement Delangue, Anthony Moi, Pier-
+ric Cistac, Tim Rault, Rémi Louf, Morgan Fun-
+towicz, et al. 2019.
+Huggingface’s transformers:
+State-of-the-art natural language processing. arXiv
+preprint arXiv:1910.03771.
+Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V
+Le,
+Mohammad Norouzi,
+Wolfgang Macherey,
+Maxim Krikun,
+Yuan Cao,
+Qin Gao,
+Klaus
+Macherey, et al. 2016.
+Google’s neural ma-
+chine translation system: Bridging the gap between
+human and machine translation.
+arXiv preprint
+arXiv:1609.08144.
+Yu Yan, Fei Hu, Jiusheng Chen, Nikhil Bhendawade,
+Ting Ye, Yeyun Gong, Nan Duan, Desheng Cui,
+Bingyu Chi, and Ruofei Zhang. 2021.
+Fastseq:
+Make sequence generation faster. In Proceedings of
+the 59th Annual Meeting of the Association for Com-
+putational Linguistics and the 11th International
+Joint Conference on Natural Language Processing:
+System Demonstrations, pages 218–226.
+Sangwon Yu, Jongyoon Song, Heeseung Kim, Seong-
+min Lee, Woo-Jong Ryu, and Sungroh Yoon.
+2021. Rare tokens degenerate all tokens: Improv-
+ing neural text generation via adaptive gradient gat-
+ing for rare token embeddings.
+arXiv preprint
+arXiv:2109.03127.
+Xiang Yue, Xinliang Frederick Zhang, Ziyu Yao,
+Simon Lin, and Huan Sun. 2021.
+Cliniqg4qa:
+Generating diverse questions for domain adapta-
+tion of clinical question answering. In 2021 IEEE
+International Conference on Bioinformatics and
+Biomedicine (BIBM), pages 580–587.
+Ofir Zafrir, Guy Boudoukh, Peter Izsak, and Moshe
+Wasserblat. 2019. Q8bert: Quantized 8bit bert. In
+2019 Fifth Workshop on Energy Efficient Machine
+Learning and Cognitive Computing-NeurIPS Edi-
+tion (EMC2-NIPS), pages 36–39. IEEE.
+Qiang Zhang, Jason Naradowsky, and Yusuke Miyao.
+2023. Ask an expert: Leveraging language models
+to improve strategic reasoning in goal-oriented dia-
+logue models. arXiv preprint arXiv:2305.17878.
+Tianyi Zhang*, Varsha Kishore*, Felix Wu*, Kilian Q.
+Weinberger, and Yoav Artzi. 2020. Bertscore: Eval-
+uating text generation with bert.
+In International
+Conference on Learning Representations.
+Vilém Zouhar, Clara Meister, Juan Gastaldi, Li Du,
+Mrinmaya Sachan, and Ryan Cotterell. 2023. To-
+kenization and the noiseless channel. In Proceed-
+ings of the 61st Annual Meeting of the Association
+for Computational Linguistics (Volume 1: Long Pa-
+pers), pages 5184–5207, Toronto, Canada. Associa-
+tion for Computational Linguistics.
+A
+Few-shot Inadequacy in PsyQA task
+Limited Input Size and Inconsistent Results.
+Due to length restrictions, using more than one
+PsyQA example in the prompt was not allowed
+for longer post-response pairs, making the few-
+shot in-context learning for this task impractical.
+In addition, in cases where we were able to pro-
+vide more than one example as the prompt, the
+model generally produced low-quality incoherent
+responses that were inconsistent with the input
+context (i.e., user’s post). We believe this is ex-
+pected as the model would have difficulties dis-
+tinguishing between the posts in the few-shot ex-
+amples and the post that requires a generated re-
+sponse.
+Misalignment
+with
+language
+behavior
+of
+MHPs.
+The language style of LLMs is adopted
+from their corresponding pre-training data and
+human feedback, which may not meet the re-
+quirement of linguistic behaviors of MHPs.
+In
+other words, despite the significant performance
+of recent LLMs, desirable performance could
+only be achieved through finetuning the model
+on professional data that captures the rich MHP
+language style and patterns.
+B
+Statistics on tokens at different lengths
+in a merged vocabulary
+Table 8 presents the top-scored tokens at various
+different lengths to show that the task-adaptive to-
+kenizer successfully includes many task-specific
+terminologies and expressions in its vocabulary.
+Figure 3: An example of PsyQA.
+C
+Experiment Details
+Except for the experiments on vocabulary size,
+we adopted a uniform size of task-specific vo-
+cabulary for task-adaptive tokenizer construction
+by merging a 10k task-specific vocabulary and
+the original vocabulary of each pre-trained model.
+During training, the regularization coefficient for
+sampling segmentation among various results was
+0.5.
+We use one Nvidia GPU A40 for train-
+ing GPT and Bart, which can load eight samples
+with a padding length of 1024. Training parame-
+ters are max_length=1024 for CN PsyQA/512 for
+MHP Reddit, batch_size=8, training_epoch=30,
+warmup_ratio=0.1. We use different decoding pa-
+rameters for different models, as listed in Table 9.
+#length
+top-5 tokens
+(0, 6]
+., ",", , s, and
+(6, 12]
+people, really, if you, things, yourself
+(12, 18]
+relationship, mental health, relationships, your therapist, that you are
+(18, 24]
+It sounds like you, with your therapist, in the first place,
+it sounds like you, guide to conversation
+(24, 30]
+a mental health professional, omeone will do the right thing,
+When trust is broken one of t, the most important thing,
+mental health professionals
+(30, 32]
+borderline personality disorder, community mental health center,
+Borderline Personality Disorder, Licensed Professional Counselor,
+understand exactly how you feel
+Table 8: Statistics of tokens with the highest log-likelihood scores in each length interval. The task-specific
+vocabulary for statistics is built on MHP datasets.
+Setting
+Parameters
+CN PsyQA
+GPT
+top_k=50,
+top_p=0.9,
+do_sample=True,
+repeti-
+tion_penalty=1.5, temperature=0.9
+Bart
+top_k=50,
+top_p=0.9,
+do_sample=True,
+repeti-
+tion_penalty=1.5, temperature=0.9
+LLaMA
+top_k=40,
+top_p=0.8,
+do_sample=True,
+num_beam=4,
+repetition_penalty=1.2,
+tem-
+perature=0.95,
+max_new_tokens=512,
+no_repeat_ngram_size=4
+MHP Reddit
+GPT
+top_k=50,
+top_p=0.9,
+do_sample=True,
+repeti-
+tion_penalty=1.5, temperature=1
+Bart
+top_k=50,
+top_p=0.9,
+do_sample=True,
+repeti-
+tion_penalty=1.1, temperature=1
+Table 9: Decoding Parameters
+D
+Vocabulary size
+We reported the generation effectiveness cross dif-
+ferent task-specific vocabulary sizes in Table 10.
+E
+Case Study
+For each generation setting, we present one gen-
+erated case. The results are in Table 11 and Ta-
+ble 12. From the result on MHP Reddit, we see
+due to the scarcity of the data, generation quality
+is hurt by poor representation of newly-add tokens
+while fluency, coherence, and professional expres-
+sion are recovered after the application of the map-
+ping mechanism.
+Taks-specific
+vocab size
+Increment Bleu
+R-L
+CN PsyQA
+6k
+2774
+27.31
+22.48
+10k
+6756
+27.11
+22.05
+14k
+10737
+27.04
+21.52
+18k
+14723
+26.94
+21.46
+MHP Reddit
+6k
+2367
+4.81
+10.72
+10k
+5470
+4.77
+10.71
+14k
+8278
+4.78
+10.76
+18k
+11733
+3.92
+9.81
+Table 10: Comparison result on different sizes of specialized vocabulary. Especially, taks-specific vocab size
+is the size of vocabulary before merging. increment means the token increase relative to base vocabulary after
+merging the task-specific and base vocabulary into one. Bleu denotes the average of Bleu-1,2,3 and 4. R-L denotes
+Rouge-L.
+Figure 4: Human evaluation guideline.
+Context
+[QUE] 每份工作干不长，心一直空的，缺乏安全感，如何摆脱？[DESC] 工作了三四年，每
+份工作都干不长久。一旦熟悉工作，稳定下来了，每天干着重复的工作，一段时间后，每天
+就会觉得心里很浮躁很不安。感觉生活像一潭死水，想着有很长一段时间要这样过，心里就
+难受，害怕。待的时间越久，就有些想自残，甚至产生轻生的念头。明明工作上没什么问
+题，老板都是认可的，每次跟他们辞职，他们也不想我走，都会劝着我留下。虽然自己不爱
+说话，但因为长得不丑，又有点乖巧，同事刚开始也愿意主动接近我。发现我不爱说话，就
+有些疏离，但真正有事，自己外貌看上去可怜，他们少数又会主动帮我。开始每份工作都做
+了半年才辞，后来的做到了三四个月就有些奔溃。有一次没什么事，自己情绪很糟就哭了，
+别人问我也无法解释。有一份坚持了一年多，之后辞了就很想轻生。我一直都不明白活着是
+为了什么，心一直都是空的。有男友了也从不信他们真的爱我，一直也觉得我妈不爱我。
+一直觉得自己和这个世界隔着什么，总觉得自己人生无望，活着没盼头[KWD] 成长,性格完
+善,工作学习,人生意义
+Genrated Response
+M
+NM
+B
+[QUE]楼主你好!看完你的
+文字描述先给你一个温暖
+的拥抱从你的描述中可以
+看出你是一个非常善良、温
+柔的女孩子呢!!!无论做什么
+事情都会有“怕”的心态。但
+是在现实社会里却可能有这
+样的想法——如果把人作为
+一个具体事件来看待的话确
+实很难实现这个要求。其
+实你的内心对于这件我们
+认识不全面的事会有很多
+疑惑的想法和情绪,所以会
+觉得总是活在自己自己的想
+象中,并且会有一点抵触的
+感觉:一方面是你觉得现在
+这份工作已经不是自己想要
+做的样子;二是还有一种你
+还没有真正的喜欢它......好
+像没有这么坚定的信念而犹
+豫徘徊很久。【1)首先要明
+白清楚自己想要什么职业所
+在。你想从事什么样的专业
+事业是可以成为你想要的样
+子的人吗?(比如你可以学些
+什么技术等等),这是必须要
+一步一步地去实践才能完成
+的事情。2.其次需要了解自
+己在当下的岗位上遇到的一
+些困难或者遭遇一些挫折是
+什么导致你现在出现这种纠
+结的感受的原因。(比如说
+说换工作这件事让你很难受
+等)。这里涉及到很多信息
+哦)接下来就是解决困惑的
+关键步骤。1.找到你喜欢做
+的事情并付诸行动。3.想清
+楚你自己的目标方向在哪里
+3.弄清楚自己到底想要的是
+什么以后再去做选择。4.找
+出自己的兴趣点最后就是
+要找到自己喜欢做的事与热
+爱。当你将你想要做的定义
+出来的时候,就会看到更广
+阔的世界啦(当然如果你确
+定一定要去做自己喜欢的行
+业那也是可以呀。)世界和
+我爱着你, 祝好。
+题主你好看到你的描述了
+解到题主的烦恼是被职场性
+的孩子困扰的,希望父母能
+够理解你的感受呢!我想她
+和你成长经历有关:这让你
+产生了很大的困扰,所以可
+能对父母的要求太高的要求
+可能是更喜欢、去掌控你的
+优点。【梳理反馈】首先自
+我暴露的过程需要学会慢慢
+积累自己的情绪感受,而不
+能接受自己的负面情绪。
+通过外在方式与控制的情
+绪宣泄出来,当它无法承受
+或者失望的时候来证明自己
+就会更加强烈愤怒。2关于
+社交方面的事情,我们是否
+感到迷茫时出现这种心情
+反应呢?2.如果这些压力也
+不太一样的话楼主或许有
+时候会出现一些无力无助
+的现象并且导致在逃避的
+原因中看到,其实可以看看
+这些问题是什么,比如今天
+考研没有动力吗等等事情
+好,似乎只能继续让自己让
+家人朋友轻松很多。这些都
+是为了具体计划的方法才能
+解决这样的事件。3你说自
+己总是陷入“不好”上突然消
+失之地”,那么就会把目标当
+成一个目标进行积极能量的
+方法,同时不要过度自信,而
+且他也不是努力的人。然后
+认真思考一下这一点对方有
+什么代价感不同的建议对你
+造成了一定的影响导致的。
+你可以做一些运动不断的提
+升训练的地方2.不必强迫自
+己做冥想练习一下注意力转
+移到其他同学身上的压力当
+中寻找专业的咨询师的心
+理咨询师倾诉。(2)其次先
+及时锻炼休息的时间的时
+间。2、学会放下手机的变
+化等人聊天。
+你好呀非常理解您的困
+扰，抱抱楼主～首先我身
+边还存在着许多[UNK]懒惰
+症[UNK]患者(表面特容易
+改变)其实我建议你：1.学
+会拒绝他人不足部分原本并
+未知道怎样与环境相处、以
+及与他人交流等行为只能通
+过向周围比较亲密或者让他
+人舒服的方式进入对象关系
+中获取满足，当达到某种程
+度时再转移注意力2.找出适
+合应用于自卑内驱者和焦虑
+抑郁症群体间反差最大的心
+结。3.寻求专业咨询师的支
+援尽管目前社会存在各类障
+碍需引起更加强烈地重视但
+是希望我所提供的分析仅代
+表个人观点，谢谢！
+Table 11: Case study on CN PsyQA. An explanation for abbreviations: M for GPT2TaT +mapping, B for GPT2base,
+and NM for GPT2TaT w/o mapping;
+Context
+NM
+B
+Context
+[QUE] can we talk about dissociation?<|sep|>[DESC] i’m just wondering what other people’s expe-
+riences with dissociation are, and if there are different types? personally, my way to dissociate is
+kind of an attempt to evoke/"be" stronger versions of myself (always male versions though - which i
+find interesting - i’ve no desire to be male irl, just in my head) when i’m under duress of some sort,
+usually pain or anxiety. is this unusual? my boyfriend, on the other hand, calls it dissociation when
+he kind of "zones out", he says his eyes glaze over and he stops doing anything or really thinking
+anything (also in times of stress). are we both correct in calling what we experience "dissociation"?
+what’s your experience? i understand this is kind of a taboo/sensitive topic, i’m just now getting to
+the point where i can openly talk about it, but i’m desperately curious about it. edit: thanks everyone
+for sharing, it’s a fascinating subject. it’s sounding to me like what i experience is different from
+"normal" dissociation somehow, and i’m going to investigate this further. <|sep|>[KWD] bpd<|sep|>
+Genrated Response
+M
+NM
+B
+if you felt as if you were ex-
+periencing opposed personal-
+ity types, then maybe it’s im-
+portant to tell your friends
+about this because this might
+be useful to help you feel
+more confident and connected
+with life.
+please also know
+that some people experience
+their identity through distinct
+body parts and experiences,
+and that their bodys are differ-
+ent from what you described.
+that also work for a onlyt up
+so some of my relationship-
+cunllalerded before she told
+me how but was all the feeling
+more it is get them out when
+they say after not him to do
+me! dont know has been will
+be if you need her off some-
+thing as a being able to your
+first one if i am to get do i
+do because there are time you
+never want people who start
+again in the have been had as
+i was gonna about around... i
+always felt i had, npoxges has
+done than i know friends, but
+it can help feel nothing that
+you since. and there will be
+on my own life back that got
+help down without someone
+in farinilance; i feel even a
+lot what to say byasment cyst
+loves me better.
+if you say so yourself then
+perhaps that could shed light
+into something deeper
+Table 12: Case study on MHP Reddit. An explanation for abbreviations: M for GPT2TaT +mapping, B for GPT2base,
+and NM for GPT2TaT w/o mapping;

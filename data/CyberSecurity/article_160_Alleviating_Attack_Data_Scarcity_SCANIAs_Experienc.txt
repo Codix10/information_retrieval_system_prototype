@@ -1,0 +1,810 @@
+Title: Alleviating Attack Data Scarcity: SCANIA's Experience Towards Enhancing In-Vehicle Cyber Security Measures
+Source URL: http://arxiv.org/abs/2507.02607v2
+--------------------------------------------------
+
+arXiv:2507.02607v2  [cs.CR]  6 Jul 2025
+1
+Alleviating Attack Data Scarcity: SCANIA’s
+Experience Towards Enhancing In-Vehicle Cyber
+Security Measures
+Frida Sundfeldt∗†, Bianca Widstam∗†, Mahshid Helali Moghadam∗, Kuo-Yun Liang∗, and Anders Vesterberg∗
+∗Cloud and Embedded Platform, Traton AB, S¨odert¨alje, Sweden
+{mahshid.helali.moghadam, kuo-yun.liang, and anders.vesterberg}@scania.com
+† Department of Electrical And Information Technology, LTH, Lund University, Sweden
+{fr8354su-s, bi4215wi-s}@student.lu.se
+Abstract
+[Context and Motivation] The digital evolution of connected vehicles and the subsequent security risks emphasize the critical
+need for implementing in-vehicle cyber security measures such as intrusion detection and response systems to safeguard safety
+and functionality. The continuous advancement of attack scenarios further highlights the need for adaptive detection mechanisms
+that can detect evolving, unknown, and complex threats. The effective use of ML-driven techniques can help address this
+challenge. [Problem] However, constraints on implementing diverse attack scenarios on test vehicles due to safety, cost, and
+ethical considerations result in a scarcity of data representing attack scenarios. This limitation necessitates alternative efficient
+and effective methods for generating high-quality attack-representing data. [Contribution] This paper presents a context-aware
+attack data generator that generates attack inputs and corresponding in-vehicle network log, i.e., controller area network (CAN)
+log, representing various types of attack including denial of service (DoS), fuzzy, spoofing, suspension, and replay attacks. It
+utilizes parameterized attack models augmented with CAN message decoding and attack intensity adjustments to configure the
+attack scenarios with high similarity to real-world scenarios and promote variability. We evaluate the practicality of the generated
+attack-representing data within an intrusion detection system (IDS) case study, in which we develop and perform an empirical
+evaluation of two deep neural network IDS models using the generated data. In addition to the efficiency and scalability of
+the approach, the performance results of IDS models, high detection and classification capabilities, validate the consistency and
+effectiveness of the generated data as well. In this experience study, we also elaborate on the aspects influencing the fidelity of
+the data to real-world scenarios and provide insights into its application.
+Index Terms
+Attack Data Generation, Automotive Cyber Security, Controller Area Network, Intrusion Detection System, Deep Neural
+Networks
+I. INTRODUCTION
+The automotive industry is facing a significant transformation due to the digitalization of in-vehicle systems, advanced driver
+assistance systems (ADAS), and increasing vehicle connectivity as a backbone for advanced features. This digital evolution
+comes with inherent cyber security risks, as hackers may actively seek to manipulate vehicle software, access private data,
+and even use the vehicle for criminal actions, thereby posing threats to vehicle safety and consumer privacy. International
+regulations such as UN Regulation No 155 [1], mandate ensuring cyber security across the vehicle’s lifecycle and require
+various measures to effectively detect and respond to cyber attacks on vehicles.
+The attacks may originate from multiple entry points including sensors, infotainment systems, telematics units, or direct
+physical interfaces. They can disrupt in-vehicle networks, interfere with data transmission, and cause electronic control units
+(ECUs) to malfunction. The controller area network (CAN) [2] is a standard communication protocol widely used for data
+exchange between ECUs within a vehicle—which supports data rates of up to 1 Mbps with a payload size of 8 bytes. In
+2012, CAN Flexible Data-rate (CAN-FD) was also introduced to enable higher data rates and larger payloads up to 64 bytes—
+standardized in ISO 11898-1:2015 [3], [4]. Despite several advantages of CAN, such as built-in error detection, cost-effectiveness
+due to reduced wiring, and a lightweight design, the CAN standard presents significant security vulnerabilities. The primary
+weaknesses include the absence of mechanisms for authentication, authorization, and encryption [5]. These vulnerabilities result
+from the CAN standard’s original design, which assumes all messages sent to an ECU are legitimate. Without authentication
+and authorization, malicious nodes can impersonate legitimate ECUs. Meanwhile, the lack of encryption means transparency
+of all CAN traffic, which can allow attackers to easily perceive and analyze data. Furthermore, as messages on the CAN bus
+are broadcast, a single compromised ECU could grant an attacker access to all transmitted information. In this context, the
+attackers might employ various disruptive mechanisms such as message fabrication (e.g., denial of service (DoS) and fuzzy
+attacks), suspension, masquerade (e.g, spoofing attack), and message replay [1], [6], [7].
+One of the common security measures mandated by the regulation is the in-vehicle intrusion detection system (IDS), which
+runs on ECUs and provides a layer of security by analyzing the in-vehicle network traffic and identifying suspicious activities
+2
+that could indicate an intrusion. The evolving threats and the continuous advancement of attack methods underscore the need
+for adaptive detection and response systems. In this context, data-driven solutions using ML techniques offer high potential to
+address this challenge by enabling the intrusion detection system to learn from the data representing the state of the vehicle,
+identify patterns, and adapt to new and emerging threats.
+Research problem. The data representing the state of the vehicle under attack is scarce as implementing all types of
+attack scenarios might not be feasible on the test vehicle, due to safety concerns, cost and resource limitations, and ethical
+considerations. Given these limitations, it is often required to consider effective alternatives such as synthetic generation of
+attack-representing data—to enrich the data required to develop ML-based security measures. Attack-representing data in this
+study refers to the in-vehicle network log, representing the state of the vehicle, under the occurrence of the attack.
+It is worth noting that the need for (in-house) industry-driven research on enhancing the technical maturity of the in-vehicle
+security measures like in-vehicle (ECU-based) intrusion detection stems from the fact that relying on commercial products
+would imply (even partially) sharing sensitive information, e.g., network data and architecture-relevant information with the
+suppliers, which may be non-compliant with security requirements. This industry experience paper intends to address the
+following research questions:
+RQ1: How can we efficiently generate attack-representing CAN log data, covering various types of attack mechanisms such
+as fabrication, masquerade, suspension, and replay, based on normal CAN traffic?
+RQ2: How practical is the generated attack-representing data, in terms of data quality characteristics such as consistency and
+effectiveness, for developing an intrusion detection security measure?
+RQ3: What characteristics justify the fidelity of the generated data and what limitations remain?
+This paper presents the following contributions:
+I. We present a context-aware attack data generator that generates an attack-representing CAN log based on a given normal
+(attack-free) traffic dataset. It uses precise modeling of distinct attack classes and utilizes a set of adjustable parameters to
+configure the attack scenarios, which preserves the variability of attacks while retaining a realistic network flow. For frequency-
+disturbing attacks (i.e., DoS and fuzzy), in addition to adjustable parameters for timing of attack phases and generation of
+various fabricated messages, the attack modeling incorporates an attack intensity adjustment procedure as well. This involves
+adjusting the frequency of attack messages w.r.t the extracted patterns of an open-source real attack dataset, to mimic real
+attack intensity. For other classes of attacks based on impersonating, suspending, or replaying mechanisms, the attack modeling,
+besides adjusting the timing, also utilizes the CAN database (dbc) file to decode the raw messages, identify the communicating
+ECUs, and alter the data to accurately represent the intended attack scenarios.
+II. To evaluate the practicality of the generated attack-representing data, we use it to develop two ML IDS models leveraging
+sequence-based deep neural networks (DNN), i.e., one- dimensional convolutional neural network (1D-CNN) and long short-
+term memory (LSTM) network, as a case study. We use a subset of the generated data for the model training and validation.
+We perform an empirical evaluation of the trained models on an unseen part of the data w.r.t various performance metrics—
+including the rate of false alarms and missed attack detection as two key performance indicators for IDS—and empirically
+show the consistency and effectiveness of the data.
+The high detection and classification capabilities of the IDS models developed using the generated data, i.e., false alarm
+and missed attack rates of 0.09% and 0.2% for the LSTM model; as well as 0.01% and 0.4% for the 1D-CNN, demonstrate
+high data consistency and effectiveness, as two quality characteristics of the data. Moreover, the efficiency (low cost) of the
+approach, the potential of scalability, understandability of the data due to the precise attack modeling all further highlight the
+practicality of the generated data. We also elaborate on the factors affecting the fidelity of the data to real-world scenarios and
+its potential application areas. We note that while parameterized attack models create scenarios closely resembling real-world
+attacks, the lack of observability of the actual effects of attacks on vehicle’s operation remains a limitation influencing the
+fidelity of the generated data.
+The rest of the paper is organized as follows: Section II discusses background information on the structure of CAN messages
+and various types of attack models. Section III presents the details of the attack data generator. Section IV presents the IDS
+application developed based on the data. Section V discusses and elaborates on the results answering the RQs and threats to
+validity of the results. Section VI provides an overview of related work and insights into the applicability of the generated
+data and attack data generator, and Section VII concludes the paper with a summary of the findings and research directions
+for future work.
+II. BACKGROUND
+A. CAN Frames
+The ISO 11898 series of standards presents the specification of the data-link and physical layers of the open systems
+interconnection (OSI) model for CAN communication [2], [4]. The data link layer sends messages using CAN frames, and it
+handles message framing, arbitration, error detection, and acknowledgment. The standard CAN frame uses an 11-bit identifier,
+while the extended format (CAN-FD) uses a 29-bit identifier, which is made up of the 11-bit base identifier plus an 18-bit
+extension. The CAN-FD frame supports both identifier formats and allows for a larger payload, up to 64 bytes [4]. Vehicle
+manufacturers often keep the semantics of the CAN ID and data field proprietary and confidential.
+3
+The CAN protocol works based on a principle known as carrier-sense, multiple-access with collision resolution and arbitration
+on message priority (CSMA/CR+AMP) [8]. It means that each node on the network has to wait for the bus to be free before
+it can send a message, which is what CSMA means. The CR+AMP part means that if two messages are sent at the same
+time, there is a way to decide which one goes through. This happens through a process called bit-wise arbitration, where
+the message with higher priority, based on its identifier, will be allowed to continue. It prioritizes messages based on their
+identifiers in a way that a lower identifier has higher priority. The structure of a CAN frame, as shown in Fig. 1, includes
+the key fields, namely arbitration, control and data, cyclic redundancy check, and acknowledgment fields. The arbitration field
+contains the ID and the RTR/RRS bit (remote transmission request). Lower ID values mean higher priority and the RTR/RRS
+bit indicates whether the frame is a data frame carrying data or a remote frame, which is used to request data. The control
+field manages various data frame aspects such as data length code (DLC) indicating the size of the payload. The data field
+presents the message’s payload. Cyclic redundancy check is used for transmission error detection and acknowledgment is used
+by the receivers to acknowledge that the data frame was received.
+(a) Standard CAN
+(b) CAN-FD
+Fig. 1: The CAN Frame
+B. Attack Models
+Attack surface analyses for connected vehicles, [9]–[12], have investigated several potential attack vectors. An attack vector
+refers to a specific method or pathway that an attacker can use to gain unauthorized access to the system to inject harmful
+input or make malicious actions. It can be initiated through physical access such as via on-board diagnostic II (OBD-II port)
+interface or other surfaces, e.g., as reported in Kia boys challenge [13] and keyless RAV4 theft storyi. Various sensors used in
+the vehicles could be exploited as attack entry points. Additionally, some of the vehicle systems with external communication
+interfaces such as the telematics module with remote commanding, infotainment, navigation, and remote key system, could be
+also among the direct target entry points [9].
+Despite the range of attack vectors attackers may use, there are some core malicious mechanisms employed to disrupt
+normal flow on the CAN bus and have the connected systems malfunction. There are four representative categories of the
+attack mechanisms on the CAN bus [10], [14], i.e., fabrication, masquerade, suspension, and replay, that we consider and
+implement at least one type of attack for each mechanism.
+Fabrication. An attacker, through gaining unauthorized access to the network and using an external device or through
+compromising an ECU, injects fabricated messages with falsified ID, DLC, and data—mainly aiming at the frequency dis-
+turbance. Flooding the bus or overriding messages from a legitimate ECU, are regarded as fabrication attacks, which can
+result in malfunctions or cause other ECUs to stop working. Fig. 2a, shows a simple example of a fabrication attack where
+a compromised ECU, C, sends multiple fabricated messages with falsified ID, which can block other messages with lower
+priority. DoS and fuzzy attacks are two types of attack based on the fabrication mechanism.
+Denial of Service (DoS): The network is overwhelmed by a large number of messages, which can cause other ECUs to stop
+or delay their transmissions. The attacker often injects high-priority CAN messages, e.g., using ID 0x000, at a high frequency
+[6], [7].
+Fuzzy attack: It involves sending messages with random or semi-random IDs and data values. In this way, the attacker can
+inject malicious data into the network. By systematically testing the system with small fuzzy packets and observing how it
+reacts, the attacker can also gather information to develop further attacks [15].
+Masquerade. The attacker sends forged malicious messages that seem to come from another ECU, while mimicking the
+normal message timing, to trick other ECUs into accepting them (e.g., keyless RAV4 theft case). It can be done involving
+two compromised ECUs: a weaker ECU that can be halted or suspended from sending messages, and a stronger ECU that
+the attacker controls to send malicious messages. The stealthy nature of this mechanism can cause considerable disruptions
+without changing the frequency of messages and pose a serious threat to the integrity of the network and vehicle safety. Fig.
+ihttps://kentindell.github.io/2023/04/03/can-injection/
+4
+2b shows a masquerade attack mechanism, illustrating that both ECU A (the weaker ECU) and ECU C (the stronger ECU)
+have been compromised. ECU A is prevented from transmitting any messages, while ECU C takes on the role of ECU A by
+sending malicious messages with ID A.
+Spoofing attack: It is a type of attack based on the masquerade mechanism. Here, the spoofing attack involves suspending a
+compromised ECU, creating and sending fake messages with a spoofed ID, so the attacker tricks other ECUs into accepting
+them as genuine.
+Suspension. The attacker compromises an ECU and prevents it from transmitting some or all of its messages. This disruption
+can cause malfunctions in the targeted ECU and in other ECUs that depend on its data. For instance, if the electric power
+steering ECU stops sending steering angle information, the stability control system, which relies on that data for traction
+control, will not function properly and can cause potentially dangerous situations [14]. Fig. 2c demonstrates the suspension
+mechanism, where ECU C has been compromised and blocked from transmitting messages.
+Replay. It involves capturing CAN messages for a certain period and retransmitting them at a later time. The attacker first
+monitors and records messages during the normal operation of the network. These recorded messages are then replayed to cause
+malfunctions. The replay attack uses unaltered messages, so it is often more difficult to detect. Fig. 2d shows the messages
+sent by ECU B are captured and replayed by compromised ECU C.
+(a) Fabrication
+(b) Masquerade
+(c) Suspension
+(d) Replay
+Fig. 2: Attack mechanisms, the green arrow shows normal message flow and the red one shows the flow during attacks.
+III. CONTEXT-AWARE ATTACK DATA GENERATION
+A. DoS and Fuzzy Attacks
+For generating the data representing frequency-disturbing attacks, such as DoS and fuzzy, the attack generator, first requires
+adjusting the frequency of attack messages to be inserted into the target normal log. To address this, it uses the extracted
+pattern from an open-source realistic CAN attack dataset, called Survival Analysis Dataset for automobile IDS [16].
+The open-source dataset contains CAN logs in both normal and under attack scenarios, collected via the OBD-II port from
+three different vehicle types—HYUNDAI YF Sonata, KIA Soul, and CHEVROLET Spark. The attack generator extracts the
+timing pattern from the open-source dataset, i.e., the time interval between the messages in the normal status, attack duration
+and frequency of attack messages in the attack mode. It extracts the timing pattern of the messages in the proprietary normal
+CAN log and using a scaling factor calculates the frequency of attack message injection so that an attack intensity same as
+the realistic open-source dataset will be mimicked and inserted into the CAN log.
+The proprietary and open-source datasets differ in vehicle types as well as the open-source data consists of only standard
+CAN messages, whereas the proprietary dataset contains a mixed set of CAN and CAN-FD messages. Accordingly, a difference
+in message frequency is expected. The scale factor is utilized to consider the frequency difference and ensure that a similar
+attack intensity is created. Table I shows the average interval between all messages in the proprietary data and the open-source
+data. The scale factor is calculated from the average intervals, ¯I, as shown in (1).
+Scale Factor =
+¯IPROP.
+1
+3(¯IKIA + ¯ISONATA + ¯ISPARK)
+=
+0.0952
+1
+3(0.5121 + 0.4785 + 0.4351) ≈0.2
+(1)
+where ¯IPROP., ¯IKIA, ¯ISONATA, and ¯ISPARK indicate the average interval between messages in the normal (non-attack) proprietary,
+KIA, SONATA, and SPARK CAN logs, respectively.
+TABLE I: Average interval between consecutive messages in the normal datasets
+Dataset
+Proprietary
+SONATA
+KIA
+SPARK
+Avg. interval (ms)
+0.0952
+0.5121
+0.4785
+0.4351
+5
+DoS Attack. The Python script programmed to simulate a DoS attack generates a sequence of messages replicating a flood
+of CAN traffic and inserts it into the target log file. It creates bursts of high-priority messages (e.g., ID = 0) during specific
+attack phases, also known as intrusion phases, with the aim of overwhelming the network. The average interval between the
+attack messages, D¯IPROP., in the generated attack-representing log, is calculated as expressed in (2) (Table II).
+D¯IPROP. = 1
+3(D¯IKIA + D¯ISONATA + D¯ISPARK) · 0.2
+= 1
+3 · (0.6183 + 0.6059 + 0.6655) · 0.2 ≈0.13 ms
+(2)
+where D¯IKIA, D¯ISONATA, D¯ISPARK indicate the average interval between DoS attack messages in the open-source dataset. The
+created attack phases are defined for random periods between 4 and 6 seconds, separated by pauses, to mimic the unpredictable
+nature of such attacks. The time interval between messages (with an average of approximately 0.13ms) and the pauses between
+bursts (with an average of 5s) are intentionally varied using a standard deviation to introduce variability into the timing. It
+means that the intervals and pauses fluctuate around these averages and it makes the timing more realistic or less predictable.
+Fuzzy Attack. The generator selects a set of the most frequent message IDs from the proprietary normal data and uses it
+to create pseudo-random IDs through an XOR operation along with a random number—to enhance the diversity of IDs while
+preserving the general format of valid messages. Each generated ID has a random payload to simulate message content. These
+fabricated messages are inserted into proprietary normal log file during the attack phases—with are defined in periods of 4s
+to 6s alongside the pause periods with an average of 5s. The average interval between the fuzzy attack messages, F ¯IPROP., is
+approximately 0.2ms (3). Similar to DoS scenario, the interval between the attack messages and pauses between the attack
+phases both undergo a standard deviation to increase the variability and reduce predictability.
+F ¯IPROP. = 1
+3(F ¯IKIA + F ¯ISONATA + F ¯ISPARK) · 0.2
+= 1
+3 · (0.9746 + 1.0142 + 0.9334) · 0.2 ≈0.2 ms
+(3)
+where F ¯IKIA, F ¯ISONATA, and F ¯ISPARK indicate the interval between the fuzzy attack messages in the open-source dataset.
+Table III summarizes the adjustable parameters to configure DoS and fuzzy attack scenarios. Regarding the integration of
+fabricated messages into the target log data, timestamps of the messages are examined and if needed, are adjusted to prevent
+collisions and preserve the arbitration ID-based prioritization—to represent a realistic network flow.
+B. Spoofing Attack
+The spoofing attack generator script works by replacing legitimate messages from a specific ECU with new ones containing
+pseudo-random payloads—while keeping the same message IDs, which preserves the normal transmission cycle of the ECU.
+It creates pseudo-random payloads based on the actual data from the target ECU’s messages by applying XOR operation with
+a random number on the original payload data—similarly to the pseudo-random IDs in the fuzzy attack. A standard deviation
+is also applied to the message timestamps to simulate timing variations. The generator script extracts the messages originating
+from the target ECU by encoding the messages with a CAN database (dbc file) and mapping the ECU to the message IDs, so
+that it ensures that only messages of the target ECU are considered for spoofing. So, unlike the fuzzy and DoS attacks, which
+operate in separate attack phases, the spoofing attack occurs continuously over a period.
+TABLE II: Average interval between attack messages in fuzzy and DoS
+Proprietary
+SONATA
+KIA
+SPARK
+DoS
+0.1260
+0.6183
+0.6059
+0.6655
+Fuzzy
+0.1948
+1.0142
+0.9746
+0.9334
+TABLE III: DoS and fuzzy attack configuration parameters
+Parameter
+Value
+Attack phases
+4 to 6 s
+Average of pause period
+5 s
+Average of attack message interval
+D ¯IPROP. = 0.13ms,
+F ¯IPROP. = 0.2ms
+Standard deviation for pauses
+Average of Pause/10
+Standard deviation for message intervals
+D ¯IPROP./3,
+F ¯IPROP./3
+Arbitration ID selection
+DoS: 0,
+Fuzzy: Pseudo-random IDs based on top 33%
+frequent IDs
+Payload
+Randomly generated data
+6
+TABLE IV: Spoofing attack configuration parameters
+Parameter
+Value
+Attack messages’ behavior
+Same as the cyclic behavior of normal messages
+Standard deviation for timestamps of attack
+messages
+1% of the base (original) cyclic time difference
+Arbitration ID selection
+Uses the same IDs as the targeted ECU’s
+messages
+Payload
+Pseudo-random based on original payload
+C. Suspension Attack
+The attack generator script replicates the effect of temporarily suspending a target ECU from the network by selectively
+removing messages sent by the target ECU over a set period. It uses the dbc files to decode the messages and by using the
+ECU-to-message ID mapping it identifies the message IDs sent by the target ECU. Once identified, these messages are filtered
+out from the CAN log during the specified time window. It creates a gap in the target CAN log that mimics the ECU being
+suspended from the network.
+D. Replay Attack
+To generate data representing replay attack, it targets messages with frequently occurring IDs in normal CAN log—the top
+5 most frequent IDs—and replays them according to their respective cyclic timing. To preserve the consistency and integrity
+of the network flow, the average interval between the target messages is calculated. Then, the target messages are duplicated,
+and their timestamps are adjusted so that their cyclic timing is preserved. These messages are integrated into the CAN log
+over a set period. Fig. 3 and Algorithm 1 show an overview of the attack data generation process.
+Fig. 3: Attack generation process
+IV. A DATA-DRIVEN SECURITY MEASURE: IDS APPLICATION
+An IDS application, to detect and identify different classes of attacks, is developed utilizing two widely used DNN models,
+LSTM and 1D-CNN, and empirically evaluated based on an unseen part of the generated data. LSTM is effective for handling
+time-series data by capturing sequential patterns and CNN is noted for its feature extraction capabilities to identify distinct
+patterns.
+A. Data Management
+To prepare training and testing data for the models, 3 million messages over the same time span (period) were selected from
+each attack-contained data file, i.e., DoS-, fuzzy-, spoofing-, and replay-representing attack CAN log, and a dataset containing
+12 million messages is considered in this case study. In the CAN logs, each entry consists of attributes of timestamp, CAN
+ID, DLC, payload, and type. The ’type’ is labeled ’T’ for the attack messages and ’R’ for normal ones.
+To utilize the sequence processing of the DNN models, the data is organized into message sequences using a sliding window
+and stride value set to 1. Two sequence lengths of 25 and 50 are selected empirically. The sequences are labeled as 0 (Normal)
+if there are no attack messages within that sequence and 1 (DoS), 2 (Fuzzy), 3 (Spoofing), or 4 (Replay) if there is at least
+one attack message within the sequence. The percentage of the normal and attack sequences in the selected dataset is shown
+in Table V. The data is split into training, validation, and testing data, as 70% is used for training, 15% for validation, and
+the remaining 15% for testing.
+7
+Algorithm 1: GenerateAttackData
+Input: proprietaryLog, attackType, configParams
+Output: attack-representingLog
+1 if attackType == ”DoS” OR attackType == ”Fuzzy” then
+2
+pattern ←ExtractMsgInterval(srcData, proprietaryLog);
+3
+scale ←CalcScaleFactor(proprietaryLog, srcData);
+4
+adjFreq ←AdjustAttackMsgFreq(pattern, scale);
+5
+attackMsgs ←CreateFabricatedMsgs(adjFreq);
+6
+IntegrateMsgs(proprietaryLog, attackMsgs, configParams.DoSFuzzyAtkPhase);
+7 if attackType == ”Spoofing” then
+8
+targetECU ←IdentifyECU(proprietaryLog, dbcFile);
+9
+spoofMsgs ←ReplacePayload(tgtECU, proprietaryLog);
+10
+IntegrateMsgs(proprietaryLog, spoofMsgs);
+11 if attackType == ”Suspension” then
+12
+tgtECU ←IdentifyECU(proprietaryLog, dbcFile);
+13
+suspendedLog ←RemoveMsgs(proprietaryLog, tgtECU, configparams.suspensionWindow);
+14 if attackType == ”Replay” then
+15
+freqIDs ←ExtractIDs(proprietaryLog, configparams.topN);
+16
+replayMsgs ←DuplicateMsgs(proprietaryLog, freqIDs);
+17
+IntegrateMsgs(proprietaryLog, replayMsgs);
+18 return attack-representingLog;
+B. Feature Selection and Model Architecture
+The selected features are derived from the CAN ID and the first eight bytes of payload data. The CAN ID is converted from
+hexadecimal to a 29-bit binary format, with each bit used as a distinct feature. Each payload byte (initially in hexadecimal) is
+transformed to decimal, then normalized, and regarded as one feature. The feature selection resulting in 37 features aims
+to balance computational efficiency for training while preserving sufficient information. It is done empirically w.r.t the
+domain knowledge and considering factors like the prevalence of standard CAN messages over CAN-FD in the data log
+and corresponding target segments of the in-vehicle network, and findings from related studies.
+The LSTM model comprises two LSTM layers—each layer having 50 units—followed by a Dense layer with 50 units using
+sigmoid activation, and an output Dense layer with 5 units using softmax activation. The 1D-CNN model features an input layer
+accepting the input sequences, followed by a 1D convolutional layer with 256 filters, a kernel size of 3, and sigmoid activation.
+The convolutional output is then downsampled with a MaxPooling1D layer before being flattened. Then, it includes a Dense
+layer with 64 units and sigmoid activation, followed by an output layer with 5 units and softmax activation for the multi-class
+classification. The models are compiled with the Nadam optimizer (learning rate of 0.0001) and use categorical cross-entropy
+as the loss function. A batch size of 1024 and 256 is chosen for training the LSTM and CNN models respectively, and both
+models are trained over 100 epochs.
+V. RESULTS AND DISCUSSION
+A. RQ1: Attack-Representing Data Generation
+DoS and fuzzy. Figures 4 and 5 show the scatter plot of messages—both normal and attack messages—in generated propriety
+attack-representing and open-source datasets, for DoS and fuzzy respectively. Attack messages, labeled T, are shown along
+with normal messages, labeled R, and each red section highlights an attack interval. For proprietary data, only a 100-second
+time span is plotted to provide a comparative view with the total duration of data in the open-source dataset, which is quite
+TABLE V: Normal and attack instances
+Number of Seq. (% of total)
+Class
+length = 25
+length = 50
+Normal
+5,586,608 (46.6%)
+4,244,333 (36.4%)
+DoS
+1,895,101 (15.8%)
+1,895,601 (15.8%)
+Fuzzy
+1,810,856 (15.1%)
+1,811,406 (15.1%)
+Spoofing
+847,344 (7.1%)
+1,510,206 (12.6%)
+Replay
+1,859,995 (15.5%)
+2,538,258 (21.2%)
+8
+smaller. The x-axis denotes each message’s timestamp, and the y-axis shows the interval between consecutive messages. The
+dotted line represents the average message interval under attack.
+Spoofing. Fig. 6a presents the plot of the messages over a time span in which a targeted ECU is under spoofing attack and
+for comparison, Fig. 6b shows the messages over the same time span in a normal state.
+Suspension. Fig. 7 shows the messages transmitted by a targeted ECU during a suspension attack episode. The gap shown
+in the plot represents a 200-second suspension period, in which no messages were sent by the targeted ECU.
+(a) Proprietary data
+(b) SONATA data
+(c) KIA data
+(d) SPARK data
+Fig. 4: DoS: The scatter plot of the messages under DoS attack. Attack and normal messages are marked in red and green
+respectively. The horizontal axis shows the timestamps, and the vertical axis indicates the interval between consecutive messages.
+Replay. Fig. 8 illustrates a snapshot of the network during a replay attack, which indicates the replay of messages. The top
+five most frequent messages were targeted for replay. In the plot, green crosses show normal messages, while red crosses mark
+those same messages that are replayed.
+RQ1: By utilizing parameterized attack models augmented with attack intensity adjustment and message decoding, we
+propose a cost-efficient approach to generate attack-representing CAN log based on a given normal CAN traffic, without
+the need for test vehicles.
+B. RQ2: Data Practicality in the IDS Case Study
+To show the practicality of the generated data, we perform an empirical evaluation of the IDS models using an unseen part
+of the generated data (test data) and show how effective and consistent the data is. Effectiveness of the data refers to its quality
+to meet the requirements for the intended ML task, which is the attack detection and classification in our case study. This
+characteristic ensures that the dataset is adequate quantitatively and qualitatively to support the training of a model delivering
+acceptable performance. Consistency mainly refers to data being without conflicting records and errors. Consistency is also
+essential for ML models to ensure robust and well-performing learning [17], [18].
+The following performance metrics are considered in the evaluation of the IDS models. Detection accuracy (4), indicates
+the overall correctness of the model’s classifications across all classes. Precision (5), indicates the proportion of true positive
+predictions for a target class, c . Recall (6), measures the model’s sensitivity or its ability to correctly identify all actual
+instances of the target class. The F1 score (7), provides a balanced metric, which harmonizes precision and recall. The False
+Positive Rate (FPR) (8), reflects the fraction of negative instances of the target class that were misclassified as positive. False
+Negative Rate (FNR) (9), measures the proportion of positive instances incorrectly classified as negative.
+Detection Accuracy =
+TP + TN
+TP + TN + FP + FN
+(4)
+9
+(a) Proprietary data
+(b) SONATA data
+(c) KIA data
+(d) SPARK data
+Fig. 5: Fuzzy: The scatter plot of the messages under fuzzy attack.
+(a) Under spoofing attack
+(b) Normal state
+Fig. 6: Spoofing: The scatter plot of the messages over a time span, w.r.t a specific target ECU. Attack messages (T) are
+marked in red, original messages from the targeted ECU in blue, and other normal messages (R) are marked in green.
+Precisionc =
+TPc
+TPc + FPc
+(5)
+Recallc =
+TPc
+TPc + FNc
+(6)
+F1 Scorec = 2 × Precisionc × Recallc
+Precisionc + Recallc
+(7)
+FPRc =
+FPc
+TNc + FPc
+(8)
+FNRc =
+FNc
+TPc + FNc
+(9)
+10
+Fig. 7: Suspension: The scatter plot of the messages over a time span in which a targeted ECU is under suspension attack.
+Fig. 8: Normal and replayed messages during a time span under replay attack.
+Table VI and Table VII summarize the performance evaluation of the LSTM models trained on the input sequences of length
+25 and 50. Then, Tables VIII and IX present the performance of the 1D-CNN models trained on input sequences of lengths
+25 and 50, respectively. In addition to the overall accuracy, two key performance indicators highly considered are the FNR
+and the FPR for the Normal class, which indicate the normal messages that are misclassified as attacks (false alarms) and
+the actual attack messages that are incorrectly classified as normal, respectively. Besides the comparable high accuracy of the
+LSTM and 1D-CNN models, both classes of models show high performance regarding the rate of false alarms and missed
+attacks, in particular with longer input sequences—learning based on a longer episode of the messages.
+RQ2: The performance results of the IDS models developed using the generated data, demonstrate the effectiveness
+and consistency of the data in supporting training, ensuring reliable learning, and avoiding overfitting. This proves the
+practicality of the generated data for the development of in-vehicle IDS measures.
+C. RQ3: Fidelity Analysis of the Generated Attack-Representing Data
+One of the main hindrances in the fidelity assessment of the generated attack-contained data is the lack of observability of
+the effects of attacks on the vehicle’s operation. Unlike implementing attacks in real mode, where the impacts on the systems
+are observable, synthetic attacks lack the realism of presenting the impacts.
+Similarity to real scenarios. The fabrication attack data (DoS and fuzzy) is benchmarked compared to an open-source real
+dataset, which demonstrates a similar average ratio of attack messages in attack phases, as shown in Table X. The average
+percentage of attack messages within an attack phase, i.e., the number of attack messages over the total number of messages,
+in the generated attack-representing data, is aligned with the open-source real dataset. Specifically, for the DoS attack, the
+proprietary data shows the ratio of attack messages of 38.6%, and the ratio of attack messages in the open-source dataset also
+ranges from 35.6% to 39.3%. For the fuzzy attack, the proportion is approximately 28% across all.
+For a suspension attack, in which the main feature is the removal of messages, synthetic attack data can closely resemble
+the real-world scenario by reflecting the absence of messages from the target ECUs. Similarly, for replay attacks, with a proper
+mechanism for preserving the integrity of the timestamps, the synthetic data can keep high fidelity to real-world scenarios.
+Regarding the spoofing attack, achieving full realism can be more challenging due to the nuances of timing and content, which
+are difficult to precisely replicate.
+11
+TABLE VI: Performance of IDS LSTM model, input sequences of length 25
+Class
+Accuracy
+Precision
+Recall
+F1
+Score
+FPR
+FNR
+Normal
+0.9928
+0.9963
+0.9945
+0.0063
+0.0037
+DoS
+1.0000
+0.9999
+1.0000
+0.0000
+0.0001
+Fuzzy
+99.49 %
+0.9999
+0.9994
+0.9997
+0.0000
+0.0006
+Spoofing
+0.9968
+0.9839
+0.9903
+0.0002
+0.0161
+Replay
+0.9899
+0.9861
+0.9880
+0.0018
+0.0139
+TABLE VII: Performance of IDS LSTM model, input sequences of length 50)
+Class
+Accuracy
+Precision
+Recall
+F1
+Score
+FPR
+FNR
+Normal
+0.9965
+0.9991
+0.9978
+0.0019
+0.0009
+DoS
+1.0000
+0.9999
+1.0000
+0.0000
+0.0001
+Fuzzy
+99.84 %
+1.0000
+0.9999
+0.9999
+0.0000
+0.0001
+Spoofing
+0.9998
+0.9981
+0.9990
+0.0000
+0.0019
+Replay
+0.9986
+0.9953
+0.9970
+0.0004
+0.0047
+RQ3: The parameterized attack modeling and attack intensity adjustments utilized in the proposed approach enhance the
+similarity of the generated attacks to the real-world scenarios, however the lack of observability of the actual effects of
+the attacks remains a limitation.
+VI. RELATED WORK
+Various approaches can be utilized to generate attack data for in-vehicle CAN traffic. One approach involves using HiL and
+SiL environments along with simulation tools that can simulate the in-vehicle networks such as CANoe [19]. ATG (Attack
+Traffic Generation) [20] is an open-source vehicle CAN bus analyzer working with USB2CAN bus interface. It supports
+message sniffing, message replay, and fabricated message generation and it can be used as a cheaper option than commercial
+tools like CANoe in some cases. Neelap and Bhandari [21] explore a synthetic attack data generation approach utilizing analysis
+of CAN logs with a focus on the replay and fuzzy attacks—altering the messages without context interpretation. Toyama et al.
+[22] introduce a portable automotive security testbed (called PASTA), which supports monitoring in-vehicle CAN buses and
+provides the possibility to sniff CAN buses and inject random fabricated messages.
+The development of CAN IDS has been the focus of considerable research work by both researchers and practitioners [23],
+[24]. Designing an IDS solution involves balancing multiple trade-offs between accuracy, latency, efficiency, and scalability; and
+each class of IDS solutions exhibits unique strengths and limitations in these aspects. The ML-based solutions are intended to
+distinguish normal communication patterns from abnormal ones, using datasets that either strictly contain normal data or contain
+a combination of normal and abnormal patterns. The effective use of ML-driven techniques can help address the challenge of
+evolving, unknown, and complex threats stemming from the changing nature of cyber attacks. They can provide adaptability
+to evolving threats, detection of unknown patterns, and behavioral analysis of the networks. The ML-based models employed
+for CAN IDS include various forms of deep learning models such as LSTM-based classification [25], language models [26],
+and autoencoders [27]. Regarding the resource constraints on the classical vehicle ECUs, an interest in the development of
+lightweight models [28] as well as hybrid models [29], which combine models to balance accuracy and computation cost w.r.t
+the available resources is also seen in the recent work.
+Insights on the application. The attack data generator offers high efficiency (cost), and usability [30]. It can also be used
+with or integrated into the simulation environments (e.g., CANoe) with the capability of log replaying. As shown in the case
+study, the generated attack-representing data can be efficiently used to build ML-driven in-vehicle IDS. When a limited set of
+real attack-contained data is available, the generated attack data can be used to build pre-trained IDS models, which can be
+further fine-tuned with the real attack-contained data. The generated attack-representing data is also highly useful for adjusting
+the anomaly detection threshold in semi-supervised IDS models—trained only on normal data.
+VII. CONCLUSION
+This study presents a context-aware attack data generator enabling the automated generation of attack-contained CAN log
+representing diverse attack scenarios, i.e., DoS, fuzzy, spoofing, suspension, and replay attacks, without the need for physical
+test vehicles. It provides an efficient and effective alternative for implementing real attack scenarios on the test vehicles. It
+can facilitate the development of ML-driven security measures such as IDS applications. We demonstrate its practicality and
+show the effectiveness and consistency of the generated attack-representing data within an IDS case study—in which we
+develop and perform an empirical evaluation of two DNN-based IDS models using the generated data. Concerning other data
+quality characteristics, besides the efficiency (the low cost) of the proposed approach and its support for scalable attack data
+12
+TABLE VIII: Performance of IDS 1D-CNN model, input sequences of length 25
+Attack
+Accuracy
+Precision
+Recall
+F1
+Score
+FPR
+FNR
+Normal
+0.9916
+0.9964
+0.9940
+0.0074
+0.0036
+DoS
+1.0000
+1.0000
+1.0000
+0.0000
+0.0000
+Fuzzy
+99.44 %
+0.9998
+0.9998
+0.9998
+0.0000
+0.0002
+Spoofing
+0.9997
+0.9761
+0.9877
+0.0000
+0.024
+Replay
+0.9895
+0.9856
+0.9876
+0.0019
+0.0144
+TABLE IX: Performance of IDS 1D-CNN model, input sequences of length 50
+Attack
+Accuracy
+Precision
+Recall
+F1
+Score
+FPR
+FNR
+Normal
+0.9924
+0.9999
+0.9961
+0.0042
+0.0001
+DoS
+1.0000
+1.0000
+1.0000
+0.0000
+0.0000
+Fuzzy
+99.72 %
+1.0000
+0.9999
+0.9999
+0.0000
+0.0001
+Spoofing
+0.9999
+0.9991
+0.9995
+0.0000
+0.0009
+Replay
+0.9998
+0.9878
+0.9938
+0.0000
+0.0122
+generation, utilizing the dbc files and message decoding ensures strong alignment with the vehicle system and enhances the
+data understandability. Lastly, the attack models considered in the approach align with the requirements of the regulations,
+e.g., Reg. No 155 [1]. Meanwhile, the generated attack-representing data can be used in various ways for developing ML-
+driven in-vehicle intrusion detection systems. Future works will include using LLMs i.e., GPT and Llama, based on few-shot
+prompting to further enrich the attack-contained data and further facilitate the development of intelligent in-vehicle intrusion
+detection security measures.
+TABLE X: Ave. ratio of attack messages in DoS and fuzzy
+Proprietary
+SONATA
+KIA
+SPARK
+DoS (%)
+38.610
+39.269
+35.645
+35.645
+Fuzzy (%)
+28.293
+28.565
+28.170
+28.170
+ACKNOWLEDGMENT
+This work has been supported by the SCANIA internal research project PreSuccess and by Vinnova through the research
+project INTERSTICE (INTelligent sEcuRity SoluTIons for Connected vEhicles), under grant number 2024-00661.
+REFERENCES
+[1] The United Nations Economic Commission for Europe (UNECE), “UN Regulation No. 155,” 2023. [Online]. Available: https://unece.org/transport/do
+cuments/2021/03/standards/un-regulation-no-155-cyber-security-and-cyber-security
+[2] International Organization for Standardization, “ISO 11898: Road vehicles – Interchange of digital information – Controller area network (CAN) for
+high-speed communication,” Geneva, Switzerland, 1993. [Online]. Available: https://www.iso.org/standard/20380.html
+[3] ——, “ISO 11898-1:2015 Road vehicles – Controller area network (CAN) – Part 1: Data link layer and physical signalling,” Geneva, Switzerland,
+2015. [Online]. Available: https://www.iso.org/standard/63648.html
+[4] ——, “ISO 11898: Road vehicles – Road vehicles — Controller area network (CAN) – Part 1: Data link layer and physical coding sublayer,” Geneva,
+Switzerland, 2024. [Online]. Available: https://www.iso.org/standard/86384.html
+[5] B. Lampe and W. Meng, “A survey of deep learning-based intrusion detection in automotive applications,” Expert Systems with Applications, vol. 221,
+2023, doi: 10.1016/j.eswa.2023.119771.
+[6] B. S. Bari, K. Yelamarthi, and S. Ghafoor, “Intrusion Detection in Vehicle Controller Area Network (CAN) Bus Using Machine Learning: A Comparative
+Performance Study,” Sensors, vol. 23, no. 7, p. 3610, 2023, doi: 10.3390/s23073610.
+[7] M. E. Verma, R. A. Bridges, M. D. Iannacone, S. C. Hollifield, P. Moriano, S. C. Hespeler, B. Kay, and F. L. Combs, “A comprehensive guide to CAN
+IDS data and introduction of the ROAD dataset,” PLoS ONE, vol. 19, no. 1, pp. 1 – 32, 2024, doi: 10.1371/journal.pone.0296879.
+[8] TEXAS INSTRUMENTS, “Introduction to the Controller Area Network (CAN),” Texas, USA, 2016. [Online]. Available: https://www.ti.com/lit/an/sloa
+101b/sloa101b.pdf
+[9] S. Parkinson, P. Ward, K. Wilson, and J. Miller, “Cyber threats facing autonomous and connected vehicles: Future challenges,” IEEE transactions on
+intelligent transportation systems, vol. 18, no. 11, pp. 2898–2915, 2017.
+[10] Z. El-Rewini, K. Sadatsharan, D. F. Selvaraj, S. J. Plathottam, and P. Ranganathan, “Cybersecurity challenges in vehicular communications,” Vehicular
+Communications, vol. 23, p. 100214, 2020.
+[11] S. R. Dadam, D. Zhu, V. Kumar, V. Ravi, and V. S. S. Palukuru, “Onboard cybersecurity diagnostic system for connected vehicles,” SAE Technical
+Paper, Tech. Rep., 2021.
+[12] I. Pekaric, C. Sauerwein, S. Haselwanter, and M. Felderer, “A taxonomy of attack mechanisms in the automotive domain,” Computer Standards &
+Interfaces, vol. 78, p. 103539, 2021.
+[13] The Verge, “The Kia Boys will steal your car for clout,” 2023. [Online]. Available: https://www.theverge.com/23742425/kia-boys-car-theft-steal-tikto
+k-hyundai-usb
+[14] K.-T. Cho and K. G. Shin, “Fingerprinting electronic control units for vehicle intrusion detection,” in Proceedings of the 25th USENIX Conference on
+Security Symposium.
+USA: USENIX Association, 2016, p. 911–927, doi: 10.5555/3241094.3241165.
+[15] K. Koscher, A. Czeskis, F. Roesner, S. Patel, T. Kohno, S. Checkoway, D. McCoy, B. Kantor, D. Anderson, H. Shacham, and S. Savage, “Experimental
+Security Analysis of a Modern Automobile,” Oakland, CA, USA, 2010, pp. 447 – 462, doi: 10.1109/SP.2010.34.
+13
+[16] Hacking and Countermeasure Research Lab (HCRL), “Survival Analysis Dataset for automobile IDS,” 2019. [Online]. Available: https:
+//ocslab.hksecurity.net/Datasets/survival-ids
+[17] ISO/IEC,
+“ISO/IEC5259-2
+Artificial
+intelligence
+—
+Data
+quality
+for
+analytics
+and
+machine
+learning
+(ML),”
+2024.
+[Online].
+Available:
+https://www.iso.org/standard/81860.html
+[18] N. I. Mowla, “A Guide to Data Quality Testing for AI Applications based on Standards, RISE Research Institutes of Sweden,” 2024.
+[19] Vector, “Development and Test Tools for Automotive HIL and SIL Projects,” 2023. [Online]. Available: https://www.vector.com/int/en/products/product
+s-a-z/software/canoe
+[20] T. Huang, J. Zhou, and A. Bytes, “ATG: An Attack Traffic Generation Tool for Security Testing of In-vehicle CAN Bus,” in Proceedings of
+the 13th International Conference on Availability, Reliability and Security, no. 32.
+Association for Computing Machinery, 2018, p. 6, doi:
+10.1145/3230833.3230843.
+[21] C. Neelap and H. V. Bhandari, “Attack Traffic Generation for Network-based Intrusion Detection System,” M.S. Thesis, Chalmers University of Technology
+and University of Gothenburg, Gothenburg, Sweden, 2023.
+[22] T. Toyama, T. Yoshida, H. Oguma, and T. Matsumoto, “Pasta: Portable automotive security testbed with adaptability,” London, blackhat Europe, 2018.
+[23] R. S. Rathore, C. Hewage, O. Kaiwartya, and J. Lloret, “In-vehicle communication cyber security: challenges and solutions,” Sensors, vol. 22, no. 17,
+p. 6679, 2022.
+[24] S.-F. Lokman, A. T. Othman, and M.-H. Abu-Bakar, “Intrusion detection system for automotive Controller Area Network (CAN) bus system: a review,”
+EURASIP Journal on Wireless Communications and Networking, no. 184, pp. 1–17, 2019, doi: 10.1186/s13638-019-1484-3.
+[25] M. D. Hossain, H. Inoue, H. Ochiai, D. Fall, and Y. Kadobayashi, “Lstm-based intrusion detection system for in-vehicle can bus communications,” Ieee
+Access, vol. 8, pp. 185 489–185 502, 2020.
+[26] N. Alkhatib, M. Mushtaq, H. Ghauch, and J.-L. Danger, “Can-bert do it? controller area network intrusion detection system based on bert language
+model,” in 2022 IEEE/ACS 19th International Conference on Computer Systems and Applications (AICCSA).
+IEEE, 2022, pp. 1–8.
+[27] T.-N. Hoang and D. Kim, “Detecting in-vehicle intrusion via semi-supervised learning-based convolutional adversarial autoencoders,” Vehicular
+Communications, vol. 38, p. 100520, 2022.
+[28] D. Basavaraj and S. Tayeb, “Towards a lightweight intrusion detection framework for in-vehicle networks,” Journal of Sensor and Actuator Networks,
+vol. 11, no. 1, p. 6, 2022.
+[29] L. Zhang and D. Ma, “A hybrid approach toward efficient and accurate intrusion detection for in-vehicle networks,” IEEE Access, vol. 10, pp. 10 852–
+10 866, 2022.
+[30] P. E. Strandberg, D. S¨oderman, A. Dehlaghi-Ghadim, M. Leon, T. Markovic, S. Punnekkat, M. H. Moghadam, and D. Buffoni, “The westermo network
+traffic data set,” Data in Brief, vol. 50, p. 109512, 2023.

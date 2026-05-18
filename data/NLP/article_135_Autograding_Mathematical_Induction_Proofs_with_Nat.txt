@@ -1,0 +1,1772 @@
+Title: Autograding Mathematical Induction Proofs with Natural Language Processing
+Source URL: http://arxiv.org/abs/2406.10268v2
+--------------------------------------------------
+
+Autograding Mathematical Induction Proofs with
+Natural Language Processing
+Chenyan Zhao1*, Mariana Silva1 and Seth Poulsen2
+1*Department of Computer Science, University of Illinois
+Urbana-Champaign, 201 North Goodwin Avenue, Urbana, 61801, IL,
+USA.
+2Department of Computer Science, Utah State University, 4205 Old
+Main Hill, Logan, 84322, UT, USA.
+*Corresponding author(s). E-mail(s): chenyan4@illinois.edu;
+Contributing authors: mfsilva@illinois.edu; seth.poulsen@usu.edu;
+Abstract
+In mathematical proof education, there remains a need for interventions that help
+students learn to write mathematical proofs. Research has shown that timely
+feedback can be very helpful to students learning new skills. While for many
+years natural language processing models have struggled to perform well on tasks
+related to mathematical texts, recent developments in natural language process-
+ing have created the opportunity to complete the task of giving students instant
+feedback on their mathematical proofs. In this paper, we present a set of train-
+ing methods and models capable of autograding freeform mathematical proofs
+by leveraging existing large language models and other machine learning tech-
+niques. The models are trained using proof data collected from four different
+proof by induction problems. We use four different robust large language models
+to compare their performances, and all achieve satisfactory performances to var-
+ious degrees. Additionally, we recruit human graders to grade the same proofs
+as the training data, and find that the best grading model is also more accurate
+than most human graders in terms of grading accuracy. With the development of
+these grading models, we create and deploy an autograder for proof by induction
+problems and perform a user study with students. Results from the study shows
+that students are able to make significant improvements to their proofs using the
+feedback from the autograder, but students still do not trust the AI autograders
+as much as they trust human graders. Future work can improve on the autograder
+feedback and figure out ways to help students trust AI autograders.
+1
+arXiv:2406.10268v2  [cs.AI]  19 Feb 2025
+Keywords: Automated short answer grading, Mathematical proofs, Natural language
+processing
+1 Introduction
+Writing mathematical proofs has been identified as an important [1–3] and yet chal-
+lenging topic [4] in computing and mathematics education. A large body of research
+has shown that timely feedback is crucial to student learning [5, 6]. However, students
+are largely unable to receive timely feedback on written proofs due to the need to have
+proofs collected and hand-graded by instructors or teaching assistants. The ability to
+grade student proofs fully automatically with natural language processing (NLP) alle-
+viates this need by allowing us to give students instant feedback on their proofs to let
+students iteratively enhance the quality of their proofs.
+In this paper, we propose a novel set of training methods and models capable of
+autograding freeform mathematical proofs, a problem at the intersection of mathemat-
+ical proof education and Automatic Short Answer Grading (ASAG), by using existing
+NLP models and other machine learning techniques. Our proof autograder enables
+the development of grading systems that provide instant feedback to students without
+needing attention from instructors. It can also be deployed in large-scale educational
+platforms, allowing for more access for students.
+The main contributions of this paper are:
+• Introducing the first pipeline of machine learning models capable of autograding
+mathematical proofs with similar accuracy to human graders
+• Quantifying the amount of training data needed to achieve a satisfactory
+performance from the grading models
+• Publishing an anonymized and labeled mathematical proof dataset that can be
+used in future model developments [7]
+• Creating a set of autograded problems using the grading pipeline, and performing
+a user study that answers the following research questions:
+– Are students able to write better proofs by interacting with the autograder
+and the feedback it generates?
+– Are students satisfied with the autograder and the feedback it provides?
+– Does using the autograder make students more willing to use similar AI
+autograders in the future?
+The rest of the paper is organized as follows: we first introduce the related work in
+Section 2, and then present the source and preprocessing of the training data for our
+model in 3.1. We then introduce the large language models used in the grading process
+and our own model for grade calculation in Sections 3.2 and 3.3. Section 3.4 gives the
+methods for the comparison to human graders. In Section 4, we show the performances
+from each large language model on the data, and compare the model grading against
+human grader performances. In Sections 5 and 6, we provide detail about a user study
+where we recruited students to write and improve their proofs using the developed
+autograders, and collected their progress and feedback with the autograder.
+2
+2 Related Work
+2.1 Research on Mathematical Proof Education
+It has been acknowledged that teaching and using proofs plays an important role in
+mathematics education [8].
+While there has been extensive work both on software
+tooling and its evaluation for helping students learn school geometry proofs [5], there is
+still a need for tools to provide students with interventions and scaffolding on learning
+to write college-level mathematical proofs. Stylianides and Stylianides’ review of the
+literature on teaching and learning proofs concluded that “more intervention-oriented
+studies in the area of proof are sorely needed”[9]. There have been interventions that
+focus on helping students understand the need for proofs, as students often believe
+empirical arguments without seeing the need for proof [9–12]. There are also various
+experience reports on novel interventions that instructors have tried with limited evi-
+dence on their effectiveness [13–15]. Several tools have been created which provide a
+visual method for students to construct simple mathematical proofs [16–18]. While
+these tools can act as scaffolding for students in the early stages of learning to write
+proofs, there are currently no existing software tools that can provide help to students
+working on the authentic task of writing proofs on their own from scratch.
+Within the field of mathematical proofs, proof by induction is a particular point
+of interest because of its requirement for various cognitive schemas and abstraction
+skills [19, 20]. Its mostly non-explanatory nature [21] often leaves students uncer-
+tain about when to chose induction over other explanatory proof techniques. Previous
+research has explored methods for teaching students both when to use induction [22],
+and how to construct induction proofs correctly [20, 23]. Several misconceptions have
+been identified during the process [15, 23–25]. In Section 3.1, we will discuss how the
+items in our rubric align with many of the misconceptions reported in the literature. A
+more exhaustive list of all misconceptions can be found in recent work in mathematics
+education [15, 26]. Most of the misconceptions listed in prior work have also shown up
+in our own training data set [26]. Despite the prevalence of these issues, students cur-
+rently lack tools to help them address these misconceptions and practice constructing
+induction proofs effectively. The grading models introduced in this paper enable the
+development of software tools that provide students with automated feedback on their
+work as they practice writing natural language mathematical proofs on their own.
+2.2 Natural Language Processing (NLP)
+As a subfield of artificial intelligence, NLP primarily focuses on training and using
+models to interpret and generate natural languages. In 2017, NLP researchers devel-
+oped the Transformer architecture, which relies solely on attention mechanisms,
+achieving good performance in learning the dependencies in inputs and outputs [27].
+It also enabled easier training and inference by lowering the need of advanced training
+equipments or extended training time [27]. Further developments have led to the intro-
+duction of various pretrained large language models accessible such as BERT, Llama
+and Llama2, and OpenAI’s GPT family of models [28–30]. In addition to being able
+3
+to generate text, these models can take texts as inputs and return vectors representing
+the words or sentences in the texts. These vectors are called embeddings.
+The word embedding method is a major part of the current field of NLP aiming
+to map words and phrases into a multi-dimensional continuous vector space. Each
+vector captures the semantic meaning of each word and phrase, and researchers can
+use the vectors to perform downstream tasks such as word prediction and sentence
+classficition [31]. Multiple Word embeddings of a sentence can also be combined into
+one sentence embedding through the use of an extra network to capture the meaning of
+the whole sentence [32]. In essence, sentence embeddings capture the semantic meaning
+of the whole sentence.
+2.3 Automatic Short Answer Grading (ASAG)
+Researchers have attempted to use sentence embeddings to perform ASAG. Various
+NLP models have been tested on their performance, with attention-based models
+performing relatively well in terms of accuracy, latency, reproducibility, and ease in
+fine-tuning [33]. Existing training data sets cover topics in data structures, intro-
+ductory statistics, and a few other topics, with no coverage of mathematical proof
+problems [33]. One thread of previous work utilized BERT in automatic scoring of
+reading comprehension by fine-tuning BERT with a set of reading comprehension prob-
+lems and answers, achieving accuracy almost as good as human graders [34]. However,
+it lacks the ability to easily transfer to new problems, creating the need to fine-tune
+the model repeatedly when new problems are added, which can be a computationally
+expensive process. The same drawback would apply to other ASAG attempts uti-
+lizing fine-tuning as the primary way of grading.
+Previous work has also produced
+systems able to grade student’s descriptions of short snippets of Python code by cre-
+ating item-specific models, achieving over 85% accuracy with a dataset of less then
+600 samples [35]. These models have successfully been deployed in the classroom to
+help students receive timely feedback and reduce instructor grading load [36].
+Efforts to apply ASAG in mathematical contexts have been made but have achieved
+only limited success to date. Researchers have developed Mathematical Language Pro-
+cessing to perform mathematical ASAG, and achieved an absolute mean error of 0.04
+out of a full grade of 3 [37]. However, the approach taken by Mathematical Language
+Processing allows only a limited set of mathematical vocabulary, and relies heavily on
+symbolic manipulation on the answers. As a result, it cannot autograde mathemati-
+cal proofs, which usually involves reasoning using natural language, such as proof by
+induction or proof on graphs. MathBERT was created by fine-tuning BERT, aimed
+at dealing with a larger mathematical vocabulary and more complex mathematical
+contexts [38]. It achieved over 90% accuracy on autograding tasks. However, the prob-
+lems addressed were one-sentence Q&A tasks that required minimum reasoning or
+formula manipulation. These tasks were significantly shorter than the full inductive
+proofs considered in this work. To deal with verifying longer proofs, researchers have
+also attempted autoformalization [39], translating natural language into formal logic.
+This should make checking the correctness of the steps in a proof easier. However,
+even with several years of research, none of the existing work is able to translate even
+4
+half of the proofs to formal logic [39]. The low success rate makes autoformalization
+not suited for grading mathematical proofs at the moment.
+To our knowledge, no tools have successfully dealt with grading mathematical
+proofs using natural language processing. More emphasis needs to be put on verify-
+ing the natural language reasoning part of the proofs in addition to the arithmetic
+formulae.
+Utilizing ASAG in practice poses a few difficulties. First of all, it is hard for the
+ASAG systems to be perfect: mistakes will likely happen during the grading process.
+In the context of potentially inaccurate feedback from the graders, helping students
+navigate through the feedback can be crucial in achieving the full potential from
+ASAG systems [40]. Another challenge facing the wider use of ASAG is students’ trust
+in AI. Previous research around AI trust has shown that people are more likely to
+trust human decisions than algorithmic decisions, especially when the tasks are more
+subjective [41, 42]. Some previous work has observed that students underestimated
+the accuracy of some ASAG systems, believing they were graded incorrectly when the
+grades were accurate [43]. The lack of trust in the technology behind ASAG systems
+could hinder their effectiveness.
+3 Model Development
+We propose an automated grading process with two steps. First, we run student-
+written proofs through a pretrained large language model to get the embeddings. We
+then apply our custom grading model to the embeddings to calculate accuracy on
+various rubric points. We also recruited human graders to re-grade proofs in our data
+set, which are used for baseline comparison.
+3.1 Data
+The proofs used in this study were collected from the pretest and posttest of a series
+of studies designed to measure the learning gains of students using Proof Blocks [44–
+46]. The participants were students recruited from a Discrete Mathematics course
+at the University of Illinois Urbana-Champaign. The proofs were originally collected
+in the form of markdown files, and later graded by members of the research team.
+The proofs were graded in a multi-step process which involved multiple members of
+the research team grading the proofs independently, and then meeting together to
+discuss disagreements. The graders were able to reach an inter-rater reliability rating of
+Cronbach’s α at 0.82, 0.88, and 0.92 for each of the three studies respectively [44–46].
+These measurements show very high consistency in agreement between researchers,
+allowing us to use these labels as ground truth for training and further analysis. Since
+the grading of informally written mathematical proofs can be subjective, we recognize
+that our AI autograders and the human baseline comparison must not only agree with
+fundamental truths but also align with the grading standards set by the research team
+that created the original labels. However, we note that this is the same task that an
+ASAG system or a teaching assistant must accomplish when grading student work for
+a course—not only verifying underlying truth but also adhering to the grading criteria
+set by the instructor, who acts as the ground truth in this context. We also believe
+5
+that our use of only technical, and not stylistic rubric points, as well as the rigorous
+process we used to have multiple researchers agree on a grading scheme (rather than
+have them decided by a single instructor), make our grading system as objective as
+possible in this context.
+The proofs were graded using seven rubric points, each identifying a step of the
+induction proof.
+R1 Identifying the base case(s)
+R2 Proving the base case(s)
+R3 Stating the inductive hypothesis
+R4 Setting the bound of the inductive hypothesis
+R5 Stating the goal of the inductive step
+R6 Breaking down the inductive step
+R7 Applying the inductive hypothesis
+Each of these rubric points was designed to address specific aspects of constructing
+a complete and correct induction proof. The rubric points also align with common
+misconceptions identified in prior research. Students’ difficulties in identifying and
+proving base cases (R1 and R2) were discussed by Norton et al. [15], who also reference
+earlier literature documenting these issues. Many students have difficulties in stating
+the inductive assumption correctly. For example, some students will assume the entire
+conjecture to be true rather than the inductive implication [15, 19]. Students will
+also fail to give the correct upper or lower bound for the inductive implication [26].
+These issues are captured by rubric points R3 and R4. The rubric points R5, R6, and
+R7 correspond to the misconception “Sets up induction proof properly but does not
+succeed in proving that P(n) ⇒P(n+1)” documented by Dubinsky [23]. The grading
+instructions included in our public dataset [7] give detailed instructions on when each
+rubric point should be marked as correct for a given proof, including examples.
+We selected four different proof by induction problems, and labeled them as P1,
+P2, P3, P4. P1 focuses on induction with a recursively defined function, and has 1623
+non-empty proofs collected; P2 and P3 are induction proving the closed form solution
+to a summation formula, and have 1288 and 342 proofs respectively; P4 proves the
+divisibility of a function over the natural numbers, and has 333 proofs. The problems
+statements are shown in Table 1. The proofs were initially graded as 0, 1, 2 for each
+P1
+Suppose that g : N →R is defined by g(0) = 0, g(1) = 4
+3 , and g(n) = 4
+3 g(n −1) −
+1
+3 g(n −2) for n ≥2. Use induction to prove that g(n) = 2 −
+2
+3n for any natural
+number n.
+P2
+Prove the following statement by induction. ∀n ∈N, Pn
+i=0 i = n(n+1)
+2
+.
+P3
+Use (strong) induction to prove the following claim:
+Pn
+p=0(p · p!) = (n + 1)! −1 for any natural number n.
+P4
+Use (strong) induction to prove the following claim:
+for any natural number n, 2n3 + 3n2 + n is divisible by 6.
+Table 1: Problem statements for P1-P4.
+rubric point. A grade of 0 is given if the required rubric point is not present, 1 if
+6
+FOr all natural numbers n; let the proposition P(n) be Pi
+i=0 (from 0 to n) = to
+n(n+1)/2
+P(1) is Pi
+i=0 (sigma from 0 to 1) = to 1(1+1)/2 Left hand side =1; right hand
+side = 1 So P(1) is true
+Therefore let P(x) be, P(x) = Pi
+i=0 (sigma from 0 to x) = x(x+1)/2
+Therefore assume P(x+1) = Pi
+i=0 (sigma from 0 to x+1) = (x+1)(x+2)/2
+the difference of sums between sigma to x and sigma to x+1 is the term x +1
+only if we subtract P(x) from P(x+1) the reamaing number sould be x+1
+(x+1)(x+2)/2 - x(x+1)/2 = x2+x
+2
+−x2+3x+2
+2
+= 2x+2
+2
+= x + 1
+Therefore its proved by mathematical induction
+Fig. 1: An example proof for P2. In the original labeling by previous researchers, this
+proof was labeled correct on rubric points R1 (Identifying the base case), R2 (Proving
+the base case), and R6 (Breaking down the inductive step), and incorrect for all other
+rubric points.
+the rubric point is partially correct, and 2 if it is completely correct. In our work, we
+collapse the grades into two categories, correct and incorrect. Original labels of 0 and
+1 are combined into 0, standing for incorrect proofs; original labels of 2 are changed
+to 1 to represent fully correct proofs. This allows us to give students individualized
+feedback on the correctness of each of the seven rubric points. Future work may use
+more complex labels for even more granular feedback. One sample proof and its R1-R7
+labels are shown in Figure 1. We have published our data set in a public data repository
+so that future researchers may replicate our work and make further improvements in
+autograding mathematical proofs [7].
+3.2 Model selection for Embeddings
+Several pretrained large language models are capable of calculating embeddings such
+as BERT and its mathematically fine-tuned version MathBERT [38], Llama2 and its
+mathematically fine-tuned version Llemma [47], and GPT-3 [48]. Base BERT and
+base Llama2 are excluded because MathBERT and Llemma have been observed to
+perform better than their corresponding base models when dealing with mathemat-
+ical contexts [38, 47]. MathBERT is among the best pretrained language models at
+mathematical language, and runs on a CPU. The memory requirement is typically
+less than 600MB. Because of the low memory requirement, MathBERT allows for
+cheap deployment. It is worthwhile trying MathBERT despite having fewer param-
+eters than most large language models, because if MathBERT can achieve similar
+performances as the other large language models, it would be cheaper to deploy. This
+could become a critical factor when selecting the grading models if they need to be
+scaled in the future to accommodate a larger number of students. GPT-3 is the best
+accessible language model at the moment for embeddings. We use the latest embed-
+ding endpoint text-embedding-3-large for analysis, as it outperforms the old endpoint
+text-embedding-ada-002 by 0.3% in accuracy in our grading tasks. GPT-3 requires
+7
+API calls for embeddings, and each API call costs a small amount of money. This
+additional cost should be taken into consideration when scaling this grading model for
+larger number of students. We did not use GPT-4 as it does not yet support embed-
+dings, which are preferred to text completion for classification tasks such as ours [48].
+Llemma has two versions, Llemma7b with 7 billion parameters, and Llemma34b with
+34 billion parameters. Both can be run locally, but take a significant amount of RAM
+and require a GPU even for inference. In our study, we utilize MathBERT, GPT-3,
+Llemma34b, and Llemma7b for embeddings and then compare the performances of
+the models.
+One extra step of data manipulation was performed only for the MathBERT model.
+Currently, MathBERT is unable to recognize certain mathematical or mathematical
+LaTeX notation such as “f(x)” or “\sum_{i=1}^n”. These symbols would be rec-
+ognized as individual characters in MathBERT, introducing unnecessary noise and
+lowering its ability to fully understand the contents. We modified the tokens from
+MathBERT so that it would recognize function calls and some latex expressions in the
+same token, enhancing the model’s ability to understand the words and phrases accu-
+rately. The modification ensured that every proof in the dataset fit within the input
+token limit. Incorporating these combined tokens led to a slight improvement in the
+model’s grading accuracy. For this reason, our analyses were based exclusively on the
+modified MathBERT.
+3.3 Model fitting
+The downstream task is to grade the proofs using the embeddings as inputs. Because
+the LLM we use for embedding handles the difficult task of extracting the relevant
+features in the text, we were able to use a relatively simple model for classification
+afterwards. We tried both linear regression and SVMs, with similar results, and so we
+chose to use linear regression for its simplicity. More complexity can be added if needed
+in the future. We trained one grading model for each rubric point of each problem, as
+the exact expectations of the rubric points might not be generalizable across different
+problems.
+The input dimension of the grading model is the same as the returned sentence
+embedding dimension of the pretrained model. By default, MathBERT embeddings
+have length 768, GPT-3 embeddings have length 1536, and Llemma embeddings have
+4096 and 8192 entries respectively for the two versions. The output dimension is set to
+2 to match the two distinct categories for grading: “incorrect” (0) and “correct” (1).
+The model produces a probability score from the input embeddings, and normalizes
+using the softmax function to yield the probability distribution over the two classes.
+We will use this probability distribution to test the model and to autograde future
+submissions.
+The dataset is broken down into training, testing, and validation sets, with 15%
+for testing and another 15% for validation. The remaining 70% are used for training.
+Performance on the test set will be used to compare the performances of models. The
+15% data for validation is reserved for future work with increased model complexity.
+For the training of our grading model, we chose a batch size of 128 as it is a
+common choice for training networks. Number of epochs for training range from 100
+8
+to 1000, with a step size of 100 epochs. Initially, the learning rate is set to 0 and
+linearly increased to a peak value of 0.001 over the first 60% of the training epochs.
+This linear increase provides a warm-up period for the model to gradually adapt to
+the task. Subsequently, during the second half of the training, the learning rate is
+exponentially decreased to
+1
+10 of the peak value, allowing the model to fine-tune its
+parameters and converge towards a stable solution.
+To save computational resources, we generate all embeddings by running the pre-
+trained models once on the entire proof dataset. Then we save the mapping between
+each proof and its corresponding embedding to a pickle file. We ran the two Llemma
+models on our University’s supercomputing cluster, using eight NVIDIA A100 GPUs
+simultaneously, taking about one second on average to turn one proof into embeddings;
+GPT-3 embeddings were retrieved from an OpenAI API call, and we ran MathBERT
+on a single NVIDIA RTX4090 GPU. The customized grading models were built and
+trained using PyTorch [49] on the same NVIDIA GPU. For each model, trainings
+completed at a rate of about 2 seconds per 100 training epochs and 10 batchs.
+3.4 Comparison to human graders
+Theoretically, it is hard for machine learning models to perfectly grade the freeform
+mathematical proofs. However, it can also be hard for humans to agree on the grading
+of mathematical proofs both due to ambiguity in language and honest mistakes. In the
+case that there is any subjectivity in the grading, human graders also need to match
+the specification set by the course instructor. To our knowledge, no prior study has
+quantified the accuracy of humans grading mathematical proofs to match an instructor
+specification. Additionoally, we want to compare how closely human graders can match
+the grading specification relative to our NLP grading models.
+Using the last author’s professional network, we recruited graduate students from
+several universities who had been teaching assistants in discrete mathematics courses.
+These graduate students all had experience grading mathematical induction proofs.
+A total of 9 graduate students from 4 different institutions participated in the grad-
+ing tasks. For each human grader, we sent 15 student proofs from each of the 4 proof
+problems (for a total of 60 problems each), and asked them to grade these proofs using
+the same rubric. Along with the proofs to grade, we also provided 15 examples of
+graded proofs for each of the problems, the original problem statements, and detailed
+notes with explanations of the rubrics created by previous researchers. This combina-
+tion of example labeled proofs and detailed rubric explanations were designed to set
+the graders up to be as successful as possible on their grading task. In fact, we pro-
+vided the graders with more training materials for grading than many instructors do
+for grading of actual courses (in our experience). The graders were also free to ask us
+any questions regarding problems encountered during the grading process just as they
+would be when grading student work in a real course setting. Each grader received
+a $100 gift card as compensation for their grading efforts. This human subjects data
+collection procedure was approved by the institutional review board at Utah State
+University.
+9
+4 Model Performance Results
+In this section, we provide an overview of the grading models’ performance, the accu-
+racy of the human graders, and an analysis of the amount of training data required
+to get satisfactory performance.
+4.1 Grading Model Performance
+For each model and each training epoch, we calculate the performance using the testing
+set, comparing the model predictions to ground truth labels that previous researchers
+created. We compute the confusion matrix to obtain the number of true positive,
+true negative, false positive, false negative cases, and then we calculate the accuracies
+and F1 scores. Among the models using different training epochs, we select the one
+with the highest accuracy. Rubric point accuracy metrics for each problem and each
+pretrained model are summarized by averaging the accuracies from the testing set for
+all rubric points. RMSE and Pearson’s r are calculated by adding up the results for
+each rubric point, and normalizing the grades to between 0 and 100. The results are
+shown in Table 2.
+All four pretrained models achieve over 80% average accuracy, and achieve higher
+RMSE and Pearson’s r metrics than most of the earlier ASAG work [33]. MathBERT
+is the lowest performing one with an average of 84.1% accuracy across all problems, as
+it is the model with the fewest parameters, thus capturing fewer details accurately. The
+best grading models are Llemma-based, both Llemma34b and Llemma7b, with 90.0%
+and 90.2% average accuracy, even beating GPT-3-based models. This is likely because
+Llemma is more specifically trained to handle mathematical language. Moreover, the
+large number of parameters gives Llemma the ability to capture almost the same
+amount of information as GPT-3. The accuracies and F1 scores of Llemma34b graders
+on a by-rubric-point basis appears in Table 3.
+The results indicate no clear pattern regarding which rubric points can consistently
+be graded more accurately than others. Currently, Llemma and Llemma-based grading
+models perform well enough for use by students as practice for writing mathematical
+proofs. In future work, we want to investigate how to provide more accurate and
+detailed feedback to students, as the correctness of the models is not guaranteed.
+4.2 Comparison to human graders
+After the human graders finish the grading process, we calculate the accuracies and F1
+scores of human grader results and compare them with those of the grading models.
+The overall performance is also shown in Table 2, with the detailed accuracy and
+F1 score for each rubric point shown in Table 4. On average, human graders achieve
+86.6% agreement with the research team labels, which is higher than MathBERT but
+lower than GPT-3. The comparison provides a solid ground for further developing and
+utilizing our grading models in real courses.
+Accuracies for all grading models and individual human graders are plotted in
+Figure 2. Human graders are separated into two groups based on whether they have
+been a grader at the same university where the data was collected. Group A graders
+are from the same university that the proof data was originally collected at, and
+10
+Problem
+Data Size
+Grading Method
+Accuracy
+RMSE
+Pearson’s r
+P1
+1623
+MathBERT & linear
+83.6%
+23.35
+0.79
+GPT-3 & linear
+87.9%
+17.06
+0.90
+Llemma7b & linear
+90.7%
+14.53
+0.92
+Llemma34b & linear
+90.2%
+15.33
+0.92
+Human Graders
+84.1%
+22.20
+0.81
+P2
+1288
+MathBERT&linear
+83.7%
+27.88
+0.77
+GPT-3 & linear
+88.3%
+22.32
+0.86
+Llemma7b & linear
+90.9%
+16.28
+0.92
+Llemma34b & linear
+90.7%
+17.87
+0.91
+Human Graders
+91.3%
+13.58
+0.94
+P3
+342
+MathBERT&linear
+85.7%
+20.51
+0.85
+GPT-3 & linear
+89.2%
+17.07
+0.88
+Llemma7b & linear
+85.7%
+21.98
+0.81
+Llemma34b & linear
+86.6%
+18.59
+0.87
+Human Graders
+85.1%
+23.55
+0.78
+P4
+333
+MathBERT&linear
+86.3%
+21.13
+0.76
+GPT-3 & linear
+85.4%
+17.86
+0.83
+Llemma7b & linear
+89.9%
+13.68
+0.91
+Llemma34b & linear
+90.2%
+13.98
+0.91
+Human Graders
+85.8%
+25.56
+0.71
+Table 2: Overall grading accuracy for grading models and human
+graders. Llemma-based grading models have the highest accuracy on aver-
+age, and slightly higher than human graders.
+R1
+R2
+R3
+R4
+R5
+R6
+R7
+A
+F1
+A
+F1
+A
+F1
+A
+F1
+A
+F1
+A
+F1
+A
+F1
+P1
+.888
+.863
+.862
+.848
+.892
+.834
+.897
+.810
+.909
+.855
+.931
+.886
+.935
+.876
+P2
+.935
+.940
+.929
+.933
+.891
+.855
+.875
+.816
+.875
+.839
+.918
+.885
+.924
+.889
+P3
+.878
+.923
+.816
+.870
+.878
+.914
+.939
+.954
+.694
+.706
+.918
+.846
+.939
+.880
+P4
+.979
+.988
+.938
+.962
+.917
+.926
+.896
+.906
+.812
+.800
+.896
+.783
+.875
+.750
+Table 3: Llemma34b model grading performances for all four problems (P1-P4) and
+all seven rubric points (R1-R7). Column label A stands for accuracy; column label
+F1 stands for F1 scores.
+thus have more experience using the same rubric that was used for the study. Group
+B graders are from other universities, but still have experience in grading proof by
+induction problems (perhaps with different rubrics). The figure shows that in general,
+group A graders are more accurate than group B graders, and are also more accurate
+than the grading models. We conclude that our grading models are able to regularly
+outperform minimally trained human graders at matching a grading specification, but
+11
+R1
+R2
+R3
+R4
+R5
+R6
+R7
+A
+F1
+A
+F1
+A
+F1
+A
+F1
+A
+F1
+A
+F1
+A
+F1
+P1
+.830
+.810
+.741
+.745
+.852
+.815
+.859
+.808
+.830
+.763
+.896
+.860
+.881
+.800
+P2
+.970
+.970
+.933
+.926
+.881
+.846
+.881
+.818
+.904
+.876
+.889
+.839
+.933
+.903
+P3
+.881
+.919
+.807
+.852
+.844
+.871
+.822
+.838
+.793
+.741
+.896
+.767
+.911
+.786
+P4
+.881
+.921
+.874
+.912
+.859
+.882
+.815
+.834
+.807
+.750
+.867
+.640
+.904
+.698
+Table 4: Human grading accuracy and F1 scores, broken down by rubric point. The
+data size is different from the model accuracy testing, as each human grader graded
+60 proofs in total.
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+Accuracy
+B_2
+MathBERT
+B_4
+B_5
+B_1
+GPT3
+B_3
+Llemma34b
+Llemma7b
+B_6
+A_2
+A_1
+A_3
+Grader
+Fig. 2: Accuracy for each grading model and human grader. A i are the graders from
+the same university and are more familiar with the used grading rubrics, and B i are
+from other universities. Graders with more experience with the grading rubrics achieve
+higher accuracy than unexperienced graders and all grading models.
+human graders with more extensive training will be able to outperform our grading
+models. This difference is similar to the comparison between graders with different
+amounts of training in a prior work [50].
+We randomly sampled 20 model-graded submissions and 15 human-graded submis-
+sions to P1 and P2 to qualitatively analyze the error patterns of the grading models
+and human graders. One key observation for grading models was the reduced accuracy
+when handling mathematical formulae. Some calculation mistakes went unnoticed by
+the grading model (for example, writing n=1 as the base case when it should be n=0),
+and some correct values were marked as incorrect (for example, correct base cases of
+n=0 and n=1 were identified as incorrect by the grader). On the other hand, human
+graders were able to grade the formulae correctly, but they sometimes ignore subtle
+details in the proof. For example, a correctly but implicitly written bound for the
+induction hypothesis was marked as incorrect by one of the recruited human graders.
+12
+0
+200
+400
+600
+800
+1000
+0.65
+0.70
+0.75
+0.80
+0.85
+0.90
+P1
+P2
+P3
+P4
+(a) MathBERT
+0
+200
+400
+600
+800
+1000
+0.65
+0.70
+0.75
+0.80
+0.85
+0.90
+P1
+P2
+P3
+P4
+(b) GPT-3
+0
+200
+400
+600
+800
+1000
+0.65
+0.70
+0.75
+0.80
+0.85
+0.90
+P1
+P2
+P3
+P4
+(c) Llemma7b
+0
+200
+400
+600
+800
+1000
+0.65
+0.70
+0.75
+0.80
+0.85
+0.90
+P1
+P2
+P3
+P4
+(d) Llemma34b
+Fig. 3: Training Size vs. Accuracy. With 400 training data, all grading models are
+achieving near convergent accuracy, and this accuracy is about 1.2% away from the
+maximum accuracy for the grading models.
+In addition, TA graders seem to have a hard time telling the difference between rubric
+points R3 (stating the inductive hypothesis) and R4 (setting the bound of the induc-
+tive hypothesis), marking them both wrong when only one of them was actually wrong.
+The grading model was more effective at making the distinction correctly
+4.3 How large of a dataset do we need?
+We are also interested in learning how much data is needed to achieve an acceptable
+performance. We did another set of training and testing to compare the effect of
+training data size on model performance. To ensure consistency, the same 30% of
+the data is used as the testing set. The training set sizes range from 50 to the max
+available size, with a step size of 50 (before size 200) or 100 (after size 200). The model
+performance on each training data size is shown in Figure 3.
+For all four models, the performance is still increasing even with 1100 training data
+points, so there is space for improvement by collecting more data. Model performance
+might also be better by making the grading models more complex, such as adding
+extra layers. However, most of the improvement is achieved with the 400 training
+13
+size threshold. For Llemma34b, the performance at 400 training data already achieves
+98.8% of the full data size accuracy. Based on these results, we conclude that training
+a model with 400 proofs is sufficient for adequate results.
+5 User Study Methods
+Using the trained grading pipelines, we implemented an autograder for proof by
+induction problems using the online assessment system PrairieLearn [51]. Due to com-
+putational resource restrictions and the comparable performance of GPT-3 to Llemma
+on the 3 proofs used in our user study, we chose to use GPT-3 as the embedding
+model for our user study. For each student-submitted proof on a problem, the grading
+pipeline evaluates the proof using the rubrics R1-R7 introduced in 3.1, producing 7
+correct/incorrect results. The final score for each submission is the sum of the 7 rubric
+points, ranging between 0 and 7, and then rescaled to a percentage between 0-100.
+For each submission, we first show a general feedback based on the proof’s percentage
+score, such as “you are almost there” or “your proof needs more work”, encouraging
+students to revise their submissions. Additionally, each rubric point is mapped to a
+specific feedback sentence that is shown to the student when a mistake is identified for
+that rubric point. For instance, an error in rubric item R4 (setting the bound of the
+inductive hypothesis) generates the feedback: “It appears your inductive hypothesis is
+missing or incorrect.” According to the taxonomy of feedback introduced in Shute [6],
+the feedback provided by our grading pipeline is partially elaborated. We tell the stu-
+dents a rubric point which their proof is failing, but we do not explain to them how
+to fix it. Figure 4 shows an example page from PrairieLearn where students can sub-
+mit their proofs and receive automatic feedback. We did not use generative models for
+feedback due to concerns about their accuracy at the time of the study design, and
+because we felt that rubric-point based feedback would be sufficiently elaborated for
+students to improve their proofs. As we will discuss more in Section 7.2, some students
+felt that the feedback was sufficiently helpful while others felt that it should have been
+more elaborated.
+5.1 Study Setup
+To investigate the accuracy of our grading models in a real class and better understand
+if they can help students write better proofs without the support of human graders,
+we conducted a study in Spring 2024 with students registered in the Discrete Math-
+ematics course (CS173) at the University of Illinois Urbana-Champaign. We address
+the following research questions:
+RQ1 Are students able to write better proofs by interacting with the autograder and
+the feedback it generates?
+RQ2 Are students satisfied with the autograder and the feedback it provides?
+RQ3 Does using the autograder make students more willing to use similar AI
+autograders in the future?
+14
+(a) Question prompt and submission panel
+(b) Graded results and feedback from the autograder
+Fig. 4: An example of an autograded problem in PrairieLearn. Students type in their
+proof in the markdown editor box, and are able to see the markdown preview in real
+time. Once they click “Save & Grade”, they receive immediate feedback form the
+autograder, indicating if the submission is correct or not.
+15
+The study was conducted earlier in the semester before students had been intro-
+duced to systematic instructions on proof by induction or had practiced any induction
+problems at the college level. As part of the study, students were asked to complete
+a learning activity and were offered extra credit points for its completion, equivalent
+to the completion of one homework (about 0.36% of the course grade). The students
+had one week to complete the learning activity at a time of their choice.
+The learning activity consisted of three parts. In the first part, students were
+expected to read a 6-page textbook section about induction, including information on
+the theoretical ground for induction, the steps of an induction proof, and an exam-
+ple problem with solution. The second part asked students to complete 3 induction
+problems (P1-P3 as defined in 3.1). We only consider 3 problems out of the 4 used in
+the model training process for two reasons: first, we wanted to limit the length of the
+learning activity to 1 hour, which would not be reasonable if we expected students
+to read the text and complete all 4 problems; second, we removed P4 due to its low
+accuracy compared to P1-P3, as this could potentially hinder the students’ learning
+experiences. The third part of the learning activity included a feedback survey, with
+the following questions:
+S01 In CS173, I usually receive accurate grading from human graders for my proofs.
+S02 Feedback from human graders has helped me improve my proofs.
+S03 Overall, I am satisfied with my experience with human graders in CS173.
+S04 I would prefer to wait for a week to get human grading feedback for the proofs I
+write for my homework than use the autograder for instant feedback.
+S05 Even if a well-developed AI autograder has about the same accuracy as human
+graders, I still trust the grading results from human graders more.
+S06 I am comfortable using a well-developed AI autograder in my course to give me
+feedback as I prepare for my quizzes.
+S07 Given that I can still regrade my work with human graders, I am comfortable
+having a well-developed AI autograder in my course to grade my quizzes.
+S08 I received accurate grading from the autograder.
+S09 Feedback from the autograder helped me improve my proofs.
+S10 Overall, I am satisfied with my experience of using the autograder.
+The first subsection of the survey includes questions S01-S03, which asks the stu-
+dents about their prior experience with human graders in the course. The second
+subsection includes questions S04-S07, focusing on students’ perceptions of using AI
+for autograding. The last questions ask students to share their experiences with the
+AI autograder during the learning activity. The survey questions are presented on a
+five-point Likert scale using the following options and corresponding numeric values:
+“Strongly disagree” (-2), “Disagree” (1), “Neutral” (0), “Agree” (1), “Strongly agree”
+(2). Negatively worded questions (e.g., “I would prefer to wait for a week to get human
+grading feedback for the proofs I write for my homework than use the autograder for
+instant feedback”) are reverse coded in the statistical analysis.
+To get a better understanding of student perceptions of the graders, we included
+the following open-ended survey questions:
+S11 In your opinion, how can the autograder be useful in your learning experiences?
+16
+S12 Can you share a positive experience you had with the autograder?
+S13 Can you share a negative experience you had with the autograder?
+S14 Do you have other comments on the autograder?
+We do not use S11-S14 to directly answer any of the research questions, but we will
+use them in the discussion as we seek to understand the student’s reasoning behind
+why they answered the way they did on the Likert items.
+5.2 Experimental Conditions
+The students were randomly assigned to 3 groups. We refer to the groups as Self-
+eval, First, and Random. The Self-eval group was the control group. In the Self-eval
+group, students did not have access to the AI autograders during the learning activity.
+Instead, upon proof submission, students in this group could see the 7 rubric points
+for the problem and were asked to self-assess and make improvements to their proof
+until they were satisfied with the solution. This is our baseline group, as it mimics a
+student completing a proof on their own.
+Both the First and Random groups had access to the AI autograders, forming our
+treatment groups. Students in the First group received feedback on the first rubric
+point (out of the seven) that the autograder identified. The order of these rubric
+points follows the logical sequence of R1–R7, corresponding to the typical flow of
+an induction proof. For example, an induction proof commonly begins with stating
+and proving the base cases, followed by stating the goal for the induction steps, and
+then completing the steps themselves. The strategy of reporting the first incorrect
+rubric point is based on some students’ preference to work incrementally, fixing the
+earlier parts of their work before moving on to the next part. When we designed the
+experiment, we expected this strategy to be the most helpful to students.
+Students in the Random group received feedback for one of rubric points, randomly
+selected from the rubric items the autograder identified as incorrect. This approach
+was included in our study to explore whether different feedback strategies yield vary-
+ing effects. The random strategy aimed to expose students to a broader range of
+feedback on the question, potentially helping them identify actionable steps to correct
+their submission. This approach could be especially beneficial for students who might
+otherwise remain stuck on the same part of the proof for an extended period of time.
+6 User Study Results
+After the learning activity deadline, we manually screened all students’ submissions
+and excluded students who showed no effort during the study. These excluded students
+either submitted blank proofs to all 3 problems or only typed something trivial such
+as “hello” or a question mark in their proofs. After applying this exclusion criteria, we
+had 68 students in the Self-eval group, 59 students in the First group, and 42 students
+in the Random group. Due to constraints imposed by the online assessment platform
+PrairieLearn, it was easier to pre-assign all eligible students to one of the experimental
+conditions before they elected to participate. Students agreed to participate upon
+opening the assessment in PrairieLearn. These two exclusion criteria combined resulted
+in the small variation in the population of sizes for each treatment. This small variation
+17
+Self-eval
+Random
+First
+Group
+0
+20
+40
+60
+80
+100
+Score
+Initial
+Best
+Fig. 5: Distribution of initial and best scores in all problems, separated by the group.
+Distributions of initial and best submissions for the Self-eval group are similar, while
+Random and First have different distributions.
+has no effect on the conclusions of the study because the assignment of students to
+experimental groups was still random.
+6.1 RQ1: Are Students Able to Improve Their Proofs Using
+The Autograder?
+For each student, we collected the number of submissions for each problem and the
+score for each submission. We are interested in investigating the difference between
+students’ initial submissions and best submissions for all three problems. Figure 5
+shows the distribution of the initial scores and best scores for each student group, and
+Figure 6 shows the number of submissions for all the proof problems combined.
+For each of the three proof problems (P1-P3), we performed a Kruskal-Wallis
+test across all groups to find the difference between students’ earned scores on their
+initial submission. The results are p = 0.26, 0.14, 0.27 respectively. These indicate that
+students are starting their proof-writing with similar quality across all groups, which
+makes sense as the students are randomly assigned to the three groups.
+On the other hand, a Kruskal-Wallis test on students’ earned scores on their best
+submission shows statistically significant differences for all three problems, as shown in
+Table 5. Post-hoc pairwise tests reveal that the best submission scores are significantly
+18
+0
+50
+100
+Self-eval
+0
+50
+100
+Random
+0
+5
+10
+15
+20
+25
+30
+Number of submissions
+0
+50
+100
+First
+Fig. 6: Histogram for the number of submissions per student for each of the three
+groups. Students in the Self-eval group have slightly fewer submissions for all proof
+problems combined.
+higher for students in First and Random than Self-eval, while there is no significant
+difference between First and Random.
+Mean(SD)
+Problem
+Self-eval
+Random
+First
+H
+p
+P1
+75.8(38.8)
+90.1(24.1)
+92.1(22.9)
+10.95
+0.004
+P2
+60.1(32.4)
+79.1(24.6)
+76.8(25.6)
+13.62
+0.001
+P3
+51.1(40.4)
+68.8(37.8)
+75.9(34.6)
+13.68
+0.001
+Table 5: Kruskal-Wallis, mean, and standard deviation
+for the best submission scores of each problem. Students
+in Random and First have a significantly higher score in
+their best submissions.
+To better understand the effect of using the AI autograder to support the writing
+of proofs while controlling for initial student knowledge, we propose a regression model
+to determine the score gain for students in the three groups, using the students’ initial
+19
+and best submission scores. We fit an ordinary least squares (OLS) model of the form
+BESTij = µj + α Iij + β1G1i + β2G2i
+(1)
+where BESTij is the predicted best submission score for student i on problem j, and
+Iij is the initial score for student i on problem j. Both scores range between 0 and 100.
+G1i and G2i are indicators of the students being in Random or First, respectively.
+For any student in Self-eval, both values are 0; for students in Random G1i is 1 and
+G2i is 0, and for students in First G1i is 0 and G2i is 1. We want to estimate the
+parameters µj, α, β1, and β2, which can be interpreted as follows:
+• µj: Control for the difficulty of problem j
+• α: Control for the initial score of the proof
+• β1: The effect of feedback for students in the Random group
+• β2: The effect of feedback for students in the First group
+Table 6 summarizes the results from the regression analysis using Equation 1. The
+baseline students are students in Self-eval, who do not receive the results or feedback
+from the autograder. Compared with Self-eval students, students in the First and
+Random groups are able to gain respectively 11.6 and 11.3 more points from the proofs
+they write after controlling for their initial submission performances. This shows that
+students can improve and write more accurate proofs using the feedback from the
+autograder compared with students who are just self-evaluating using the rubric. In
+future work, we will seek to also measure knowledge retention by having students
+complete additional proofs without the autograder in a delayed posttest.
+Coefficient
+Description
+Value
+stderr
+t
+p
+α
+Control for initial score
+0.693
+0.03
+27.9
+< 0.001
+β1
+Effect of the Random group
+11.3
+2.32
+4.86
+< 0.001
+β2
+Effect of the First group
+11.6
+2.10
+5.51
+< 0.001
+µ1
+Control for difficulty of P1
+26.5
+2.56
+10.36
+< 0.001
+µ2
+Control for difficulty of P2
+20.2
+2.37
+8.52
+< 0.001
+µ3
+Control for difficulty of P3
+20.0
+2.25
+8.92
+< 0.001
+Table 6: Coefficients from Equation 1. The R2 metric of this regression
+is 0.665, indicating a strong relationship between variables. Students in
+the experimental groups using the AI autograder are able to achieve
+11 more points in the proofs than students using the rubrics for self-
+evaluation.
+6.2 Survey Results
+The survey results are shown in Figure 7 and Figure 8. The three subsections of
+the surveys address different aspect of student perceptions: S01-S03 address student
+perceptions of human graders, S04-S07 address students willingness to have AI graders
+integrated into various parts of their course, and S08-S10 address student perceptions
+of the AI graders. We calculated a Cronbach’s α for each of the three subsections.
+20
+0%
+2%
+13%
+86%
+79%
+74%
+14%
+19%
+13%
+8%
+7%
+10%
+73%
+62%
+68%
+19%
+31%
+22%
+12%
+7%
+10%
+71%
+74%
+68%
+17%
+19%
+22%
+42%
+31%
+40%
+32%
+38%
+37%
+25%
+31%
+24%
+32%
+26%
+16%
+49%
+52%
+47%
+19%
+21%
+37%
+8%
+12%
+13%
+76%
+79%
+69%
+15%
+10%
+18%
+24%
+14%
+15%
+66%
+79%
+59%
+10%
+7%
+26%
+S07: Given that I can still regrade my work with human graders, I am comfortable having a
+well−developed AI autograder in my course to grade my quizzes.
+S06: I am comfortable using a well−developed AI autograder in my course to give me feedback as I
+prepare for my quizzes.
+S05: Even if a well−developed AI autograder has about the same accuracy as human graders, I still
+trust the grading results from human graders more.
+S04: I would prefer to wait for a week to get human grading feedback for the proofs I write for my
+homework than use the autograder for instant feedback.
+S03: Overall, I am satisfied with my experience with human graders in CS173.
+S02: Feedback from human graders has helped me improve my proofs.
+S01: In CS173, I usually receive accurate grading from human graders for my proofs.
+100
+50
+0
+50
+100
+Self−eval
+Random
+First
+Self−eval
+Random
+First
+Self−eval
+Random
+First
+Self−eval
+Random
+First
+Self−eval
+Random
+First
+Self−eval
+Random
+First
+Self−eval
+Random
+First
+Percentage
+Response
+Strongly disagree
+Disagree
+Neutral
+Agree
+Strongly agree
+Fig. 7: Responses from survey questions given to all 3 groups. The percentages
+shown on each distribution represent the percentage of negative responses (disagree &
+strongly disagree), the percentage of netural responses, and the percentage of positive
+responses (agree & strongly agree).
+The calculated Cronbach’s α are 0.81, 0.72, 0.82 respectively, indicating good internal
+reliability. The Self-eval group were not asked questions S08-S14 as these students did
+not interact with the autograder during the learning activity.
+6.2.1 RQ2: Are students satisfied with the autograder and
+feedback?
+We use responses from survey questions S01-S03 and S08-S10, as shown in Table 7,
+to address RQ2. S01-S03 capture students’ perceptions of human graders, while S08-
+S10 assess their perceptions of the AI autograder. Specifically, S01 and S08 measure
+the perceived accuracy of the graders, S02 and S09 evaluate their helpfulness, and S03
+and S10 measure overall satisfaction with the graders. On average, human graders are
+21
+20%
+21%
+53%
+60%
+27%
+19%
+22%
+31%
+44%
+50%
+34%
+19%
+17%
+19%
+53%
+55%
+31%
+26%
+S10: Overall, I am satisfied with my experience of using the autograder.
+S09: Feedback from the autograder helped me improve my proofs.
+S08: I received accurate grading from the autograder.
+100
+50
+0
+50
+100
+Random
+First
+Random
+First
+Random
+First
+Percentage
+Response
+Strongly disagree
+Disagree
+Neutral
+Agree
+Strongly agree
+Fig. 8: Responses from survey questions given to only First and Random. The per-
+centages shown on each distribution represent the percentage of negative responses
+(disagree & strongly disagree), the percentage of neutral responses, and the percent-
+age of positive responses (agree & strongly agree).
+perceived to be more accurate and helpful than the AI autograder, with statistically
+significant differences (p < 0.05). However, although the mean satisfaction rating is
+higher for human graders, the differences are not statistically significant for either the
+First or Random groups. We hypothesize that this is due to the known benefits of the
+AI autograder, such as timely feedback and the ability to submit an unlimited number
+of times.
+Accuracy
+Helpfulness
+Satisfaction
+Group
+S01
+S08
+t
+p
+S02
+S09
+t
+p
+S03
+S10
+t
+p
+Self-eval
+0.84
+—
+—
+—
+0.76
+—
+—
+—
+0.74
+—
+—
+—
+First
+1.14
+0.41
+4.37
+< 0.001
+0.86
+0.22
+3.61
+< 0.001
+0.75
+0.44
+1.69
+0.094
+Random
+1.02
+0.48
+2.81
+0.006
+0.69
+0.24
+2.14
+0.035
+0.74
+0.52
+0.97
+0.336
+Table 7: S01-S03 and S08-S10 statistics for three groups, and the pairwise t-test for
+independence. Self-eval students did not have access to S08-S10 as these students did
+not interact with the autograder during the learning activity. All scores range between
+-2 and 2.
+6.2.2 RQ3: Does using the autograder make students more willing
+to use AI autograders?
+We aim to understand students’ perceptions of and trust in using an autograder for
+their coursework across various settings. Specifically, we want to determine whether
+interactions with the autograder can foster more positive perceptions. These are
+reflected through S04-S07 (see Table 8). S04 examines students’ preferences between
+receiving instant feedback from AI autograders and obtaining more reliable feedback
+from human graders. S05 assesses the level of trust students have in AI autograders
+in general. S06 and S07 explore potential applications of AI autograders.
+22
+Survey
+Self-eval
+Random
+First
+F
+p
+S04
+-0.06
+-0.29
+0.10
+1.20
+0.31
+S05
+-0.51
+-0.36
+-0.22
+1.06
+0.35
+S06
+0.72
+0.95
+0.92
+1.01
+0.37
+S07
+0.63
+0.98
+0.76
+1.17
+0.31
+Table 8: S04-S07 mean numeric scores about
+perceptions using AI autograders, with one-way
+ANOVA test statistics. All scores range between
+-2 and 2.
+On average, students in First and Random are slightly more comfortable using
+a well-developed autograding system in the future. However, one-way ANOVA tests
+among the groups show the differences are not statistically significant.
+7 Discussion
+7.1 Model Accuracy
+In terms of student-perceived accuracy, the results mostly agree with the accuracy
+measures in 4.2. Although GPT-3 models are observed to perform relatively well, they
+are still less accurate than experienced human graders. This difference in accuracy
+can be amplified even more in practice. Repetition of similar proofs might skew the
+accuracy measures because similar proofs tend to be graded the same way due to
+the stable nature of the large language models. Students can potentially encounter
+multiple incorrect gradings in a row by submitting similar proofs, which increases their
+sense of mistrust on the graders.
+Currently, the large language models are used as black boxes for embedding. There
+are cases where the models do not precisely interpret the input sentences, but it is
+hard to predict why, when, or how the misinterpretation happens. This can lead to
+the autograder giving wrong grades in mysterious ways. This has happened to some
+of the users. Some open-ended feedback from the users are listed below:
+• “Additionally, when I added ‘Suppose that’ in front of my Inductive Hypothesis,
+it deemed it incorrect.”
+• “It was not always accurate especiall [sic] when I didnt us LateX perfectly.”
+• “My grade also improved by changing some, but not all, of my ‘\times’ to ‘\cdot’
+for no apparent reason, either. When I changed all of them, my grade remained
+unchanged.”
+• “Spacing my sentences out into separate paragraphs improved my grade by 15%,
+also for no apparent reason.”
+One possible improvement for this situation is to break down a proof problem into
+sub-problems, where students submit portions of the proof into different input boxes.
+This can help decrease the complexity of the proofs being submitted and provide more
+accurate embeddings. This also makes the task slightly different due to the added
+scaffolding, which may be appropriate for formative settings, but less so for exams.
+23
+7.2 Feedback Helpfulness
+The elaborated nature of the feedback from our grader enabled students using the
+autograder to make good progress on the proofs, and being able to see the feedback
+almost instantly also provided students a better way of practicing writing the proofs.
+• “The autograder tells me where exactly I am lacking information, which helps
+me more because I can pinpoint where I need to work on.”
+• “The autograder allows for quick and efficient feedback of on proofs versus waiting
+to hear back days after on issues with ones proof. This quick turn around time
+allows for a easy/fast way to get better at proof writing.”
+• “I got absolutely stuck with the last proof! However, when I used the autograder,
+it gave me around a 75%. This gave me confidence that I was on the right track,
+and I was able to not get discouraged. I was slowly able to incorporate more parts
+of the solution into my proof”
+On the other hand, more elaborated feedback or instructions such as hints to fix
+the proofs would help student make even more improvements.
+• “Some of the feedback was basic. didn’t say anything specific. ”
+• “I also think that the autograder was not specific enough to identify what exactly
+was wrong with my proofs. I was stuck on the 2nd problem for a while, and the
+feedback that I was getting was not exactly enough to pinpoint what exactly was
+wrong.”
+Providing such automated and elaborated feedback should be possible with the help
+of generative models. We did not use generative models for this study due to concerns
+about low grading accuracy resulting in low feedback accuracy. At the time of the
+study, generative AI models stuggled to give feedback on long technical passages such
+as the induction proofs. However, they have improved over time so we can try them in
+future work. By leveraging few-shot training techniques such as Retrieval-Augmented
+Generation [52] and including the more accurate grading outputs from our models, we
+can fine-tune chatbots such as ChatGPT to provide suggestions or hints with reduced
+likelihood of hallucination. These fine-tuned chatbots can also better align with the
+specific learning objectives of individual courses. This potential enhancement to our
+system can be explored in future work, allowing us to get a better understanding into
+the quality of AI-generated feedback.
+7.3 Perceptions on AI grading
+Proof grading is a subjective task, which can lead to low levels of trust from students.
+When designing the learning activities, we initially hoped that the interactions with
+our AI autograder would increase students’ trust and willingness to use such tools
+in the future. However, results in 6.2 do not confirm our initial hypothesis. Students
+in First and Random are slightly more willing to use an AI autograder in various
+settings, but the difference is not statistically significant. Simply using the autograder
+does not sufficiently increase students’ willingness to use AI autograders in general.
+One potential strategy to build trust in AI autograders is to provide more detailed
+feedback and explanations during the grading process. Research by Ha and Kim [53]
+indicates that offering additional information about AI models can be effective in
+24
+reducing cognitive biases and fostering trust. Incorporating such measures into future
+iterations of the autograder could improve its acceptance and perceived reliability
+among students.
+8 Conclusions and Future Work
+In this study, we developed a set of machine learning models to autograde freeform
+mathematical proofs. These models enable fast training without the need for extensive
+fine-tuning, and they achieve accuracy comparable to that of most human graders
+recruited for this study. These models can be used to develop NLP graders which could
+be deployed on large-scale educational platforms in the future, enabling more students
+to receive the necessary support when learning to write mathematical proofs.
+After creating and deploying autograded proof by induction problems using the
+grading models, we conducted a user study to evaluate the autograder’s impact. Our
+results show that students who used the autograder for feedback to make revisions to
+their submissions scored over 10% higher on the proof problems than students who
+did not use the autograder. This is an encouraging sign for creating more autograded
+problems in the future. Despite being helped by the autograder, many students still
+preferred feedback from human graders, even if it was delayed.
+In the future, fostering greater student trust in AI autograders will be an important
+area of focus. Efforts can be put on improving the grading models as well. Since our
+current models were trained exclusively on mathematical induction problems, their
+ability to grade other types of proof such as proof of bijection or geometry is still
+unknown. We plan to collect data on various types of mathematical proof problems,
+and check if our grading models can perform equally well on these problems.
+Additionally, he cost of training and running these models can also be reduced. In
+our current design, GPT-3-based models seem to be the best choice as they can be
+scalable at a low cost and achieve a relatively good performance. However, there is still
+a lack of open-source language models that are computationally efficient, cost-effective,
+and capable of achieving comparable performance. Developing such models could allow
+for greater customization and broader application of AI autograders, making this an
+important focus for future work with more advanced language models.
+Acknowledgments
+This work used the Delta system at the National Center for Supercomputing
+Applications through allocation CIS230355 from the Advanced Cyberinfrastructure
+Coordination Ecosystem: Services & Support (ACCESS) program, which is supported
+by National Science Foundation grants #2138259, #2138286, #2138307, #2137603,
+and #2138296.
+The work is also made possible by members of previous research projects collecting
+and labeling the proof data, and graders from multiple institutes providing grading
+data for comparison.
+25
+References
+[1] Computing Curricula, A.f.C.M.A., Society, I.C.: Computer Science Curricula
+2013: Curriculum Guidelines for Undergraduate Degree Programs in Computer
+Science. Association for Computing Machinery, New York, NY, USA (2013)
+[2] Computing Curricula, A.f.C.M.A., Society, I.C.: Curriculum guidelines for under-
+graduate degree programs in computer engineering. Technical report, New York,
+NY, USA (2016)
+[3] Computing Curricula, T.J.T.F.: Curriculum guidelines for undergraduate degree
+programs in software engineering. Technical report, New York, NY, USA (2014)
+[4] Goldman, K., Gross, P., Heeren, C., Herman, G., Kaczmarczyk, L., Loui, M.C.,
+Zilles, C.: Identifying important and difficult concepts in introductory com-
+puting courses using a delphi process. In: Proceedings of the 39th SIGCSE
+Technical Symposium on Computer Science Education. SIGCSE ’08, pp. 256–
+260. Association for Computing Machinery, New York, NY, USA (2008). https:
+//doi.org/10.1145/1352135.1352226 . https://dl.acm.org/doi/10.1145/1352135.
+1352226 Accessed 2023-12-05
+[5] Anderson, J.R., Corbett, A.T., Koedinger, K.R., Pelletier, R.: Cognitive tutors:
+Lessons learned. The journal of the learning sciences 4(2), 167–207 (1995)
+[6] Shute,
+V.J.:
+Focus
+on
+formative
+feedback.
+Review
+of
+Educational
+Research
+78(1),
+153–189
+(2008)
+https://doi.org/10.3102/0034654307313795
+https://doi.org/10.3102/0034654307313795
+[7] Poulsen, S.: Student Proof by Induction Data Set. https://doi.org/10.7910/DVN/
+OTRLXF . https://doi.org/10.7910/DVN/OTRLXF
+[8] Knuth, E.J.: Secondary school mathematics teachers’ conceptions of proof. Jour-
+nal for Research in Mathematics Education 33(5), 379–405 (2002). Accessed
+2024-12-31
+[9] Stylianides, G., Stylianides, A., Weber, K.: Research on the teaching and learning
+of proof: Taking stock and moving forward. In: Cai, J. (ed.) Compendium for
+Research in Mathematics Education, pp. 237–266. National Council of Teachers
+of Mathematics, Reston, VA (2017). Chap. 10
+[10] Jahnke, H.N., Wambach, R.: Understanding what a proof is: a classroom-
+based
+approach.
+ZDM
+45(3),
+469–482
+(2013)
+https://doi.org/10.1007/
+s11858-013-0502-x . Accessed 2022-01-18
+[11] Brown, S.A.: On skepticism and its role in the development of proof in the
+classroom. Educational Studies in Mathematics 86(3), 311–335 (2014) https:
+//doi.org/10.1007/s10649-014-9544-4 . Accessed 2022-01-19
+26
+[12] Stylianides, G.J., Stylianides, A.J.: Facilitating the Transition from Empirical
+Arguments to Proof. Journal for Research in Mathematics Education 40(3), 314–
+352 (2009). Publisher: National Council of Teachers of Mathematics. Accessed
+2022-01-18
+[13] Harel, G.: The development of mathematical induction as a proof scheme: A model
+for dnr-based instruction. In: In S. Campbell & R. Zaskis (Eds.). Learning and
+Teaching Number Theory, Journal of Mathematical Behavior (2001). Citeseer
+[14] Larsen, S., Zandieh, M.: Proofs and refutations in the undergraduate mathematics
+classroom. Educational Studies in Mathematics 67(3), 205–216 (2008) https://
+doi.org/10.1007/s10649-007-9106-0 . Accessed 2022-01-19
+[15] Norton, A., Arnold, R., Kokushkin, V., Tiraphatna, M.: Addressing the cog-
+nitive gap in mathematical induction. International Journal of Research in
+Undergraduate Mathematics Education, 1–27 (2022)
+[16] Breitner, J.: Visual Theorem Proving with the Incredible Proof Machine, pp.
+123–139 (2016). https://doi.org/10.1007/978-3-319-43144-4 8
+[17] Lerner, S., Foster, S.R., Griswold, W.G.: Polymorphic blocks: Formalism-inspired
+ui for structured connectors. In: Proceedings of the 33rd Annual ACM Conference
+on Human Factors in Computing Systems, pp. 3063–3072 (2015)
+[18] Poulsen, S., Viswanathan, M., Herman, G.L., West, M.: Proof Blocks: Auto-
+gradable Scaffolding Activities for Learning to Write Proofs. In: Proceedings of
+the 27th ACM Conference on Innovation and Technology in Computer Science
+Education Vol. 1, pp. 428–434 (2022). https://doi.org/10.1145/3502718.3524774
+. arXiv:2106.11032 [cs]. http://arxiv.org/abs/2106.11032 Accessed 2023-09-09
+[19] Movshovitz-Hadar, N.: The false coin problem, mathematical induction and
+knowledge fragility. Journal of Mathematical Behavior 12(3), 253–268 (1993).
+Accessed 2024-12-23
+[20] Dubinsky, E.: Teaching mathematical induction: I. The Journal of Mathematical
+Behavior 5(3), 305–317 (1986). Place: Netherlands Publisher: Elsevier Science
+[21] Lange, M.: Why proofs by mathematical induction are generally not explanatory.
+Analysis 69(2), 203–211 (2009) https://doi.org/10.1093/analys/anp002
+[22] Stylianides, G.J., Sandefur, J., Watson, A.: Conditions for proving by mathemati-
+cal induction to be explanatory. The Journal of Mathematical Behavior 43, 20–34
+(2016) https://doi.org/10.1016/j.jmathb.2016.04.002 . Accessed 2024-12-23
+[23] Dubinsky, E.: Teaching mathematical induction II. Journal of Mathematical
+Behavior 8(3), 285–304 (1989). Accessed 2024-12-23
+27
+[24] Baker, J.D.: Students’ difficulties with proof by mathematical induction. (1996)
+[25] Stylianides, G.J., Stylianides, A.J., Philippou, G.N.: Preservice teachers’ knowl-
+edge of proof by mathematical induction. Journal of Mathematics Teacher
+Education 10, 145–166 (2007)
+[26] Fluckiger, H., Nelson, E., Kularajan, S., Poulsen, S.: Cognitive gaps in proof
+by induction: A replication study. In: Proceedings of the 27th Annual Confer-
+ence on Research in Undergradute Mathematics Education. Alexandria, Virginia:
+SIGMAA on RUME (2025)
+[27] Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N.,
+Kaiser, L., Polosukhin, I.: Attention Is All You Need. arXiv. arXiv:1706.03762 [cs]
+(2023). https://doi.org/10.48550/arXiv.1706.03762 . http://arxiv.org/abs/1706.
+03762 Accessed 2023-11-26
+[28] Brown, T.B., Mann, B., Ryder, N., Subbiah, M., Kaplan, J., Dhariwal, P.,
+Neelakantan, A., Shyam, P., Sastry, G., Askell, A., Agarwal, S., Herbert-Voss,
+A., Krueger, G., Henighan, T., Child, R., Ramesh, A., Ziegler, D.M., Wu, J.,
+Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M., Gray, S., Chess, B.,
+Clark, J., Berner, C., McCandlish, S., Radford, A., Sutskever, I., Amodei, D.:
+Language Models are Few-Shot Learners. arXiv. arXiv:2005.14165 [cs] (2020).
+http://arxiv.org/abs/2005.14165 Accessed 2024-01-10
+[29] Devlin, J., Chang, M.-W., Lee, K., Toutanova, K.: BERT: Pre-training of Deep
+Bidirectional Transformers for Language Understanding. arXiv. arXiv:1810.04805
+[cs] (2019). http://arxiv.org/abs/1810.04805 Accessed 2023-09-09
+[30] Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., Bash-
+lykov, N., Batra, S., Bhargava, P., Bhosale, S., Bikel, D., Blecher, L., Ferrer,
+C.C., Chen, M., Cucurull, G., Esiobu, D., Fernandes, J., Fu, J., Fu, W., Fuller,
+B., Gao, C., Goswami, V., Goyal, N., Hartshorn, A., Hosseini, S., Hou, R., Inan,
+H., Kardas, M., Kerkez, V., Khabsa, M., Kloumann, I., Korenev, A., Koura,
+P.S., Lachaux, M.-A., Lavril, T., Lee, J., Liskovich, D., Lu, Y., Mao, Y., Mar-
+tinet, X., Mihaylov, T., Mishra, P., Molybog, I., Nie, Y., Poulton, A., Reizenstein,
+J., Rungta, R., Saladi, K., Schelten, A., Silva, R., Smith, E.M., Subramanian,
+R., Tan, X.E., Tang, B., Taylor, R., Williams, A., Kuan, J.X., Xu, P., Yan, Z.,
+Zarov, I., Zhang, Y., Fan, A., Kambadur, M., Narang, S., Rodriguez, A., Stojnic,
+R., Edunov, S., Scialom, T.: Llama 2: Open Foundation and Fine-Tuned Chat
+Models. arXiv. arXiv:2307.09288 [cs] (2023). http://arxiv.org/abs/2307.09288
+Accessed 2024-01-10
+[31] Haller, S., Aldea, A., Seifert, C., Strisciuglio, N.: Survey on Automated Short
+Answer Grading with Deep Learning: from Word Embeddings to Transformers.
+arXiv. arXiv:2204.03503 [cs] (2022). https://doi.org/10.48550/arXiv.2204.03503
+. http://arxiv.org/abs/2204.03503 Accessed 2023-11-15
+28
+[32] Kiros, R., Zhu, Y., Salakhutdinov, R., Zemel, R.S., Torralba, A., Urtasun, R.,
+Fidler, S.: Skip-Thought Vectors. arXiv. arXiv:1506.06726 [cs] (2015). https://
+doi.org/10.48550/arXiv.1506.06726 . http://arxiv.org/abs/1506.06726 Accessed
+2023-11-26
+[33] Bonthu, S., Sripada, R.S., Prasad, M.: Automated Short Answer Grading
+Using Deep Learning: A Survey, pp. 61–78 (2021). https://doi.org/10.1007/
+978-3-030-84060-0 5
+[34] Fernandez, N., Ghosh, A., Liu, N., Wang, Z., Choffin, B., Baraniuk, R., Lan, A.:
+Automated Scoring for Reading Comprehension via In-context BERT Tuning.
+arXiv. arXiv:2205.09864 [cs] (2023). https://doi.org/10.48550/arXiv.2205.09864
+. http://arxiv.org/abs/2205.09864 Accessed 2024-12-17
+[35] Chen, B., West, M., Zilles, C.: Peer-grading ”explain in plain english”: A
+bayesian calibration method for categorical answers. In: Proceedings of the
+53rd ACM Technical Symposium on Computer Science Education - Volume 1.
+SIGCSE 2022, pp. 133–139. Association for Computing Machinery, New York,
+NY, USA (2022). https://doi.org/10.1145/3478431.3499409 . https://doi.org/10.
+1145/3478431.3499409
+[36] Azad, S., Chen, B., Fowler, M., West, M., Zilles, C.: Strategies for deploying unre-
+liable ai graders in high-transparency high-stakes exams. In: Artificial Intelligence
+in Education: 21st International Conference, AIED 2020, Ifrane, Morocco, July
+6–10, 2020, Proceedings, Part I 21, pp. 16–28 (2020). Springer
+[37] Lan, A.S., Vats, D., Waters, A.E., Baraniuk, R.G.: Mathematical Language Pro-
+cessing: Automatic Grading and Feedback for Open Response Mathematical
+Questions. In: Proceedings of the Second (2015) ACM Conference on Learning @
+Scale. L@S ’15, pp. 167–176. Association for Computing Machinery, New York,
+NY, USA (2015). https://doi.org/10.1145/2724660.2724664 . https://dl.acm.org/
+doi/10.1145/2724660.2724664 Accessed 2023-11-15
+[38] Shen, J.T., Yamashita, M., Prihar, E., Heffernan, N., Wu, X., Graff, B., Lee, D.:
+MathBERT: A Pre-trained Language Model for General NLP Tasks in Mathe-
+matics Education. arXiv. arXiv:2106.07340 [cs] (2023). https://doi.org/10.48550/
+arXiv.2106.07340 . http://arxiv.org/abs/2106.07340 Accessed 2023-08-17
+[39] Wu, Y., Jiang, A.Q., Li, W., Rabe, M.N., Staats, C., Jamnik, M., Szegedy, C.:
+Autoformalization with Large Language Models. arXiv. arXiv:2205.12615 [cs]
+(2022). https://doi.org/10.48550/arXiv.2205.12615 . http://arxiv.org/abs/2205.
+12615 Accessed 2024-03-25
+[40] Li, T.W., Hsu, S., Fowler, M., Zhang, Z., Zilles, C., Karahalios, K.: Am i wrong, or
+is the autograder wrong? effects of ai grading mistakes on learning. In: Proceedings
+of the 2023 ACM Conference on International Computing Education Research -
+Volume 1. ICER ’23, pp. 159–176. Association for Computing Machinery, New
+29
+York, NY, USA (2023). https://doi.org/10.1145/3568813.3600124 . https://doi.
+org/10.1145/3568813.3600124
+[41] Lee, M.K.: Understanding perception of algorithmic decisions: Fairness, trust,
+and emotion in response to algorithmic management. Big Data & Soci-
+ety 5(1), 2053951718756684 (2018) https://doi.org/10.1177/2053951718756684 .
+Publisher: SAGE Publications Ltd. Accessed 2024-05-16
+[42] Castelo, N., Bos, M.W., Lehmann, D.R.: Task-Dependent Algorithm Aversion.
+Journal of Marketing Research 56(5), 809–825 (2019) https://doi.org/10.1177/
+0022243719851788 . Publisher: SAGE Publications Inc. Accessed 2024-05-16
+[43] Hsu, S., Li, T.W., Zhang, Z., Fowler, M., Zilles, C., Karahalios, K.: Attitudes sur-
+rounding an imperfect ai autograder. In: Proceedings of the 2021 CHI Conference
+on Human Factors in Computing Systems. CHI ’21. Association for Comput-
+ing Machinery, New York, NY, USA (2021). https://doi.org/10.1145/3411764.
+3445424 . https://doi.org/10.1145/3411764.3445424
+[44] Poulsen, S., Gertner, Y., Cosman, B., West, M., Herman, G.L.: Efficiency of
+learning from proof blocks versus writing proofs. In: Proceedings of the 54th ACM
+Technical Symposium on Computer Science Education V. 1, pp. 472–478 (2023)
+[45] Poulsen, S., Chen, H., Gertner, Y., Cosman, B., West, M., Herman, G.L.: Mea-
+suring the Impact of Distractors on Student Learning Gains while Using Proof
+Blocks (2023)
+[46] Poulsen, S., Gertner, Y., Chen, H., Cosman, B., West, M., Herman, G.L.: Dis-
+entangling the learning gains from reading a book chapter and completing proof
+blocks problems. In: Proceedings of the 55th ACM Technical Symposium on
+Computer Science Education V. 1 (2024)
+[47] Azerbayev, Z., Schoelkopf, H., Paster, K., Santos, M.D., McAleer, S., Jiang,
+A.Q., Deng, J., Biderman, S., Welleck, S.: Llemma: An Open Language Model
+For Mathematics. arXiv. arXiv:2310.10631 [cs] (2023). https://doi.org/10.48550/
+arXiv.2310.10631 . http://arxiv.org/abs/2310.10631 Accessed 2023-11-29
+[48] OpenAI: Embeddings. Accessed: January 2024 (2023). https://platform.openai.
+com/docs/guides/embeddings/what-are-embeddings
+[49] Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T.,
+Lin, Z., Gimelshein, N., Antiga, L., Desmaison, A., Kopf, A., Yang, E., DeVito,
+Z., Raison, M., Tejani, A., Chilamkurthy, S., Steiner, B., Fang, L., Bai, J., Chin-
+tala, S.: Pytorch: An imperative style, high-performance deep learning library.
+In: Advances in Neural Information Processing Systems 32, pp. 8024–8035. Cur-
+ran Associates, Inc., Vancuver, Canada (2019). http://papers.neurips.cc/paper/
+9015-pytorch-an-imperative-style-high-performance-deep-learning-library.pdf
+30
+[50] Fowler, M., Chen, B., Azad, S., West, M., Zilles, C.: Autograding ”Explain in
+Plain English” questions using NLP. In: Proceedings of the 52nd ACM Technical
+Symposium on Computer Science Education, pp. 1163–1169. ACM, Virtual Event
+USA (2021). https://doi.org/10.1145/3408877.3432539 . https://dl.acm.org/doi/
+10.1145/3408877.3432539 Accessed 2023-12-19
+[51] West, M., Herman, G.L., Zilles, C.: Prairielearn: Mastery-based online problem
+solving with adaptive scoring and recommendations driven by machine learning.
+In: 2015 ASEE Annual Conference & Exposition, pp. 26–1238126123814. ASEE
+Conferences, Seattle, Washington (2015). https://peer.asee.org/24575
+[52] Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., K¨uttler, H.,
+Lewis, M., Yih, W.-t., Rockt¨aschel, T., Riedel, S., Kiela, D.: Retrieval-Augmented
+Generation for Knowledge-Intensive NLP Tasks. arXiv. arXiv:2005.11401 [cs]
+(2021). https://doi.org/10.48550/arXiv.2005.11401 . http://arxiv.org/abs/2005.
+11401 Accessed 2024-05-28
+[53] Ha, T., Kim, S.: Improving Trust in AI with Mitigating Confirmation Bias: Effects
+of Explanation Type and Debiasing Strategy for Decision-Making with Explain-
+able AI. International Journal of Human–Computer Interaction 0(0), 1–12 (2023)
+https://doi.org/10.1080/10447318.2023.2285640 . Publisher: Taylor & Francis
+eprint: https://doi.org/10.1080/10447318.2023.2285640. Accessed 2024-05-16
+31

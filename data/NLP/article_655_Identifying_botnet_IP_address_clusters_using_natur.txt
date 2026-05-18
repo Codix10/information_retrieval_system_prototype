@@ -1,0 +1,509 @@
+Title: Identifying botnet IP address clusters using natural language processing techniques on honeypot command logs
+Source URL: http://arxiv.org/abs/2104.10232v1
+--------------------------------------------------
+
+Identifying botnet IP address clusters using natural language processing
+techniques on honeypot command logs∗
+Valentino Crespi
+Wes Hardaker
+Sami Abu-El-Haija
+Aram Galstyan†
+Abstract
+Computer security has been plagued by increasing
+formidable, dynamic, hard-to-detect, hard-to-predict,
+and hard-to-characterize hacking techniques.
+Such
+techniques are very often deployed in self-propagating
+worms capable of automatically infecting vulnerable
+computer systems and then building large bot net-
+works, which are then used to launch coordinated at-
+tacks on designated targets. In this work, we investi-
+gate novel applications of Natural Language Processing
+(NLP) methods to detect and correlate botnet behaviors
+through the analysis of honeypot data. In our approach
+we take observed behaviors in shell commands issued
+by intruders during captured internet sessions and re-
+duce them to collections of stochastic processes that are,
+in turn, processed with machine learning techniques to
+build classiﬁers and predictors. Our technique results in
+a new ability to cluster botnet source IP address even
+in the face of their desire to obfuscate their penetration
+attempts through rapid or random permutation tech-
+niques.
+1
+Introduction
+With the establishment of botnet technologies [5, 4,
+12] the need for methods to understand the lethality
+of certain behaviors and anticipate future moves of
+attackers has become of paramount importance. The
+challenge for cyberdefenders is further exacerbated by
+the constant invention of new hard-to-detect and hard-
+to-track rapidly mutating hacking techniques. In such
+scenarios simple string-matching log searches to identify
+common threat actors is no longer a suﬃcient technique.
+In this work we study intruder behaviors within
+data from a honeypot network to discover the latent
+characteristics of hacking agent groups. We base our
+work on the assumption that individual worms or au-
+tomated hacking techniques that attack from diﬀerent
+IP sources are likely to exhibit similar, but slightly var-
+∗Work supported by the Defense Advanced Research Projects
+Agency
+(DARPA)
+and
+the
+Army
+Contracting
+Command–
+Aberdeen Proving Grounds (ACC-APG) under Contract Number
+W911NF-18-C-0020.
+†USC/ISI.
+ied, modes of operation. Our intuition is that group-
+ing behaviors by similarity of the attack sequence may
+uncover botnets or coordinated agents, allowing secu-
+rity analysts to track their activity, and the evolution
+of their attack methodologies.
+Honeypots [11] as a
+service (HAAS) networks are large collections of Hon-
+eypots that aggregate reports consisting of a set of
+time-stamped, captured sessions of Borne-shell or sim-
+ilar commands collected from intrusions of individual
+hackers (human or automated bot).
+We collect large
+amounts of real and unlabeled data (see Appendix A)
+and apply unsupervised NLP methods to learn statistics
+and cluster reports. To the best of our knowledge the
+application of such methods to the cyber domain is quite
+novel. Supervised NLP methods have been successfully
+applied to cluster tweets in social media [1], under the
+assumption that tweets from the same account contain
+stationary statistics and that diﬀerent accounts would
+most probably correspond to diﬀerent users. Here we
+make opposite assumptions insofar as large sets of bots
+are controlled by the same infrastructure and their indi-
+vidual behaviors can be periodic or evolve dynamically.
+Given the impossibility of performing automated model
+evaluation we chose to design two diﬀerent classes of so-
+lutions (LDA and Deep Learning) with the idea of using
+one as a reference for the other.
+2
+Levels of attacker behaviors
+Suppose that at time t a hacker from source IP ip suc-
+ceeded in establishing a Secure Shell (SSH) [7] connec-
+tion with one of the honeypot servers and a ﬁnite se-
+quence of session commands s is collected. The hon-
+eypot system captures the record ip : (t, s), where
+s is in turn a sequence of shell commands.
+More-
+over, we observed that individual hackers intrude into
+multiple honeypots over time.
+Thus, for each hacker
+source IP ip, we observe a sequence of sessions: ip :
+(t1, s1), (t2, s2), . . . , (tn, sn), with ti < ti+1 for all i. We
+embed sessions into ﬁnite dimensional metric spaces in
+order to learn the behavior of individual hackers or of
+groups of “somewhat related” hackers (botnets) for clas-
+siﬁcation and prediction purposes.
+To be precise, we
+are interested in two levels of analysis of hacking be-
+arXiv:2104.10232v1  [cs.CR]  20 Apr 2021
+haviors: L1) the statistics of lexical terms (commands
+and identiﬁers) occurring in its sessions and L2) given
+L1, the longitudinal statistical characteristics of session
+time series. Learning L1 behaviors allows us to char-
+acterize the fuzzy-signature shell techniques used by a
+hacker (§2.1). Learning L2 behaviors allows us to char-
+acterize the types of hacker activity over time, active
+during speciﬁc, potentially recurring, time periods ob-
+served in certain short subsequences of sessions (§2.2).
+Given the success of these techniques, we consider fu-
+ture directions and approaches in §3.
+2.1
+L1: learning statistics of lexical terms. We
+break the L1 task into three separate stages.
+First,
+we train a probabilistic model to capture the statistics
+of terms occurring in individual sessions (or in groups
+of sessions generated by the same hacker1).
+Second,
+we exploit the model to embed sessions or groups of
+sessions into a ﬁnite dimensional metric space. Third,
+we cluster such embeddings with respect to the metric of
+the embedding space. The intuition behind this method
+is that two behaviors are syntactically similar if their
+embeddings are close in metric, namely they fall into
+the same cluster. Thus, this clustering identiﬁes botnets
+on the basis of sharing similar technical sequences of
+commands in their generated sessions.
+For the ﬁrst
+stage we consider two diﬀerent embedding methods. In
+the ﬁrst, we train a Latent Dirichlet Allocation (LDA)
+model (§2.1.1). In the second, we train a Deep Learning
+autoencoder and exploit the encoding component to
+map each session to a vector (§2.1.2). LDA and, more
+generally, topic modeling, provides an “explainable”
+interpretation of the embedding that is implicit in the
+Bayesian description of the documents.
+Par contre,
+our Deep Learning autoencoder captures the order of
+the commands and allows large scale processing of
+millions of sessions. Finally, we employ k-means [9] and
+vdgmm [2] to perform clustering.
+2.1.1
+LDA pipeline. LDA is a generative proba-
+bilistic model for collections of discrete data such as
+text corpora introduced in 2003 by Blei et al. [3] to
+solve problems of text classiﬁcation. LDA models an
+individual document as a mixture of a ﬁnite number of
+topics where, in turn, each topic is a probability distri-
+bution over a potentially inﬁnite vocabulary. An LDA
+model consists of a collection of K multinomial distri-
+butions p(w|j), for j = 1, 2, . . . , K, over V called topics
+and a K-dimensional Dirichlet distribution q(θ). Given
+an LDA model M = {p(w|j), q(θ)} a document of N
+1We use terms “bot” and “hacker” interchangeably throughout
+the text, as our technique applies to both.
+Figure 1: LDA Pipeline: 248k documents, 200 topics.
+words is generated in the following way. First, we sam-
+ple a multinomial distribution θ ∼q(θ) over the K top-
+ics2. Then for each i = 1, 2, . . . , N we sample a topic
+ti ∼θ(ti) and the word wi ∼p(wi|ti). One way of using
+LDA models is to apply Bayesian techniques [3] to learn
+p and q from a given corpus C of documents and then,
+for each document w ∈C, to infer θw ∈RK from the
+posterior distribution PM(θ|w) induced by the learned
+model M. The inferring of the multinomial distribution
+θw from M and w deﬁnes an embedding of the docu-
+ment w into a latent K-dimensional space. We process a
+HAAS honeypot dataset through the following pipeline
+(also shown in Figure 1) and cluster IP addresses ex-
+hibiting similar statistics of lexical terms used in their
+sessions.
+1. Deﬁne documents:
+we aggregate sessions by
+source IP yielding a collection D1 of documents;
+2. Build corpus: we tokenize documents in D1, build
+a vocabulary V1, and encode each document as a
+“bag of words” with respect to V1. This gives a
+corpus C1 of encoded documents;
+3. LDA compress: we train an LDA model (gensim)
+with corpus C1 for a ﬁxed number of topics
+3
+(K = 200) and we exploit the model to embed each
+document in C1 in the latent K-dimensional space;
+4. Cluster: we employ k-means with k = 200 to clus-
+ter all the embedded documents in the latent space
+and group IPs by similarity of fuzzy signature.
+2.1.2
+Autoencoder pipeline. We also employ a
+second NLP method for comparison using applications
+of Deep Learning to unsupervised clustering (Deep
+2Samples from a K-dimensional Dirichlet distribution are
+probability vectors of K elements that can represent a multino-
+mial distribution over K labels.
+3A commonly chosen value in NLP.
+Clustering), which proved eﬀective in clustering un-
+labeled images [6, 13] and signals [10].
+Our deep
+learning pipeline, detailed below, consists of two deep
+learning modules.
+First, we tokenize all sessions as
+before to build a vocabulary V and then train a
+Word2Vec model [8].
+This deﬁnes a map W : V →
+Rh, h
+=
+128, that embeds each word into a h-
+dimensional metric space, and, by extension, each se-
+quence of tokens v1v2 · · · vN into the N × h matrix
+W(vN
+1 ) = [W(v1); W(v2); . . . ; W(vN)] ∈RN×h (here,
+we have used the expression vj
+i to denote the sequence
+vivi+1 . . . vj, RN×h to denote the set of all N × h ma-
+trices of real numbers, and employed matlab syntax to
+describe matrices). Second, for a ﬁxed value of N (e.g.,
+N = 500, sessions are either truncated or padded in
+order to have a ﬁxed length in number of tokens) we
+train an ad hoc autoencoder D ◦E : RN×h →RN×h,
+with E : RN×h →RM, D : RM →RN×h, and
+D(E(W(s))) ≈W(s) for each (tokenized) session s.
+We implemented a standard Word2Vec Skip-gram
+model 4 with Negative Sampling (with a window size of
+2 and a number of negative samples of 4) using tensor-
+ﬂow and experimentally established that h = 128 (with
+4 epochs of training) was an optimal embedding dimen-
+sion. We designed an autoencoder to capture the order
+of tokens in sessions. The Encoder consists of an upper
+LSTM layer built on top of a (maxpooled) convolutional
+lower layer, and the decoder consists of an upper decon-
+volution layer built on top of an upsampling layer. The
+intuition behind this architecture is that, while convolu-
+tional layers extract latent features, LSTMs capture the
+order of the sequence of the tokens in their latent repre-
+sentation. The output of the encoder E(W(s)) ∈RM,
+M = 200, provides the embedding of session s into an
+M-dimensional metric space. Unlike in [6] we did not
+jointly train a clustering layer together with the autoen-
+coder because we were interested in also learning the
+number of session clusters. Thus, we clustered the em-
+bedded sessions employing a Bayesian nonparametric
+algorithm (VDGMM) that learns the parameters of a
+Gaussian Mixture Model (GMM) with an a priori un-
+known number of Gaussian components [2]. As before,
+we process the HAAS data with the following pipeline
+(see Figure 2) to discover clusters of “similar” sessions:
+1. Deﬁne documents: we treat each session as a
+separate document and build collection D2 (with
+192.0.2.1-4 we mean the 5th recorded session
+from 192.0.2.1);
+2. Build word embedding:
+we tokenize all the
+4We considered two models:
+1) diﬀerent tokens map to
+diﬀerent IDs; 2) tokens occurring only once map to the same ID.
+Figure 2: Autoencoder Pipeline: 420k source addresses,
+90M sessions over 3 years, N = 500 (length of sessions),
+h = 128 (dimension of word embedding space), M =
+200 (dimension of session embedding space).
+Figure 3: First 4 documents in a random cluster from
+the LDA pipeline (truncated for reading purposes).
+documents in D2 and build a vocabulary V2. We
+then train a Word2Vec model and exploit it to
+encode each document as an N × h matrix. This
+gives a corpus C2 of encoded sessions;
+3. Build session embedding:
+we use corpus C2
+to train an autoencoder whose encoder component
+encodes inputs into vectors of M reals, M = 200.
+We exploit the encoder to map each session in C2
+to a vector in RM;
+4. Cluster: we employ VDGMM to cluster embedded
+sessions recorded in a bounded period of time (a
+month in our experiments) and learn the number
+of diﬀerent types of sessions.
+2.1.3
+L1
+clustering
+results. The LDA pipeline
+groups documents according to a predeﬁned number of
+clusters (200). A direct inspection of the output shows
+command list clusters that are visibly similar to a hu-
+man eye. Despite the presence of outliers, the clusters
+seem quite homogeneous as seen, for example, in Fig. 3
+which contains a small excerpt of text from one of the
+computed clusters.
+These results indicate that NLP
+text processing techniques can be successfully applied
+to command sequences, provided that we deﬁne an ap-
+propriate vocabulary (the tokenization method we de-
+ploy dictates the observable vocabulary features). The
+autoencoder pipeline identiﬁed 120 diﬀerent clusters of
+sessions. Figure 4 shows one of the clusters whereas Fig-
+Figure 4: One of the 120 autoencoder session clusters
+containing three sessions with their ID, epoch time
+stamp, and list of commands. To the human eye they
+appear as variations of a same mode.
+Figure 5: 8 representative sessions from as many session
+clusters out of the 120 autoencoder session clusters.
+ure 5 shows an arbitrary selection of eight diﬀerent types
+of sessions by listing the representatives from eight arbi-
+trarily selected clusters. Clustering at the session level
+enables two types of analysis. First, as before, we can
+recover botnets and fuzzy signatures. Second, we now
+have a way to encode a time series of sessions and from
+it extract the behavior of each individual botnet over
+time, as discussed in §2.2.
+2.2
+L2: analyzing sessions time series. For level
+L2, we embed each session into a ﬁnite dimensional
+space where each source IP exhibits a vectored signal be-
+havior deﬁned as the time series of its encoded sessions:
+ip : yt1, yt2, . . . , ytn, with yti = E(W(si)) ∈RM. In this
+short paper we present only preliminary observations
+about such signals and defer a more thorough analysis
+to an upcoming expanded version of this paper. Figure 6
+shows the behavior of two signals, 20.133.96.132 and
+5.99.213.53, that start from sessions that were clus-
+tered together by the L1 analysis. For each signal, we
+plot the distance between its ith session and its ﬁrst
+one recorded. We observe that signal sessions are time
+clustered and repetitive; moreover, related bots visibly
+show synchronous activities. For example, they are ac-
+tive during non-overlapping periods of time. These are
+indications that we can train probabilistic models capa-
+ble of capturing the temporal behaviors of signals (e.g.,
+HSMMs and LSTMs) in order to predict bot’s future
+actions.
+Figure
+6:
+Signals
+220.133.96.132
+(left)
+and
+5.99.213.53 (right).
+Each point (t, d) represents
+an embedded session yt that occurred at time t with d
+the distance from the ﬁrst signal session. Thus, similar
+sessions map to points with similar ordinate.
+While
+the converse is not necessarily true it is reasonable
+to hypothesize that the two signals share four fuzzy
+signatures.
+Moreover, they seem to exhibit a joint
+temporal pattern.
+This intuition is conﬁrmed by the
+inspection of the corresponding raw sessions (bottom).
+3
+Conclusions and Future Work
+We have demonstrated the potential of applying NLP
+methods to parse honeypot logs of shell commands and
+to characterize fuzzy signatures.
+We also discussed
+exploiting session embedding functions to study high-
+level, longitudinal botnet behaviors.
+We are expanding this work in three directions: 1)
+developing fast algorithms to train and incrementally
+update word2vec models as suggested in [8]; 2) modify-
+ing the autoencoder to jointly train a classiﬁcation layer
+as done in [13]; and 3) building probabilistic models
+(HMMs, HSMMS, LSTMs) to study longitudinal botnet
+behaviors (time series of encoded sessions) to predict fu-
+ture session clusters and to group source IPs exhibiting
+temporally coordinated behaviors.
+References
+[1] Nicholas Andrews and Marcus Bishop.
+Learning in-
+variant representations of social media users. CoRR,
+abs/1910.04979, 2019.
+[2] David M. Blei and Michael I. Jordan.
+Variational
+inference for Dirichlet process mixtures.
+Bayesian
+Analysis, 1:121–144, 2005.
+[3] David M. Blei, Andrew Y. Ng, Michael I. Jordan, and
+John Laﬀerty. Latent Dirichlet allocation. Journal of
+Machine Learning Research, 3:2003, 2003.
+[4] Nikan Chavoshi,
+Hossein Hamooni,
+and Abdullah
+Mueen. Temporal patterns in bot activities. In Pro-
+ceedings of the 26th International Conference on World
+Wide Web Companion, pages 1601—-1606, April 2017.
+[5] D. Dagon, G. Gu, C. Lee, and W. Lee. A taxonomy
+of botnet structures.
+In Proceedings of the Annual
+Computer Security Applications Conference (ACSAC),
+2007.
+[6] Xifeng Guo, Xinwang Liu, En Zhu, and Jianping Yin.
+Deep clustering with convolutional autoencoders.
+In
+Liu D., Xie S., Li Y., Zhao D., El-Alfy ES. (eds)
+Neural Information Processing (ICONIP), pages 373–
+382, 10 2017.
+[7] S. Lehtinen and C. Lonvick. The Secure Shell (SSH)
+Protocol Assigned Numbers.
+RFC 4250 (Proposed
+Standard), January 2006.
+[8] Omer Levy and Yoav Goldberg. Neural word embed-
+ding as implicit matrix factorization. In Proceedings of
+the 27th International Conference on Neural Informa-
+tion Processing Systems (NIPS’14), volume 2, pages
+2177––2185, December 2014.
+[9] James MacQueen. Some methods for classiﬁcation and
+analysis of multivariate observations. In Proceedings of
+the 5th Berkeley Symposium on Mathematical Statistics
+and Probability, volume 5.1, pages 281–297, 1967.
+[10] Naveen Sai Madiraju, Seid M. Sadat, Dimitry Fisher,
+and Homa Karimabadi.
+Deep temporal clustering:
+Fully unsupervised learning of time-domain features.
+arXiv:1802.01059 cs.LG, 2018.
+[11] N. Provos and T. Holz. Virtual Honeypots: From Bot-
+net Tracking to Intrusion Detection. Pearson Educa-
+tion, 2007.
+[12] Brett Stone-Gross, Marco Cova, Lorenzo Cavallaro,
+Bob Gilbert, Martin Szydlowski, Richard Allen Kem-
+merer, Christopher Kruegel, and Giovanni Vigna. Your
+botnet is my botnet: analysis of a botnet takeover.
+In Proceedings of the 16th ACM conference on Com-
+puter and communications security, pages 635—-647,
+November 2009.
+[13] Junyuan Xie, Ross Girshick, and Ali Farhadi. Unsu-
+pervised deep embedding for clustering analysis.
+In
+Proceedings of the 33 rd International Conference on
+Machine Learning, New York, NY, USA, 2016.
+A
+Appendix
+All
+honeypot
+data
+were
+downloaded
+from
+https://haas.nic.cz/.
+Sessions are time-stamped.
+However, individual bash commands in each session are
+not. We tokenized bash commands with
+def tokenize(line):
+words = re.sub(
+r"(2>&1)|(>&)|(&>)|(>\|)|(>>)|([012]>)",
+" _r_ ", line)
+words = words.replace(">", " > ")
+words = words.replace("<", " < ")
+words = words.replace("=", " = ")
+words = words.replace("||", " _P_ ")
+words = words.replace("|", " _p_ ")
+words = words.replace("&&", " _A_ ")
+words = words.replace("&", " _a_ ")
+lwords = re.split("[;,\"() ]", words)
+return lwords
+A.1
+LDA (LSI) pipeline: We parsed sessions col-
+lected between 1/2018 and 2/2020 and aggregated them
+by source IP:
+Number of tokens:
+331550
+Source IPs (documents):
+248795
+Average document length:
+5347.61
+Figure 7 shows the distribution of the lengths of the
+documents aggregated by IPs where we have removed
+few but very long documents for ease of display.
+Figure 7: Distribution of document lengths (after re-
+moving 3566 documents longer than 50000 tokens).
+A.2
+Autoencoder pipeline: full vocabulary: We
+parsed sessions collected between 1/2018 and 10/2020
+and treated them as separate documents;
+diﬀerent
+tokens were mapped to diﬀerent indexes:
+Source IPs:
+420695
+Vocabulary size:
+569665
+Number of sessions (documents):
+90063468
+Average session length:
+15.7
+Figure 8 shows the distribution of session lengths.
+A.3
+Autoencoder pipeline:
+vocabulary with
+tokens occurring only once mapped to single
+word: We parsed sessions collected between 1/2018
+and 10/2020 and treated them as separate documents;
+tokens occurring only once were mapped to the same
+index:
+Source IPs:
+420695
+Vocabulary Size:
+426439
+Number of sessions (documents):
+90063468
+Average session length:
+15.7
+Figure 8 shows the distribution of session lengths.
+Figure 8: Distribution of session lengths.

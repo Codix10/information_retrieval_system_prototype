@@ -1,0 +1,772 @@
+Title: Hierarchical Text Generation using an Outline
+Source URL: http://arxiv.org/abs/1810.08802v1
+--------------------------------------------------
+
+Hierarchical Text Generation using an Outline
+Mehdi Drissi
+Harvey Mudd College
+Claremont, CA, USA
+mdrissi@hmc.edu
+Olivia Watkins
+Harvey Mudd College
+Claremont, CA, USA
+owatkins@hmc.edu
+Jugal Kalita
+University of Colorado Springs
+Colorado Springs, CO, USA
+jkalita@uccs.edu
+Abstract
+Many challenges in natural language pro-
+cessing require generating text, including
+language translation, dialogue generation,
+and speech recognition. For all of these
+problems, text generation becomes more
+difﬁcult as the text becomes longer. Cur-
+rent language models often struggle to
+keep track of coherence for long pieces of
+text. Here, we attempt to have the model
+construct and use an outline of the text it
+generates to keep it focused. We ﬁnd that
+the usage of an outline improves perplex-
+ity. We do not ﬁnd that using the outline
+improves human evaluation over a simpler
+baseline, revealing a discrepancy in per-
+plexity and human perception. Similarly,
+hierarchical generation is not found to im-
+prove human evaluation scores.
+1
+Introduction
+Recurrent neural networks have been successfully
+used for a variety of tasks in dealing with natu-
+ral language. Successes include language trans-
+lation (Sutskever et al., 2014), speech recognition
+(Graves, 2012), and text to speech (Kalchbrenner
+et al., 2018).
+They all learn to model the con-
+ditional probability of a sequence and generate
+words sequentially, typically using sequence to se-
+quence models. These models have the advantage
+that their negative log likelihood is differentiable,
+allowing them to be directly trained through gra-
+dient descent.
+A similar task is language modeling. Here the
+goal is to determine the probability of a sequence
+of words. Being able to model text is important
+for natural language understanding. These mod-
+els can be used for re-ranking candidate transla-
+tions (Cho et al., 2014), determining possible ways
+to extend a piece of writing (Roemmele and Gor-
+don, 2018), and generating text (Dauphin et al.,
+2016). These problems all share the difﬁculty that
+although in theory a recurrent model can preserve
+information for arbitrarily long sequences, in prac-
+tice recurrent models tend to struggle to keep track
+of context as the sequence length becomes large.
+Models for tasks like language translation tend to
+avoid translating entire paragraphs and instead fo-
+cus on only generating a sentence at a time. Sim-
+ilarly, when one generates multiple sentences of
+text from language models, they tend to be locally
+coherent but not globally coherent.
+The difﬁculty of generating large samples is not
+unique to text and also occurs with images. In
+the realm of images though, a different technique
+is commonly used for generation. Here, genera-
+tive adversarial networks (Goodfellow et al., 2014)
+have been successfully used to generate images di-
+rectly. Similar to text, initially these models only
+worked well for generating small images. Gener-
+ating large images (like 1024 by 1024) was difﬁ-
+cult for these models. In some recent work, the
+issue of large images was dealt with by generat-
+ing images in a hierarchical manner. Instead of
+directly learning to generate the desired image,
+lower resolution images were ﬁrst generated and
+then improved upon (Zhang et al., 2016). Initially,
+this was done by generating one lower resolution
+image and then directly the ﬁnal image. More re-
+cently, this has been extended to starting off with
+generating a small image and iteratively increasing
+its resolution by double until reaching the desired
+size (Karras et al., 2017).
+Inspired by the idea of generating images in a
+hierarchical manner, here we will explore gener-
+ating text in a hierarchical manner.
+Similar to
+(Zhang et al., 2016), we will approach this by gen-
+erating in two steps. One difﬁculty with hierar-
+chical text generation is that meaningfully down-
+arXiv:1810.08802v1  [cs.CL]  20 Oct 2018
+sampling text is more difﬁcult than downsampling
+images. The textual equivalent of decreasing reso-
+lution is summarization, which is a difﬁcult prob-
+lem in itself. To side-step this issue, we will use
+a simple extractive summarization approach to get
+an outline. Using an extractive summarization ap-
+proach to acquire information to build upon has
+been done previously in generating Wikipedia ar-
+ticles (Liu et al., 2018). Their approach differs
+from ours in that there they used summarization
+to extract relevant information from references to
+generate the article, while here we are summariz-
+ing the target text to acquire an outline of it. We
+generate complete documents hierarchically with
+two models. First, one model component gener-
+ates the outline. We then condition upon the out-
+line to generate the entire document.
+Our main contribution will be to explore gener-
+ating text in a hierarchical manner by separating
+text generation into two phases. The ﬁrst phase
+generates an outline of the text, while the second
+phase uses the outline to generate the complete ar-
+ticle.
+2
+Background
+Most sequence-to-sequence models consist of an
+encoder and decoder model (Sutskever et al.,
+2014). The encoder model’s purpose is to take in
+an input sequence and construct representations of
+each token in the sequence. The decoder’s hid-
+den state is initialized with encoder’s ﬁnal hidden
+state. At each step, the decoder predicts the next
+token in the sequence until it predicts an end of
+sequence token.
+As it is difﬁcult to encode an entire sequence
+into one vector, generally the decoder is allowed
+to look back at the representations of the tokens
+the encoder created through an attention mecha-
+nism (Bahdanau et al., 2014). An attention mech-
+anism scores the decoder’s hidden state against
+the encodings of all the tokens in the input sen-
+tence, converts these scores to probabilities, and
+then takes a weighted average of each encoding to
+produce the context vector. This context vector is
+then fed in to the decoder to aid it in keeping track
+of information from the entire sentence.
+One weakness of conventional attention is that
+it can only focus on words in the prompt sequence
+and not in the target sequence.
+Self-attention
+(Vaswani et al., 2017) is a modiﬁcation that attends
+to both words in the prompt and prior words in the
+target. This is especially important for models that
+generate long sequences to be able to keep track of
+what has been made. A second weakness of con-
+ventional attention when used on long sequences
+of input text is that it only operates at the word
+level, ignoring any information conveyed through
+the fact that words are grouped into sentences. An
+extension of attention to account for both word
+level and sentence level information is hierarchical
+attention (Ling and Rush, 2017), which constructs
+and scores a vector for each sentence along with
+each word. The probability of focusing on a word
+is then the product of its associated word level at-
+tention and sentence level attention.
+For summarization, approaches fall into two
+primary categories. Extractive summarization in-
+volves choosing and directly copying the main
+sentences/words from the document. Abstractive
+summarization focuses on having a model gener-
+ate the words directly for the summary. As our
+goal is to simply have an outline of the text, ex-
+tractive summarization is sufﬁcient. It would be
+interesting future work to see how different meth-
+ods of generating an outline affect document gen-
+eration. Another possible future extension would
+be to instead use topic modeling to extract a dif-
+ferent form of useful context for the target text.
+The summarization algorithm that will be used
+is called SumBasic (Nenkova and Vanderwende,
+2005). This algorithm is based upon choosing sen-
+tences with words that are frequent in the docu-
+ment. After choosing a sentence, the algorithm
+down-weights the words in that sentence to avoid
+choosing sentences that are too similar.
+3
+Methods
+Our goal is to generate text in a hierarchical man-
+ner by generating the topic sentences of the article
+ﬁrst and then generating the entire paragraph by
+conditioning on the topic sentence.
+3.1
+Model Overview
+The model will be an extension of the model
+used in Neural Story Generation (Fan et al.,
+2018).
+In that work, a sequence-to-sequence
+model was used to convert a prompt into a com-
+plete document. Our main extension is dividing
+the sequence-to-sequence model into two com-
+ponents to assist in the coherence for the gener-
+ated text. One component will generate topic sen-
+tences, and one will expand topic sentences into
+Figure 1: This diagram gives a high level overview
+of the article generation process. Outlines are pre-
+pared with SumBasic. The prompt is converted to
+an outline which is then converted to an article.
+complete paragraphs.
+3.2
+First Component - Outline Generator
+To generate a document from the prompt, we
+ﬁrst generate the outline associated with the doc-
+ument. This component will be trained using al-
+most an architecture almost identical to the model
+used by (Fan et al., 2018).
+Their architecture
+is a convolutional sequence-to-sequence model
+(Gehring et al., 2017) that uses a gated form of
+self-attention. The one difference is we did not
+use the cold fusion (Sriram et al., 2017) mech-
+anism, mainly to lower training time. Cold fu-
+sion is a mechanism that involves ﬁrst training the
+main model, freezing its weights, and then train-
+ing a second randomly initialized version of the
+main model, concatenating the two models’ out-
+puts, and then adding a few layers to determine
+the ﬁnal prediction.
+3.3
+Second Component - Article Generator
+The second component will use the outline to
+generate the entire article. It will also be based
+upon the sequence-to-sequence model used by
+(Fan et al., 2018) and similarly will not include
+cold fusion. It will be extended in one way. The
+self-attention heads in the decoder will remain the
+same, but the attention over the encoded outline
+will be replaced by hierarchical attention.
+The
+sentence vectors will be obtained by summing the
+encoded word vectors for each word in the corre-
+sponding sentence. The sentence vectors will then
+also have the same type of attention mechanism
+applied to them. Similar to how the prior decoder
+attention was gated, the hierarchical attention is
+also gated and uses the same gating. Both model
+components will be trained separately by directly
+optimizing the negative log likelihood.
+3.4
+Outlines
+To train the model, we require a dataset of out-
+lines corresponding to complete articles. As the
+primary focus of this work is not on new methods
+of summarization, these outlines will be generated
+using prior text summarization methods.
+Sum-
+Basic (Nenkova and Vanderwende, 2005) is one
+frequency-based method for determining the topic
+sentence. It tries to ﬁnd sentences whose words
+are common in the document. One way to avoid
+overweighting common words like ’the’ is to pe-
+nalize words that are common across many arti-
+cles. TF-IDF (Term Frequency Inverse Document
+Frequency) does this by multiplying by the nega-
+tive log probability of a word appearing in a doc-
+ument. SumBasic is often tweaked to use TF-IDF
+instead of directly using word frequencies (Allah-
+yari et al., 2017).
+As the outline is intended to contain information
+about each section of the text, instead of directly
+applying SumBasic to the full document, it will be
+applied at the meta-paragraph level. Here, meta-
+paragraph does not refer to the actual paragraphs
+in the text, because their lengths are very incon-
+sistent. The paragraphs of many of the documents
+in the training data only consist of one or two sen-
+tences. Extracting a topic sentence from each of
+these paragraphs as an outline would be problem-
+atic as we would effectively be letting the outline
+contain too much of the document. To avoid this
+issue, the actual paragraphs will be aggregated to-
+gether using the rule that any paragraph under a
+threshold number of sentences k will be combined
+with the next paragraph to form a meta-paragraph.
+As a side effect, every meta-paragraph except for
+possibly the last one will end up having at least k
+sentences.
+Lastly, some preprocessing is done before di-
+rectly applying SumBasic.
+Stop words are re-
+moved using a list of NLTK’s (Loper and Bird,
+2002) English stop words, numbers are removed,
+punctuation is removed, and words are stemmed
+using Porter stemming (Porter, 1980).
+3.5
+Training the Models
+Strictly speaking the probability of an entire doc-
+ument can only now be obtained by marginaliz-
+ing over all possible outlines. A lower bound for
+the probability can be obtained by instead generat-
+ing the most likely outline for a given prompt and
+then ﬁnding the probability of the document con-
+ditioned on that outline. This lower bound how-
+ever is intractable to compute as it involves gener-
+ating many outlines. Due to the long length of the
+sequences and the relatively slow generation time,
+even only using 10 outlines for the approximation
+would take approximately 100 days just to evalu-
+ate on the validation/test set on one 1080 Ti. It also
+turns out to be intractable as the memory needed
+to do a beam search with such long sequences is
+too high and it runs out of memory if you increase
+the beam size beyond 2.
+As the two components are trained separately,
+this similarly leads to the overall training loss not
+corresponding to the actual article negative log
+likelihood. Using that loss properly would require
+being able to efﬁciently compute the probability of
+a document, but this is intractable for the reasons
+given in the prior paragraph.
+A second discrepancy that arises is that since
+the components are trained separately, the second
+component is only trained on good outlines. It’s
+never trained to deal with poorly generated out-
+lines, so if the ﬁrst component generates a bad
+outline, the second component is unlikely to be
+able to recover from the mistake. This is unlike
+the training for StackGAN (Zhang et al., 2016)
+where the second part of the model was trained us-
+ing the output of the ﬁrst part of the model. Train-
+ing this model in an end-to-end manner is difﬁcult
+because the slow outline generation time would
+increase the training time by a factor of roughly
+30 which was unfeasible given our computational
+resources. Training on a small amount of gener-
+ated samples to ﬁne-tune the model is feasible and
+could be done in future work.
+3.6
+Code
+A github repository containing our model code
+can be found here: https://github.com/
+hmc-cs-mdrissi/fairseq. The dataset of
+prompts, articles, and outlines can be found at
+this link: https://www.dropbox.com/s/
+jupoljc2cx0to7y/datasets.zip?dl=
+0.
+4
+Evaluation Approach
+4.1
+Datasets
+We used the Wikitext-103 dataset described in
+(Merity et al., 2016). It consists of a large col-
+lection of preprocessed Wikipedia articles. As this
+dataset does not come with prompts, the prompt
+used was the ﬁrst sentence of the article, with the
+goal being generating the entire article. We pre-
+processed the dataset to eliminate tables, to canon-
+icalize numbers, and to lowercase each word.
+4.2
+Possible Evaluation Metrics
+The two automated evaluation metrics used pre-
+viously by (Fan et al., 2018) were perplexity and
+prompt relevance. BLEU and ROUGE were not
+used as the primary goal is generating new, diverse
+text rather than matching the target text precisely.
+Perplexity and prompt relevance are problematic
+for the hierarchical model as they both involve
+computing the probability of a article. Due to the
+previously discussed computational intractability
+of computing article probabilities, neither can be
+used for the hierarchical model.
+For the non-
+hierarchical models and the components of the hi-
+erarchical model, we can still measure the perplex-
+ity to see how well the model captures the text
+distribution. Perplexity is the exponential of the
+cross entropy of the model distribution compared
+to the data distribution and is deﬁned in Equation
+1, where q(x) is the probability the model assigns
+to x.
+perplexity = 2−1
+N
+PN
+i=1 log2 q(xi)
+(1)
+Recently, (Semeniuta et al., 2018) explored var-
+ious evaluation metrics for language models. One
+automated metric they explored was the Frechet
+Infersent Distance (FID). The FID metric is com-
+puted by encoding all of the generated and real
+documents as vectors and then comparing the dis-
+tributions of these vectors by approximating them
+as Gaussian. The FID metric is problematic as it
+requires a model that can encode the meaning of
+a document well. In their work, they only focused
+on sentence-level generation and were able to use
+a model that could create sentence vectors. A sec-
+ond issue with the FID metric is that they did not
+ﬁnd it sensitive to word order, which indicates that
+Table 1: Model Perplexity
+Model
+Validation Perplexity
+prompt-to-outline
+45.63
+outline-to-article
+21.08
+outline-to-article + h.a.
+20.49
+prompt-to-article
+30.96
+the metric does not correlate well with human per-
+ception of quality.
+One, method applicable to any model is human
+evaluation.
+We generated about 27 articles for
+each model using the ﬁrst sentences of articles in
+our test set as prompts. We then had native En-
+glish speakers evaluate ten articles on both global
+coherence and overall quality on a 5 point Likert
+Scale. The questions that were used are shown in
+Figure 2.
+4.3
+Models
+The models that will be compared are a model
+from prompt-to-outline, outline-to-article, outline-
+to-article + hierarchical attention (h.a.), prompt-
+to-article, hierarchical prompt-to-article + h.a..
+5
+Evaluation Results
+5.1
+Perplexity Evaluation
+The model perplexity experiments revealed multi-
+ple interesting ﬁndings. The biggest one is that the
+perplexity of prompt-to-article is lower than the
+perplexity of prompt-to-outline, indicating that it
+is easier on average word-wise to generate the full
+article than just the outline. One possible explana-
+tion for this is that in generating the outline there
+are much more abrupt shifts in topic when com-
+pared to generating the article, and as each word
+is conditional on the prior words, the topic ﬂow-
+ing more smoothly may make it easier to guess the
+next word. There is a signiﬁcant improvement in
+perplexity (about 10 points) when conditioning on
+outlines compared to conditioning on prompts.
+The other interesting result is that hierarchical
+attention led to a small improvement in perplexity.
+In the prior work by (Ling and Rush, 2017), hierar-
+chical attention improved the model by providing
+a computationally efﬁcient attention mechanism
+over long sequences and was not found to be help-
+ful otherwise. A similar magnitude improvement
+using hierarchical attention occurred when com-
+paring the two models on the stories dataset used
+by (Fan et al., 2018). Two plausible explanations
+are either that hierarchical attention works better
+for some tasks/datasets, or that the discrepancy oc-
+curred because we used gated attention for both
+the word-level attention model and the hierarchi-
+cal attention model. The gating may have helped
+the sentence attention learn to focus on different
+and useful things than the word attention. Lastly,
+the hierarchical model is missing from the table as
+computing perplexity for it was intractable.
+5.2
+Human Evaluation
+The results can be found in Table 5.1 on the next
+page. The number of articles evaluated total is 70.
+For the three models, only one pair is signiﬁcantly
+different in global coherence. That pair is hierar-
+chical model vs prompt-to-article where the latter
+is better (p = 0.005). The hierarchical model is
+also signiﬁcantly different in quality from both of
+the other two models (for both p = 0.049). The
+worst model is still within a standard deviation
+evaluation wise of the best model in both metrics,
+indicating how noisy the quality of the articles and
+the reviews of them are. Thus, for human percep-
+tion all the hierarchical model performed slightly
+worse, while the outline vs prompt models per-
+formed equally well.
+The biggest unexpected result is that the
+prompt-to-article model performed better in hu-
+man evaluation on global coherence than the
+outline-to-article model. Considering the outline
+describes the article more thoroughly, it should
+have helped the model stay focused. It was also
+unexpected that the overall quality of the outline-
+to-article would be the same as the prompt-to-
+article model.
+Both of these results, are unex-
+pected because there was a large improvement
+in perplexity when conditioning on an outline.
+This reveals that for this task, perplexity did not
+correlate well with human perception of quality.
+Lastly, overall quality and global coherence corre-
+late strongly (r = 0.74, p < 0.001).
+5.3
+Best Cases
+Due to space constraints, articles and outlines
+were both truncated. unk was used for unknown
+tokens, num was used for numbers, and newline
+was used to keep track of paragraph breaks. The
+article shown in Figure 3 came from the outline-
+to-article model and tied for highest human evalu-
+ation scores.
+Question 1 (Global Coherence) The article should be well-structured and well-organized. The article
+should not just be a heap of unrelated information, but should build from sentence to sentence and
+paragraph to paragraph. Abrupt changes in topic without any transitions are problematic.
+Question 2 (Overall Quality) How realistic is the article as a whole given that the article is meant to be a
+Wikipedia article.
+Figure 2: Questions for Human Evaluation of Generated Articles
+Model
+µ-Global Coherence
+σ-Global Coherence
+µ-Quality
+σ-Quality
+prompt-to-article
+3.36
+1.00
+2.91
+1.07
+hierarchical prompt-to-article + h.a.
+2.54
+0.96
+2.26
+0.89
+outline-to-article + h.a.
+3.14
+1.31
+2.90
+1.22
+Table 2: The µ is for mean and σ is for standard deviation.
+In both cases we see that the text conditioned
+upon was very informative.
+Doing a better job
+of preprocessing would likely help in some cases,
+as some of the other prompts end up being trun-
+cated too heavily (mainly due to difﬁculty deter-
+mining where a sentence ends). While the main
+topic is preserved, often the facts will end up be-
+ing changed. For the second article, originally the
+player was a basketball player, but the model mor-
+phed him into a baseball player.
+5.4
+Failure Cases
+Here, we will examine one of the worst generated
+articles. Worst is deﬁned as being rated as a 1 in
+both global coherence and overall quality. The ar-
+ticle, shown in Figure 4 was generated from the
+hierarchical model.
+This example looks to be a case where the ﬁrst
+component of the hierarchical model did poorly
+leading to the model struggling to generate a ar-
+ticle from that outline. It is not the only exam-
+ple where too many unknown word tokens end up
+leading to poor articles. While repetition occurs
+more broadly, unknown tokens have the worst ten-
+dency to lead the article to become too repetitive.
+This issue may be helped by training the second
+component of the hierarchical model on not just
+good outlines, but also sampled outlines so it can
+learn to not be too reliant on the outline.
+More broadly, the main type of error found in
+generated articles is too much redundancy. Often
+individual sentences would not be too bad, but a
+very similar sentence would appear a bit later in
+the paragraph. Article quality also generally be-
+comes worse near the end of the article.
+6
+Conclusion
+We have focused on generating text in a hierarchi-
+cal manner for generating Wikipedia articles. The
+primary automated metric, perplexity, for measur-
+ing overall article generation quality was compu-
+tationally intractable for the hierarchical model.
+We found that conditioning on an outline heav-
+ily improved perplexity, but did not improve hu-
+man perceived quality. This indicates that, per-
+plexity should be used more cautiously for text
+generation if the motivation is generating text peo-
+ple will ﬁnd believable. This issue should be ana-
+lyzed more thoroughly in future work as perplex-
+ity is the most commonly used evaluation metric
+for language models currently. More generally, it
+would be useful to develop automated metrics that
+more closely correlate with human evaluation and
+have a better understanding of what qualitative as-
+pects good articles share.
+Other interesting ﬁndings are that that one ma-
+jor failure mode for the hierarchical model is dif-
+ﬁculty dealing with poor outlines and that hierar-
+chical attention led to a small improvement in per-
+plexity for two different datasets unlike when it
+was used previously by (Ling and Rush, 2017).
+For future work, the main thing is to deal with
+the issue of the hierarchical model not being able
+to generate reasonable articles with poor outlines.
+Training using only generated articles would be
+ideal, but is computationally expensive due to gen-
+eration time being hundreds of times slower than
+training time. To make training feasible with gen-
+erated samples, it will likely require only using
+a small number of generated articles to help ﬁne
+tune the model. This may also be feasible when
+Outline 1: he was previously the head coach at butler university in indianapolis . newline on april num ,
+num , he became the head coach after todd unk left to coach the iowa hawkeyes . newline in july num ,
+he signed a six - year , num million dollar contract to become the head coach of the boston celtics in the
+nba . newline bradley kent stevens grew up in unk , indiana , where he developed his love for basketball
+. newline he wore no. num in high school in honor of indiana pacers guard reggie miller . newline he
+earned three letters in basketball , three in track , and one in baseball during his days at unk . newline the
+more success you had at lilly , the harder it would be to leave . ”
+Generated Article 1: walter george stevens ( may num , num october num , num ) was an american major
+league baseball ( mlb ) outﬁelder who played for the boston red sox ( num num , num num ) and the
+yankees ( num num ) . stevens was an outﬁelder , placekicker and punter , and had played with the boston
+indians and boston red sox from num to num . he was previously the head coach at butler university in
+indianapolis . he played num seasons in major league baseball ( mlb ) for the boston red sox , and in num
+played on the chicago red sox from num to num . newline stevens played num major league baseball (
+mlb ) all - star team in num , and led the league to ﬁve consecutive national champions with a num num
+conference record , the longest streak in career history . he was also the only player to reach the major
+division i ’s num playoffs . the num and num seasons have taken place in the central division ( num num
+) . newline at the time of the num mlb draft , he was known for the right to handle a hit . he was one to
+only two players . in num , the red sox traded him in minor league organization with the red sox . the red
+sox promoted him with the numth overall pick in the num mlb draft , while the red sox traded him to the
+cleveland indians .
+Figure 3: Well-generated Article
+the training dataset size is small.
+Another possible extension is to make better us-
+age of the outlines. Speciﬁcally, for ideal outlines
+we know that the sentences present in the outline
+should also be present in the target text. Allow-
+ing the model to copy an entire sentence would be
+beneﬁcial and make it more likely to fully utilize
+the outline. This does come with the downside
+that a poor sentence in a generated outline being
+copied would be problematic. That could be dealt
+with by training on a mixture of generated and real
+outlines.
+7
+Acknowledgements
+I would like to thank the UCCS NLP lab for many
+helpful conversations. This material is based upon
+work supported by the National Science Founda-
+tion under Grant No.
+1659788.
+Any opinions,
+ﬁndings, and conclusions or recommendations ex-
+pressed in this material are those of the author(s)
+and do not necessarily reﬂect the views of the Na-
+tional Science Foundation.
+References
+Mehdi Allahyari, Seyedamin Pouriyeh, Mehdi Asseﬁ,
+Saeid Safaei, Elizabeth D. Trippe, Juan B. Gutierrez,
+and Krys Kochut. 2017. Text Summarization Tech-
+niques: A Brief Survey.
+International Journal of
+Advanced Computer Science and Applications, (1).
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua
+Bengio. 2014.
+Neural machine translation by
+jointly learning to align and translate.
+Inter-
+national Conference on Learning Representations,
+abs/1409.0473.
+Kyunghyun Cho, Bart van Merrienboer, Caglar Gul-
+cehre, Dzmitry Bahdanau, Fethi Bougares, Hol-
+ger Schwenk, and Yoshua Bengio. 2014.
+Learn-
+ing Phrase Representations using RNN Encoder-
+Decoder for Statistical Machine Translation.
+Yann N. Dauphin, Angela Fan, Michael Auli, and
+David Grangier. 2016.
+Language Modeling with
+Gated Convolutional Networks. International Con-
+ference on Machine Learning.
+Angela Fan, Mike Lewis, and Yann Dauphin. 2018. Hi-
+erarchical Neural Story Generation. ArXiv e-prints.
+Jonas Gehring, Michael Auli, David Grangier, Denis
+Yarats, and Yann N. Dauphin. 2017. Convolutional
+Sequence to Sequence Learning. International Con-
+ference on Machine Learning.
+Ian J. Goodfellow, Jean Pouget-Abadie, Mehdi Mirza,
+Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron
+Courville, and Yoshua Bengio. 2014.
+Generative
+Adversarial Networks. pages 1–9.
+Alex Graves. 2012. Sequence Transduction with Re-
+current Neural Networks. International Conference
+of Machine Learning.
+Prompt 1: the portage to san cristobal of a.h. is a num literary and philosophical novella by george steiner
+, in which jewish nazi hunters ﬁnd a ﬁctional adolf hitler ( a.h. ) alive in the amazon jungle thirty years
+after the end of world war ii .
+Generated Outline 1: he began work as a unk at the age of num . newline during world war ii , unk joined
+the unk unk ( royal society ) in the united states where he made his world debut in the world . newline
+unk ’s ﬁrst name was unk unk . newline he was promoted to unk ’s unk unk - unk in num . newline unk
+became the new man ’s second - oldest student , unk unk - unk , as a student from unk - unk . newline
+unk was one of the founding members of the unk unk - unk , the ﬁrst to be called unk .
+Generated Article 1: unk unk ( unk , ” young woman ’s sister , the unk , ” to the unk ” ) is unk ( unk , ”
+young woman ’s sister , the unk ) , ” girl ’s son , and the unk ” . the name unk is from the greek unk or ”
+woman ’s mother unk ” , referring to her marriage to unk . after the marriage , her son , ila , is the only
+person to be killed in the world . newline during world war ii , il began work as a unk at the age of num
+. she was the ﬁrst female woman to be a unk ( unk ) . after being married , ila became the new man ’s
+second - oldest student ; however , her marriage to unk was interrupted in num . newline during world
+war ii , il joined the unk unk ( royal society ) in the united states where he made his world debut in the
+world . the unk - unk unk ( unk ) , the ﬁrst of the ﬁrst unk ( unk ) , was the ﬁrst unk to be a unk , the
+second unk in the world , and a member of the unk unk , one of the ﬁrst women ’s women ’s women ’s
+women and is the ﬁrst female woman to be a unk . in her unk unk , ila was ﬁrst unk unk unk ; the other
+two are the unk ( unk ) , the unk ( unk ) , the ( unk ) , the unk ( unk ) , the unk ( unk ) , the unk ( unk ) ,
+the unk ( unk ) , the unk ( unk ) and the ( unk ) . ila ’s ﬁrst name was unk unk . she was also used to refer
+to her .
+Figure 4: A Poorly Generated Article
+Nal Kalchbrenner, Erich Elsen, Karen Simonyan, Seb
+Noury, Norman Casagrande, Edward Lockhart, Flo-
+rian Stimberg, Aaron van den Oord, Sander Diele-
+man, and Koray Kavukcuoglu. 2018. Efﬁcient Neu-
+ral Audio Synthesis.
+Tero Karras, Tima Aila, Samuli Laine, and Jaakko
+Lehtinen. 2017. Progressive Growing of GANs for
+Improved Quality, Stability, and Variation.
+Inter-
+national Conference on Learning Representations,
+pages 1–25.
+Jeffrey Ling and Alexander M. Rush. 2017. Coarse-to-
+Fine Attention Models for Document Summariza-
+tion. Proceedings of the Workshop on New Frontiers
+in Summarization, (2015):33–42.
+Peter J. Liu, Mohammad Saleh, Etienne Pot, Ben
+Goodrich, Ryan Sepassi, Lukasz Kaiser, and Noam
+Shazeer. 2018. Generating Wikipedia by Summariz-
+ing Long Sequences. pages 1–18.
+Edward Loper and Steven Bird. 2002.
+NLTK: the
+natural language toolkit.
+Proceedings of the ACL
+Workshop on Effective Tools and Methodologies for
+Teaching Natural Language Processing and Compu-
+tational Linguistics, cs.CL/0205028.
+Stephen Merity, Caiming Xiong, James Bradbury, and
+Richard Socher. 2016.
+Pointer Sentinel Mixture
+Models.
+Ani Nenkova and Lucy Vanderwende. 2005. The im-
+pact of frequency on summarization. Technical Re-
+port, Microsoft Research.
+Martin F Porter. 1980. An algorithm for sufﬁx strip-
+ping. Program, 14(3):130–137.
+Melissa Roemmele and Andrew S Gordon. 2018. Lin-
+guistic Features of Helpfulness in Automated Sup-
+port for Creative Writing. Naacl, pages 14–19.
+Stanislau Semeniuta, Aliaksei Severyn, and Sylvain
+Gelly. 2018. On Accurate Evaluation of GANs for
+Language Generation.
+Anuroop Sriram, Heewoo Jun, Sanjeev Satheesh,
+and Adam Coates. 2017.
+Cold Fusion: Training
+Seq2Seq Models Together with Language Models.
+Ilya Sutskever, Oriol Vinyals, and Quoc V Le. 2014.
+Sequence to sequence learning with neural net-
+works. Advances in Neural Information Processing
+Systems (NIPS), pages 3104–3112.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz
+Kaiser, and Illia Polosukhin. 2017. Attention Is All
+You Need. (Nips).
+Han Zhang, Tao Xu, Hongsheng Li, Shaoting Zhang,
+Xiaogang Wang,
+Xiaolei Huang,
+and Dimitris
+Metaxas. 2016. StackGAN: Text to Photo-realistic
+Image Synthesis with Stacked Generative Adversar-
+ial Networks.
+International Conference on Com-
+puter Vision.

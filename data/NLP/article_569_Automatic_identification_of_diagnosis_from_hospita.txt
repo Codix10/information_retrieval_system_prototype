@@ -1,0 +1,3071 @@
+Title: Automatic identification of diagnosis from hospital discharge letters via weakly-supervised Natural Language Processing
+Source URL: http://arxiv.org/abs/2410.15051v2
+--------------------------------------------------
+
+Automatic identification of diagnosis from hospital discharge
+letters via weakly-supervised Natural Language Processing
+Vittorio Torria,∗, Elisa Barbierib, Anna Cantaruttic,d, Carlo Giaquintob, Francesca
+Ievaa,d,e
+aMOX - Modelling and Scientific Computing Lab, Department of Mathematics, Politecnico di
+Milano, Milan, Italy
+bDivision of Pediatric Infectious Diseases, Department for Woman and Child Health, University
+of Padova, Padova, Italy
+cUnit of Biostatistics, Epidemiology and Public Health, Department of Statistics and Quantitative
+Methods, University of Milano-Bicocca, Milan, Italy
+dNational Centre for Healthcare Research and Pharmacoepidemiology, Department of Statistics
+and Quantitative Methods, University of Milano-Bicocca, Milan, Italy
+eHDS - Health Data Science Centre, Human Technopole, Milan, Italy
+Abstract
+Identifying patient diagnoses from hospital discharge letters is essential to enable
+large-scale cohort selection and epidemiological research, but traditional supervised
+learning approaches rely on extensive manual annotation, which is often impractical
+for large textual datasets. In this study, we present a novel weakly supervised Natu-
+ral Language Processing pipeline designed to classify Italian discharge letters without
+requiring manual labelling. After extracting diagnosis-related sentences, the method
+leverages a transformer-based model with an additional pre-training on Italian med-
+ical documents to generate semantic embeddings. A two-level clustering procedure
+is then applied to these embeddings, and the resulting clusters are mapped to the
+diseases of interest to derive weak labels for a subset of data, which are subsequently
+used to train a transformer-based classifier. We evaluate the approach on a real-world
+case study focused on detecting bronchiolitis in a corpus of 33,176 Italian discharge
+letters of children admitted to 44 emergency rooms or hospitals in the Veneto Region
+between 2017 and 2020. The pipeline achieves an area under the curve (AUC) of
+77.68% (±4.30%) and an F1-score of 78.14% (±4.89%) against manually annotated
+data. Its performance surpasses other unsupervised methods and approaches that
+of fully supervised models, while maintaining robustness to cluster selection and a
+∗Corresponding Author
+Preprint
+arXiv:2410.15051v2  [cs.CL]  30 Dec 2025
+promising generalizability across different disease types. It allows saving approxi-
+mately 3 minutes of expert time per discharge letter, corresponding to more than
+1,500 hours for a dataset of the size used in our case study. This study demonstrates
+the feasibility of a weakly-supervised strategy for identifying diagnoses from Italian
+discharge letters. The pipeline achieves strong performance, is adaptable to various
+diseases, and offers a scalable solution for clinical text classification, reducing the
+need for manual annotation while maintaining reliable accuracy.
+Keywords:
+Natural Language Processing, weakly-supervised learning, discharge
+letters, diagnosis identification
+2000 MSC: 68T50
+1. Introduction
+Electronic Health Records contain a vast and continuously growing amount of
+patient information, but a significant portion of this data remains unstructured in
+formats like clinical notes, reports, discharge letters and referrals.
+Despite con-
+taining valuable information, this unstructured data is often underutilized in the
+downstream analysis due to their complexity and heterogeneity [1, 2]. While Nat-
+ural Language Processing (NLP) has made significant advancements in extracting
+and classifying information from text [3, 4], applying these techniques to clinical
+narratives remain challenging.
+Medical documents are characterized by a highly
+specialized lexicon, with ambiguous abbreviations and frequent misspellings, a lack
+of standard templates across hospitals and a limited amount of manually labelled
+data [5, 6, 7]. Additionally, most NLP tools are optimized for high-resource lan-
+guages such as English, limiting their transferability to languages like Italian, where
+datasets and domain-specific linguistic resources are scarce [8].
+Among the various types of clinical documents, hospital discharge letters play a
+particularly important role: they summarize the patient’s condition, diagnoses, and
+treatments, representing a relevant source of diagnostic information for both clinical
+follow-up and population-based studies. Although international standard such as the
+ICD-CM [9] exists for encoding diagnoses, physicians often prefer to provide textual
+descriptions of their diagnoses because they are faster to write, more expressive, and
+often the only option available in document templates [10, 11]. Even when ICD-
+CM codes are included, previous research has shown that they can be incomplete or
+inaccurate [12, 13, 14]. Automatic methods capable of identifying diagnoses directly
+from unstructured discharge letters are therefore crucial for cohort selection and
+epidemiological research [15], reducing the need for manual review, which is labor-
+intensive and impractical at scale.
+2
+In Italy, every hospital or emergency room (ER) admission generates a discharge
+letter that should contain at least one diagnosis describing the reason for admission
+or discharge. However, these letters vary widely in format and terminology, often
+mixing narrative and structured components. Developing robust NLP systems for
+such data is challenging: traditional approaches rely on supervised classification
+models that require a substantial amount of manually annotated data [16], an effort
+that is costly and time-consuming for clinicians. This highlights a significant gap
+in the field: the need for methods that can effectively exploit large, unannotated
+datasets to extract clinically meaningful information without the burden of manual
+labelling.
+Previous studies applying NLP to Italian clinical texts have not addressed dis-
+charge letters. Lanera et al. [17, 18] worked on supervised models to identify vari-
+cella cases from notes of family pediatricians, while Sciannameo et al. [19] used a
+BERT-based model to predict rehospitalizations for elderly patients from medication
+prescriptions and hospitalization records. Hammami et al. [20] classified pathology
+reports for cancer morphology using a rule-based approach, and Viani et al. [21, 22]
+extracted entities from cardiology reports through ontologies and recurrent neural
+networks. Most international work on discharge letters has been conducted in En-
+glish using resources such as the MIMIC database [23, 24] (see [25, 26, 27, 28] for
+some examples), but research has also been conducted in other European languages
+with limited resources, such as Bulgarian [29, 30], Dutch [31, 32], Czech [33] and
+Swedish [34]. These studies, however, all relied on large annotated datasets, making
+them difficult to reproduce in settings where manual labelling is infeasible.
+Recent work has explored weakly-supervised approaches to mitigate the need
+for large annotated clinical corpora. Most of these methods rely on task-specific
+heuristics, such as disease-related keywords, regular expressions, or the transfer of
+labels from structured data like diagnostic codes or medication records [35, 36, 37,
+38, 39].
+While effective within narrowly defined clinical settings, such strategies
+are difficult to extend to new diseases, domains, or institutions, as they depend on
+predefined lexical patterns or on the availability of reliable structured fields.
+To overcome these limitations, we propose a weakly-supervised NLP pipeline for
+automatically identifying patient diagnoses from Italian hospital discharge letters.
+Our approach eliminates the dependency on manually annotated data and offers a
+more generalizable solution than previous rule-based methods.
+The pipeline first identifies diagnosis-related sentences from a subset of documents
+and represents them through contextual embeddings generated by a transformer
+model, previously pre-trained with public data in Italian related to the medical do-
+main. These embeddings are then grouped through a two-level clustering procedure,
+3
+after which the resulting clusters are semantically summarized and mapped to dis-
+eases of interest to produce weak labels. The weakly labelled data are finally used
+to train a transformer-based classifier capable of recognizing those diseases directly
+from discharge letters. This design enables large-scale, disease-agnostic classification
+of clinical narratives while avoiding the costs of manual labelling.
+We evaluate the proposed framework through a real-world case study focused
+on bronchiolitis, one of the leading causes of hospitalizations in young children [40].
+The dataset includes 33,176 discharge letters of pediatric patients admitted to 44
+emergency rooms or hospitals across the Veneto Region (Italy) between 2017 and
+2020, collected through the Pedianet network [41]. To the best of our knowledge,
+there are no prior studies addressing the identification of bronchiolitis directly from
+medical text, whereas existing works have relied on structured data for diagnosis
+prediction [42, 43, 44].
+In our evaluation, we test the weakly-supervised pipeline against manually la-
+belled data, considering different classification backbones and comparing its perfor-
+mance with both fully unsupervised and fully supervised approaches. The proposed
+method achieves competitive performance, outperforming other unsupervised tech-
+niques and showing only a limited gap compared with supervised classifiers.
+Its
+performance is robust to weak labels selection, and the analysis of the intermediate
+steps indicates a strong potential for generalization across diseases.
+2. Methods
+In this section, we describe in detail the pipeline we propose for the weakly-
+supervised diagnosis identification. The pipeline, depicted in Figure 1, can be divided
+into three main steps:
+0 TPT - Pre-Training of a Transformer-based model for Italian medical docu-
+ments.
+1 SAL - Semi-automatic labelling of the dataset.
+2 WLC - Classification of discharge letters using the weakly-labelled dataset.
+The next sections describe in details the three steps.
+2.1. Pre-training of a Transformer-based model for Italian medical documents (TPT)
+Statistical and machine learning models for textual data require a mathematical
+representation of the text. There are three main types of possible representations:
+vocabulary-based, static neural network-based embeddings and contextual neural
+network-based embeddings.
+Vocabulary-based representations produce a high di-
+mensional vector whose size is equal to the corpus vocabulary size and whose content
+4
+Weakly labelled 
+subset of ER and 
+hospital discharge 
+letters
+[2.1]
+PRE-PROCESSING
+[2.2] 
+TRANSFORMER 
+FINE-TUNING
+CLASSIFICATION 
+MODEL
+DISEASE
+NO DISEASE
+[1.1] 
+EXTRACTION OF 
+DIAGNOSIS 
+STRINGS
+[1.2] 
+DIAGNOSIS 
+CLUSTERING
+[1.3] 
+MAPPING 
+CLUSTERS TO 
+DISEASES
+[0.1]
+AUTOMATIC 
+TRANSLATION
+[0.2]
+TRANSFORMER 
+ADDITIONAL 
+PRE-TRAINING
+Unlabelled discharge 
+letters
+Weakly labelled 
+subset of ER and 
+hospital discharge 
+letters
+[SAL]
+[WLC]
+[TPT]
+1ST LEVEL 
+CLUSTERS
+[1.2.1] 
+PRE-
+PROCESSING
+[1.2.2]
+TEXT 
+EMBEDDING
+[1.2.3]
+DIM. 
+REDUCTION
+[1.2.4]
+CLUSTERING 
+ALGORITHM
+-----------------------------
+-----------------------------
+-----------------------------
+-----------------------------
+Extracted
+diagnosis
+strings
+-------------------
+--------------------
+- -------------------
+-
+-------------------
+--------------------
+- -------------------
+-
+-------------------
+--------------------
+- -------------------
+-
+[1.2.5]
+KEYWORD 
+REPR.
+-------K4, K5----
+----K1, K2, K3--
+--K6, K7, K8, K9--
+[1.2.6] 2ND LEVEL CLUSTERING
+[STEP 1.2] 
+a.
+b.
+Figure 1: a. Diagram of the full pipeline for weakly-supervised classification of discharge letters.
+Step 0 (TPT) consists in additional pre-training of a transformer-based model on a dataset of
+medical documents in Italian, including documents auomatically translated into Italian. Step 1
+(SAL) is the core of the pipeline, consisting in the automatic extraction of diagnosis strings from
+the letters, their clustering (exploiting the model from TPT) and the mapping of the clusters to
+the disease labels. This procedure leads to a weakly-labelled subset of data that is used in Step 2
+(WLC) to train a weakly-supervised classificaton model. b. Detailed diagram of the clustering step
+for diagnosis strings, corresponding to Step 1.2 of the full pipeline. The extracted diagnoses are
+embedded with a transformer-based model, and, after a dimensionality reduction step, clustered.
+Clusters are summarized with relevant keywords and the clustering is repeated on these clusters’
+representations.
+5
+is sparse. Their main issue is that they cannot capture the semantic relationships be-
+tween words, i.e., the fact that different words may have the same or similar meaning,
+possibly also depending on the context in which they appear. These issues are over-
+come by neural network-based embeddings. In particular, static word embeddings,
+such as Word2Vec [45], produce embedding vectors that are permanently fixed for
+each term. In contrast, contextual embeddings are related to the context in which
+the word appears, capturing more semantics at the price of requiring an inference
+through a neural network each time the embedding has to be computed. The state-
+of-the-art models for generating contextual embeddings are based on the transformer
+architecture [46]. Among them, BERT (Bidirectional Encoder Representations from
+Transformers) [47] and its subsequent variants, such as RoBERTa [48], have be-
+come foundational for a wide range of NLP tasks. Different versions of these models
+have been further specialized for specific languages and domains. In particular, for
+the English language, there are multiple models for the biomedical domain, such as
+BioBERT [49] and ClinicalBERT [50].
+For the Italian language, available transformer models equivalent to BERT are
+mostly trained on general-domain web data [51], with limited exposure to biomed-
+ical or clinical terminology.
+The E3C corpus [52] is a multilingual resource that
+includes Italian documents from diverse medical sources, such as journal articles,
+specialty-school admission tests, patient information leaflets, and medical-science
+thesis abstracts, providing valuable clinical context for domain adaptation.
+The
+dataset contains documents in five languages; a summary of its composition is pro-
+vided in Appendix A.3.
+This is the only publicly available dataset that includes Italian medical docu-
+ments. With the aim of better capturing domain-specific semantics, we used this
+data to perform an additional pre-training of the transformer-based models we in-
+cluded in our pipeline (Step 0.2 in Figure 1). To utilize the entire dataset, which
+amounts to 564 MB, we automatically translated the non-Italian documents using
+Google Translate’s APIs (Step 0.1 in Figure 1).
+2.2. Semi-automatic labelling pipeline (SAL)
+Developing a weakly-supervised classification pipeline for discharge letters re-
+quires a procedure to derive weak-labels for at least a subset of data. Weak-labels
+are labels that can be automatically associated to the data but that might contain
+some noise. This section presents a methodology to construct these weak labels by
+extracting diagnosis strings from discharge letters and clustering them. This allows
+the creation of groups of diagnoses related to the same disease or symptoms that can
+be exploited as labels. This step corresponds to Step 1 (SAL) of Figure 1.
+6
+Our approach combines regular expressions for extracting diagnosis strings and
+a customized clustering pipeline based on a transformer model.
+In the following
+sections, we describe in detail these sub-steps.
+2.2.1. Extraction of diagnosis strings
+The first step (1.1 in Figure 1.a) is the extraction of diagnosis strings. Italian
+discharge letters do not follow a standardized template, as each hospital has its
+own, and even different departments within the same hospital may personalize the
+template further. Nevertheless, we have observed that these templates often include
+a designated section for the diagnosis, where the doctor should report the patient’s
+admission diagnosis. This diagnosis indication should contain, in most cases, the
+necessary information to determine the label for the discharge summary. However,
+there are three main challenges in handling this diagnosis indication:
+1. Not all discharge summaries include this indication, as it may be absent or left
+empty by the physician.
+2. Different templates use varying terminologies and position this indication dif-
+ferently in the text.
+3. Diagnosis strings are typically written as free text, with the same disease de-
+scribed by different strings and different levels of detail
+The first point is the primary reason why our pipeline focuses on classifying the text of
+a discharge letter rather than just the diagnosis string. To address the second point,
+we employ regular expressions to detect the portion of text where they are present.
+Regular expressions provide a powerful and flexible approach for pattern matching,
+making them suitable for capturing a template field with limited variations, such
+as the diagnosis indication in our dataset. Appendix C reports the set of regular
+expressions used to extract the diagnosis strings.
+After this step, we have, for the majority of the letters, a string, typically a short
+sentence, explaining the reasons for the patient’s admission. Due to the third point
+mentioned before, it is not possible to directly exploit them as labels. To do this, it
+is necessary to cluster them, as detailed in the following paragraph.
+2.2.2. Diagnosis Clustering
+Once the diagnosis strings are extracted, we use a tailored clustering pipeline to
+group them meaningfully, aiming at identifying clusters related to the various types
+of diseases and symptoms. This corresponds to Step 1.2 in panel a of Figure 1 and
+is expanded in panel b of the same figure.
+7
+Minor pre-processing steps, including the removal of punctuation, dates, and time
+expressions, are applied to facilitate the subsequent construction of a text represen-
+tation that captures the semantic content of the document, while excluding elements
+that are not informative for discriminating among diagnoses (Step 1.2.1).
+After this pre-processing, the pipeline needs to construct an embedding of the
+text that a clustering algorithm will subsequently use. This step (1.2.2) exploits the
+transformer model we discussed in Section 2.1.
+The transformer-based model produces embedding vectors whose size is 768, mak-
+ing it necessary to apply a dimensionality reduction technique (PCA) over these
+embeddings to use them as input for a clustering algorithm (Step 1.2.3).
+After this step, a clustering algorithm can be applied to the resulting embedding
+vectors (Step 1.2.4). We selected HDBSCAN [53] because it does not require spec-
+ifying the number of clusters a priori, allows leaving part of data unclustered, and
+can identify clusters with heterogeneous shapes and densities. These properties are
+well suited to transfromer-based text embeddings, which often lie on complex, non-
+linear manifolds and may form clusters with varying densities, irregular geometries,
+and overlapping boundaries. Several commonly used clustering algorithms, such as
+K-Means, Gaussian Mixture Models, and standard hierarchical clustering, are less
+suitable for this type of data [54, 55], as further supported by a comparative analysis
+reported in Appendix D.
+To effectively group strings related to different diseases and symptoms, the clus-
+tering must prioritize the intra-cluster similarity against the inter-cluster dissimi-
+larity.
+This has the drawback of creating multiple clusters associated with each
+disease/symptom that are very compact internally, but that should be merged. A
+second-level clustering can help merge these clusters that are initially separate, sim-
+plifying the identification of the weak labels. To this purpose, a suitable represen-
+tation for clusters needs to be produced. We employ a keyword representation in
+which, for each cluster, we extract words that appear with significant frequency in
+the cluster and do not appear with considerable frequency over the entire dataset
+(Step 1.2.5). These keywords can be represented with transformer embeddings in
+the same way as the original diagnosis strings and used for subsequent clustering
+(Step 1.2.6).
+2.2.3. Mapping clusters to diseases
+Step 1.3 consists of mapping the clusters to the weak labels that will be used by
+the classification model. This requires analyzing the diagnosis clusters produced by
+Step 1.2, using their keyword-based representation (Step 1.2.5). The selection can
+be fully automated with keyword matching or manual. To automate this step, we
+8
+propose the following procedure:
+1. Definitions: identify a set of definitions for the disease or symptoms of interest.
+Each definition includes one or more positive keywords (directly related to
+the disease) and, if necessary, negative keywords (terms indicating alternative
+diagnoses).
+2. Cluster selection: for each cluster, select it if it contains all the positive key-
+words and none of the negative keywords, according to at least one of the
+definitions.
+This procedure requires minimal manual effort upfront for defining keywords and
+allows for a more precise selection than other methods, such as using similarity
+scores between embeddings of definitions and cluster representations.
+A keyword-based selection at this step is more straightforward and effective than
+applying keywords directly to the diagnosis strings extracted in Step 1.1. The original
+strings are often too heterogeneous, leading to false negatives due to varied termi-
+nology and false positives from irrelevant information (e.g., negations, past medical
+issues). Similarly, manually reviewing the original diagnosis strings is impractical
+due to their large number.
+2.3. Classification of discharge letters using the weakly-labelled dataset (WLC)
+The classification pipeline that exploits the weakly-labelled data produced by
+Step 1 corresponds to Step 2 (WLC) in Figure 1.a. A pre-processing step (Step 2.1)
+removes headers and footers that contain information that is non-relevant to our
+analysis (see Appendix B for details and results without pre-processing). The clas-
+sification model we adopted is based on the fine-tuned version of the UmBERTo
+model that we presented in Section 2.1. In this case, the transformer-based model is
+enhanced with a linear classification layer that outputs the probability of having the
+disease. It is trained with the discharge letters’ text and the weak labels assigned
+to the letters based on the clusters to which their diagnoses have been assigned
+(Step 2.2).
+Given the limitation of RoBERTa-based models in dealing with texts longer than
+512 tokens, when this is the case, we truncated the letter text to the first 512 tokens
+after pre-processing, possibly including the diagnosis sentences, even if at the end
+of the letter (in the setting in which we kept it). This is not a relevant limitation,
+considering that 90% of discharge letters in our dataset are within 512 tokens after
+pre-processing. In the case of datasets with longer texts, it is possible to chunk them
+in portions no longer than 512 tokens, process them in parallel and combine their
+outputs, taking the maximum probability.
+9
+2.4. Experimental outline
+Our main evaluation is at the final classification stage of the pipeline, where we
+can compare the results against manually annotated labels. In addition to this, we
+evaluated the intermediate steps of the pipeline, in particular the diagnosis extraction
+(Step 1.1) and clustering (Steps 1.2-1.3), on a randomly selected subset of 1,000
+diagnosis strings that have been manually annotated.
+Each of these strings was
+marked as correct, partially correct , or wrong with respect to the fact of being a
+complete diagnosis string and to the assignments to the first level and the second level
+clusters. Additional results on the clustering steps, including robustness analyses
+with respect to hyperparameter choices and clustering algorithms, are reported in
+Appendix D.
+In evaluating classification results, we compare our pipeline with some fully un-
+supervised baselines: two rule-based approaches that do not require supervision
+and with a zero-shot LLM for the Italian language (LLaMAntino-3-ANITA-8B-Inst-
+DPO-ITA) [56]. The two rule-based approaches look for the presence of the terms
+corresponding to the definitions of bronchiolitis used in Step 1.3, with the first one
+(Rule-based full-text) looking into the entire text of the letter and the second one
+(Rule-based diagnosis) looking only in the diagnosis strings extracted by Step 1.1.
+The zero-shot LLM is prompted to indicate if the text of the text discharge letter
+indicates a diagnosis of bronchiolitis, answering with a “Si” (“Yes”) or a “No”.
+Additionally, we assess in detail the performance of the classification model of
+our pipeline (Step 2.2) by replacing it with other classifiers:
+1. The original UmBERTo model [51], without TPT (WS-UmBERTo)
+2. XLM-RoBERTa-base [57], a multilingual version of RoBERTa [48], with (WS-
+XLM-RoBERTa-TPT) and without (WS-XLM-RoBERTa) TPT
+3. RemBERT [58], an improved version of the multilingual mBERT, with (WS-
+RemBERT-TPT) and without (WS-RemBERT-BPT) without TPT
+4. An LSTM-based recurrent neural network exploiting Italian Word2Vec embed-
+dings [45] (WS-LSTM )
+The three transformer-based models with pretraining are also evaluated in a fully
+supervised setting, training them on the manually annotated labels (FS-UmBERTo-
+TPT, FS-XLM-RoBERTa-TPT, FS-RemBERT-TPT), so as to have a measure of
+the performance loss due to weak supervision.
+Considering that our weak labels are derived from clusters of diagnosis strings
+that we extracted from discharge letters, this might bias the classification models
+into looking only into the diagnosis sections of the letters. To assess the presence of
+this bias and to verify whether the models can exhibit good performance with the
+remaining text of the string, we test the models in two settings:
+10
+1. With the original letters, possibly including diagnosis strings
+2. Removing the diagnosis strings exploited to assign weak labels (when present)
+We also measure the performance of the models on the weak labels, to assess the
+difference with the ones observed on gold labels, and we verify the robustness of the
+results on gold labels to the weak label selection, measuring the effect of removing
+single clusters from positive weak labels. To further analyze the noise introduced by
+weak labels, we also experiment with replacing a varying percentage of gold labels
+with weak labels.
+The classification results are evaluated in terms of precision (P), recall (R) and
+F1-score (F1) for the bronchiolitis class and area under the receiver operating char-
+acteristic curve (AUC). For classifiers producing a continuous score, the classification
+threshold is set via Youden’s index [59]. We exclude AUC for rule-based classifiers,
+as they do not produce probability estimates, and we do not assess the fully super-
+vised models using weak labels. The positive class probability for the zero-shot LLM
+is estimated by applying a softmax function over the token-level log-likelihoods of
+the tokens “Si” (“Yes”) and “No”, following previous literature [60]. All metrics are
+computed with 10-fold stratified cross-validation.
+Since our data come from different hospitals and different LHUs, we also perform
+additional experiments, reported in Appendix E, to verify the presence of differences
+among them.
+2.5. Training details
+The additional pre-training of the transformer-based models over the E3C corpus
+was performed with the masked-word prediction task, with a learning rate of 2·10−5
+and weight decay of 0.01, using 20% of the data as a validation set for early stopping.
+The LSTM baseline has the frozen Word2Vec embedding layer followed by a
+32-unit LSTM layer, a dropout layer, a 16-unit fully connected layer, a dropout
+layer and the final output layer. It is trained with Adam optimizer, with a learning
+rate scheduler starting from 10−2, a decay rate of 0.7, 100 decay steps, using early
+stopping.
+The transformer-based classifiers are trained with the AdamW optimizer, using
+a linear learning rate scheduler starting from 10−3, with a weight decay of 0.01, for a
+number of epochs regulated by early stopping (leading to 6 epochs for the UmBERTo
+models, 4 for the XLM-RoBERTa models and 3 for the RemBERT models). Initially,
+only the last classification layer is trained, and after two epochs, the last transformer
+layer is unfrozen. After four epochs, if reached, the last but one transformer layer is
+unfrozen. These hyperparameters have been selected with grid search.
+11
+Due to the class imbalance, in the training folds the negative class is undersam-
+pled, limiting its size to twice that of the positive class.
+3. Results
+3.1. Dataset
+The dataset for the case study comprises 33,176 discharge letters related to chil-
+dren who were admitted to Emergency Rooms and/or hospitalized in the Veneto
+Region between 2017 and 2020, with a family pediatrician adhering to the Pedi-
+anet network [41]. Inclusion in the Pedianet database is voluntary and parents/legal
+guardians must provide informed consent for their children’s anonymized data to
+be used for research purposes. The study was performed in accordance with the
+Declaration of Helsinki. Ethical approval of the study and access to the database
+were granted by the Internal Scientific Committee of So.Se.Te. Srl, the legal owner
+of Pedianet.
+The dataset covers 44 different hospitals in the region, which can be grouped into 9
+Local Health Units (LHUs) and 2 university hospitals. Each discharge letter includes
+the complete text of the letter, along with the date of the letter and an anonymized
+identifier of the patient.
+A manual review of discharge letters was conducted to
+extract relevant diagnoses of bronchiolitis, resulting in 335 positive cases within the
+dataset. This review was performed by a data manager with a clinical background,
+with the support of clinicians for uncertain cases. These labels are the gold standard
+to validate our pipeline, and we do not make direct use of them in the pipeline
+training (except for the fully-supervised experiments).
+Appendix A.1 reports additional plots with data distributions among hospitals
+and LHUs. In particular, 10 hospitals cover more than 85% of the records.
+The median length of the letters is 4,515 characters (1st-3rd quartiles 3,240-
+5,806). An example of a fictitious letter is reported in Appendix A.2.
+3.2. Diagnosis extraction
+Our diagnosis extraction module (Step 1.1) successfully extracted a diagnosis sen-
+tence from 89% of the discharge letters in the dataset. We extracted 15,038 unique
+diagnosis sentences, of which 75% occurred only once, confirming the need for clus-
+tering them in wider groups that can be more easily related to known diseases and
+symptoms. ICD-9-CM codes are present only in 737 diagnosis strings (4.9%), cover-
+ing 3,436 discharge letters (10.4%). The most common strings are the simplest, while
+more articulate ones have single occurrences. The median length of the extracted
+diagnoses strings is 49 characters, with first and third quartiles of 17 and 156 charac-
+ters. Among the 335 bronchiolitis-labelled letters, we extracted 138 unique diagnosis
+12
+Table 1: Manual evaluation of the clustering assignment for 1,000 diagnosis strings. comparing
+results after first level and second level clustering.
+Correct
+Partially Correct
+Wrong
+1st level clustering
+69.60 %
+22.20 %
+8.20 %
+2nd level clustering
+71.90 %
+20.30 %
+7.80 %
+∆2nd-1st
+2.30 %
+-1.90 %
+-0.40 %
+strings from 306 letters. The manual validation of a sample of 1,000 extracted diag-
+nosis strings revealed that 985 (98.5%) were correct diagnosis strings, only 4 (0.4%)
+were not diagnosis strings, and 11 (1.1%) were incomplete diagnosis strings.
+3.3. Diagnosis clustering
+In the first clustering level, the 15,038 extracted diagnosis strings were grouped
+into 590 clusters. Cluster sizes varied significantly, from a large cluster of 270 strings
+to several smaller clusters containing 5 strings. The subsequent second-level cluster-
+ing reduced the number of clusters to 135. Summary of main clusters is reported in
+Appendix D.
+Table 1 summarizes the manual evaluation of the clustering assignment, at both
+levels, for the annotated sample of 1,000 strings. Most of the partially correct cluster
+assignments are due to details of the diseases, e.g., fracture of right hand assigned
+to a cluster for fracture of left hand, severe influenza assigned to a cluster for mild
+influenza. A few cases are related to multiple symptoms/diseases not completely
+matching the cluster, such as vomiting and fever in the cluster for fever alone.
+For our case study on bronchiolitis identification, Table 2 details the main clus-
+ters related to respiratory infections, including the number of bronchiolitis cases they
+cover. Given space constraints, we report here only clusters mentioning bronchioli-
+tis, bronchospasm, pneumonia, or respiratory infections, as these are the clusters
+most closely related to bronchiolitis or its associated symptoms. Four clusters (#1,
+#2, #3, #5) contain the keyword “bronchiolitis”. Three of them include a large
+majority of bronchiolitis cases, whereas the fourth cluster (#5) has only half of its
+diagnoses labelled as bronchiolitis. These four clusters together cover 65.38% of all
+bronchiolitis cases. Additionally, 13 clusters include the keyword “bronchospasm”,
+a symptom frequently associated with bronchiolitis. According to physicians who
+annotated the data, bronchospasm is associated with bronchiolitis only if accom-
+panied by fever.
+Only one of these 13 clusters (#4) has both “bronchospasm”
+and “fever” keywords, and indeed, it contains a high percentage (70%) of bron-
+chiolitis, accounting for an additional 15% of total bronchiolitis cases. Thus, these
+13
+five clusters are those that, without knowing the gold labels, would be selected
+to define the weak labels for the training set, according to the two keyword-based
+definitions of {positive={bronchiolitis},negative={}} and {positive={bronchospasm,
+fever},negative={}}. Among the respiratory infection clusters, three other clusters
+contain bronchiolitis cases (#6, #7, #8), but they are in a limited number.
+For the second-level clustering, Table 3 presents clusters related to respiratory
+infections. The second level clustering appears to have effectively merged some of
+the clusters that were previously separated in Table 2: two related to mild bronchi-
+olitis, eight related to bronchospasm, and five about generic respiratory infections.
+The selection of weak labels for training remains unchanged since, looking at their
+keywords, we select second-level clusters #1, #2, #3, #4 that cover the same records
+as the clusters we would have chosen at the first level. Second-level clustering de-
+termines a substantial reduction in the number of clusters (approximately 1/5 of
+the original number of clusters in our dataset), simplifying manual inspection and
+determining a positive effect on diagnosis-cluster mappings as observed in Table 1.
+This cluster selection for weak labels covers 80% of the original bronchiolitis cases.
+To understand the reason for the false negatives, we reviewed 20 letters labelled as
+bronchiolitis in the gold standard but not covered by our weak labels. We found
+10 cases where the diagnosis pertains to other symptoms or disease (e.g., otitis,
+dyspnea, fever), but the bronchiolitis is mentioned in the letter, at least as a suspect
+condition; 4 cases where bronchiolitis is mentioned in the diagnosis alongside other
+diseases, leading to assignment to a cluster related to the other disease; 3 cases
+of respiratory issues with no explicit mention of bronchiolitis, respiratory syncytial
+virus, or bronchospasm and fever; 2 cases with no diagnosis string present; 1 case
+where a family member has bronchiolitis, but the patient’s diagnosis is of a different
+disease.
+These results suggest that the absence of some gold labels in our weak
+labels primarily arises from the lack of explicit bronchiolitis indications, with only a
+few cases that could have been detected but were missed. They also highlight the
+importance of using the full discharge letters for a model aiming to identify diseases
+accurately.
+To assess the effect of the TPT step on clustering results, Appendix D reports
+the clusters obtained using the original UmBERTo model in our clustering pipeline.
+The number of clusters related to respiratory infections is higher without TPT (34
+vs 27), and their keywords appear more heterogeneous. Selecting weak labels by
+applying the same criterion we used on our clusters, we would cover only 47% of
+bronchiolitis cases with the clusters from the original UmBERTo model. Moreover,
+these clusters are more hetereogenous since they introduce more false negatives in
+the weak labels.
+14
+Table 2: Keyword-based representation of the first-level clusters related to respiratory infections,
+with the % of bronchiolitis cases in each cluster and the % to the total number of cases in the
+dataset
+Cluster #
+Cluster keywords [ITA]
+Cluster keywords [ENG]
+Within cluster
+bronch. %
+% of total bronch.
+covered
+1
+bronchiolite lieve
+mild bronchiolitis
+85.19
+6.87
+2
+acuta bronchiolite iniziale lieve
+acute mild initial bronchiolitis
+85.14
+44.48
+3
+acuta bronchiolite corso insufficienza respiratoria
+acute bronchiolitis undergoing respiratory failure
+74.05
+11.94
+4
+acuto broncospasmo corso febbre paziente
+acute bronchospasm ongoing fever patient
+70.00
+15.02
+5
+alimentazione bronchiolite difficolta’
+feeding difficulties bronchiolitis
+50.00
+2.09
+6
+acuta infezione insufficienza respiratoria transitoria virosi
+acute respiratory infection transient virosis
+12.70
+2.39
+7
+broncospasmo infezione respiratoria
+bronchospasm respiratory infection
+6.67
+0.30
+8
+broncospasmo disidratazione lieve
+bronchospasm mild dehydration
+1.17
+0.60
+9
+flogosi alte vie respiratorie febbre
+high airways flogosis fever
+0.00
+0.00
+10
+broncospasmo infezione vie respiratorie
+bronchospasm airways infection
+0.00
+0.00
+11
+acuto broncospasmo
+acute bronchospasm
+0.00
+0.00
+12
+broncospasmo flogosi vie
+bronchospasm airways flogosis
+0.00
+0.00
+13
+broncospasmo polmonite
+bronchospasm pneumonia
+0.00
+0.00
+14
+broncospasmo corso
+ongoing bronchospasm
+0.00
+0.00
+15
+broncopolmonite sinistra
+left bronchopneumonia
+0.00
+0.00
+16
+febbricola febbrile infezione respiratoria virosi
+febrile fever respiratory infection virosis
+0.00
+0.00
+17
+broncospasmo episodio
+bronchospasm episode
+0.00
+0.00
+18
+infezione alte vie respiratorie
+high airways infection
+0.00
+0.00
+19
+flogosi infezione alte vie respiratorie
+flogosis high airways infection
+0.00
+0.00
+20
+acuta broncopolmonite linfadenite
+acute bronchopneumonia lymphadenitis
+0.00
+0.00
+21
+acuto broncospasmo tosse verosimilmente
+cough likely acute bronchospasm
+0.00
+0.00
+22
+broncospasmo otite
+bronchospasm otitis
+0.00
+0.00
+23
+broncospasmo parainfettivo
+bronchospasm parainfective
+0.00
+0.00
+24
+broncospasmo virosi
+bronchospasm virosis
+0.00
+0.00
+25
+infezione lattante pianto pregresso respiratoria
+infant infection infant cries previous respiratory
+0.00
+0.00
+26
+crisi epilessia infezione paziente polmonare respiratoria
+seizure epilepsy respiratory infection lung patient
+0.00
+0.00
+27
+altre infezioni acute vie respiratorie
+other acute respiratory infection airways
+0.00
+0.00
+Additional results on the effect of clustering algorithms and hyperparameters are
+reported in Appendix D.
+15
+Table 3: Keyword-based representation of the second-level clusters related to respiratory infections, with the % of bronchiolitis
+cases in each cluster and the % to the total number of cases in the dataset
+2nd level cluster #
+2nd
+level
+clusters
+key-
+words [ITA]
+2nd
+level
+clusters
+key-
+words [ENG]
+1st level cluster #
+1st level clusters keywords
+[ITA]
+1st level clusters keywords
+[ENG]
+Within cluster
+bronch. %
+% of total bronch.
+covered
+1
+bronchiolite lieve
+mild bronchiolitis
+1
+acuta bronchiolite iniziale lieve
+acute mild initial bronchiolitis
+85.16
+51.34
+2
+bronchiolite lieve
+mild bronchiolitis
+2
+acuta bronchiolite corso insuf-
+ficienza respiratoria
+acute bronchiolitis undergoing
+respiratory failure
+3
+acuta bronchiolite corso insuf-
+ficienza respiratoria
+acute bronchiolitis undergoing
+respiratory failure
+74.05
+11.94
+3
+acuto broncospasmo corso feb-
+bre paziente
+acute bronchospasm ongoing
+fever patient
+4
+acuto broncospasmo corso feb-
+bre paziente
+acute bronchospasm ongoing
+fever patient
+70.00
+15.02
+4
+bronchiolite difficolta di ali-
+mentazione
+feeding difficulties bronchioli-
+tis
+5
+bronchiolite difficolta di ali-
+mentazione
+feeding difficulties bronchioli-
+tis
+50.00
+2.09
+5
+acuta
+infezione
+insufficienza
+respiratoria transitoria virosi
+acute
+respiratory
+infection
+transient virosis
+6
+acuta
+infezione
+insufficienza
+respiratoria transitoria virosi
+acute
+respiratory
+infection
+transient virosis
+12.7
+2.39
+6
+broncospasmo infezione respi-
+ratoria
+bronchospasm respiratory in-
+fection
+7
+broncospasmo
+infezione
+vie
+respiratorie
+bronchospasm
+infection
+air-
+ways
+2.9
+0.30
+10
+broncospasmo infezione respi-
+ratoria
+bronchospasm respiratory in-
+fection
+7
+broncospasmo
+disidratazione
+lieve
+bronchospasm mild dehydra-
+tion
+8
+broncospasmo
+disidratazione
+lieve
+bronchospasm mild dehydra-
+tion
+1.17
+0.60
+8
+broncospasmo
+bronchospasm
+11
+acuto broncospasmo
+acute bronchospasm
+0.00
+0.00
+12
+broncospasmo flogosi vie
+bronchospasm airways flogosis
+13
+broncospasmo polmonite
+bronchospasm pneumonia
+14
+broncospasmo corso
+ongoing bronchospasm
+22
+broncospasmo otite
+bronchospasm otitis
+23
+broncospasmo parainfettivo
+bronchospasm parainfective
+24
+broncospasmo virosi
+bronchospasm virosis
+17
+broncospasmo episodio
+bronchospasm episode
+9
+acuta
+broncopolmonite
+lin-
+fadenite
+acute bronchopneumonia lym-
+phadenitis
+20
+acuta
+broncopolmonite
+lin-
+fadenite
+acute bronchopneumonia lym-
+phadenitis
+0.00
+0.00
+10
+acuto
+broncospasmo
+tosse
+verosimilmente
+cough
+likely
+acute
+bron-
+chospasm
+21
+acuto
+broncospasmo
+tosse
+verosimilmente
+cough
+likely
+acute
+bron-
+chospasm
+0.00
+0.00
+11
+infezione vie respiratorie
+airways infection
+18
+infezione alte vie respiratorie
+high airways infection
+0.00
+0.00
+19
+flogosi infezione alte vie respi-
+ratorie
+flogosis high airways infection
+0.00
+0.00
+27
+altre infezioni acute vie respi-
+ratorie
+other acute respiratory infec-
+tion airways
+0.00
+0.00
+26
+crisi
+epilessia
+infezione
+paziente
+polmonare
+respi-
+ratoria
+seizure epilepsy respiratory in-
+fection lung patient
+0.00
+0.00
+16
+febbricola
+febbrile
+infezione
+respiratoria virosi
+febrile fever respiratory infec-
+tion virosis
+0.00
+0.00
+12
+infezione lattante pianto pre-
+gresso respiratoria
+infant
+infection
+infant
+cries
+previous respiratory
+25
+infezione lattante pianto pre-
+gresso respiratoria
+infant
+infection
+infant
+cries
+previous respiratory
+0.00
+0.00
+13
+alte febbre flogosi respiratorie
+vie
+high fever flogosis airways
+9
+flogosi alte vie respiratorie feb-
+bre
+high airways flogosis fever
+0.00
+0.00
+14
+broncopolmonite sinistra
+left bronchopneumonia
+15
+broncopolmonite sinistra
+left bronchopneumonia
+0.00
+0.00
+16
+3.4. Disease classification
+Table 4 presents the 10-fold cross-validation results for the classification task,
+comparing our weakly-supervised pipeline in versions with different transformer-
+based classifiers, fully unsupervised rule-based and zero-shot LLM approaches, and
+fully-supervised versions of the transformer-based classifiers. Results are reported
+for both the setting where we keep the diagnosis string and the one where we remove
+it from the letter. The same results are reported in Table 5 evaluating on the weak
+labels. Our weakly-supervised pipeline outperform fully unsupervised approaches
+and maintains a limited gap with the fully supervised models. The TPT step con-
+sistently improved performance across models: the differences are limited, but there
+are no cases in which TPT hurts the performance. Among the transformer-based
+classifiers, UmBERTo constantly outperforms RemBERT and XLM-RoBERTa. The
+LSTM classifier has a significant performance gap with the transformer-based ones.
+Rule-based full-text, which verifies the keywords in the entire letter, shows lower
+precision and recall than the majority of the weakly-supervised models, emphasizing
+the need for a more sophisticated approach. The results further decline when the
+diagnosis string is excluded. Rule-based diagnosis, using only diagnosis strings, yields
+better precision than the rule applied to the complete text, though recall remains
+similar.
+The zero-shot approach with the Italian LLaMAntino-3 LLM does not outperform
+our best weakly-supervised results, but shows competitive results.
+When comparing the classification results between weak and gold labels, we ob-
+serve a decrease, particularly in precision. Notably, LLaMAntino-3 is the only model
+which shows better results on gold labels than on weak labels. While this might be
+expected for models that were not trained on weak labels, this does not happen with
+rule-based methods that are probably more aligned to the way in which weak labels
+are identified.
+The transformers-based models show limited differences between settings with
+and without diagnosis string, while these are larger for the LSTM classifier.
+As expected, the fully supervised models demonstrated better overall perfor-
+mance, though differences are modest.
+In Figure 2, we observe the decrease in performance when we replace increasing
+percentages of gold labels with weak labels. This picture is representative of many
+real world settings where only a certain percentage of the data can have gold labels,
+and shows a smooth and monotonic decrease.
+In Table 6, we assess the differences in the results of our best weakly-supervised
+model (WS-UmBERTo-TPT) when selecting different subsets of clusters for the
+weak labels. In particular, we exclude one of the 1st level clusters we selected at a
+17
+Table 4: 10-fold CV results for classification on gold labels. Std. Dev. in parenthesis.
+Learning
+Classifier
+P [%]
+R [%]
+F1 [%]
+AUC [%]
+With diagnosis string
+Weakly-supervised
+WS-UmBERTo-TPT
+78.34
+(6.77)
+77.57
+(6.89)
+78.14
+(4.89)
+77.68
+(4.30)
+WS-XLM-RoBERTa-TPT
+69.54
+(5.45)
+71.33
+(5.12)
+70.85
+(4.52)
+69.24
+(3.89)
+WS-RemBERT-TPT
+67.41
+(7.01)
+70.11
+(6.82)
+69.23
+(5.24)
+68.00
+(5.03)
+WS-UmBERTo
+68.29
+(6.53)
+75.99
+(6.41)
+72.15
+(4.93)
+71.21
+(4.21)
+WS-XLM-RoBERTa
+67.49
+(5.28)
+68.67
+(5.09)
+68.02
+(4.32)
+67.65
+(3.65)
+WS-RemBERT
+65.24
+(6.81)
+63.82
+(6.84)
+64.96
+(5.13)
+65.74
+(4.92)
+WS-LSTM
+57.39
+(8.31)
+60.86
+(11.52)
+59.87
+(9.69)
+63.29
+(7.36)
+Unsupervised
+Rule-based full-text
+65.57
+(6.56)
+68.76
+(4.00)
+67.22
+(6.19)
+-
+Rule-based diagnosis
+74.61
+(4.23)
+67.42
+(3.15)
+70.74
+(3.41)
+-
+LLaMAntino-3
+78.26
+(5.72)
+74.64
+(7.48)
+75.12
+(4.29)
+71.67
+(3.48)
+Supervised
+FS-UmBERTo-TPT
+80.30
+(6.24)
+81.52
+(6.59)
+80.83
+(4.12)
+83.45
+(4.02)
+FS-XLM-RoBERTa-TPT
+75.29
+(5.21)
+78.31
+(4.36)
+76.54
+(4.14)
+78.54
+(3.42)
+FS-RemBERT-TPT
+73.24
+(6.58)
+75.28
+(5.93)
+74.21
+(4.68)
+76.39
+(4.31)
+Without diagnosis string
+Weakly-supervised
+WS-UmBERTo-TPT
+74.25
+(6.54)
+73.52
+(6.12)
+73.89
+(5.64)
+74.27
+(4.83)
+WS-XLM-RoBERTa-TPT
+66.83
+(5.69)
+67.52
+(5.88)
+67.19
+(4.57)
+67.25
+(3.65)
+WS-RemBERT-TPT
+64.53
+(6.58)
+63.66
+(6.21)
+64.21
+(5.84)
+65.47
+(4.97)
+WS-UmBERTo
+67.55
+(6.38)
+76.40
+(6.25)
+71.74
+(5.47)
+69.98
+(4.59)
+WS-XLM-RoBERTa
+63.98
+(5.72)
+65.04
+(5.63)
+64.69
+(4.98)
+64.87
+(4.12)
+WS-RemBERT
+62.25
+(6.58)
+60.48
+(6.96)
+61.65
+(5.24)
+62.21
+(4.87)
+WS-LSTM
+50.14
+(7.14)
+63.97
+(10.12)
+56.34
+(8.65)
+59.02
+(6.51)
+Unsupervised
+Rule-based full-text
+62.33
+(6.78)
+60.05
+(8.42)
+61.15
+(6.83)
+-
+LLaMAntino-3
+70.42
+(5.26)
+72.98
+(5.84)
+71.16
+(3.98)
+68.52
+(4.55)
+Supervised
+FS-UmBERTo-TPT
+78.25
+(5.20)
+76.21
+(4.87)
+77.15
+(4.01)
+78.51
+(3.84)
+FS-XLM-RoBERTa-TPT
+72.54
+(4.26)
+73.65
+(4.16)
+72.96
+(3.19)
+74.08
+(3.34)
+FS-RemBERT-TPT
+71.49
+(5.46)
+70.87
+(4.12)
+71.21
+(3.95)
+72.68
+(3.87)
+18
+Table 5: 10-fold CV results for classification on weak labels. Std. Dev. in parenthesis.
+Learning
+Classifier
+P [%]
+R [%]
+F1 [%]
+AUC [%]
+With diagnosis string
+Weakly-supervised
+WS-UmBERTo-TPT
+82.25
+(5.52)
+80.24
+(7.01)
+81.35
+(4.10)
+82.30
+(3.06)
+WS-XLM-RoBERTa-TPT
+76.74
+(3.69)
+74.91
+(7.08)
+75.89
+(3.14)
+75.53
+(3.44)
+WS-RemBERT-TPT
+76.34
+(5.58)
+75.57
+(6.14)
+75.85
+(5.19)
+74.51
+(3.87)
+WS-UmBERTo
+80.67
+(5.21)
+75.48
+(6.45)
+78.01
+(4.02)
+78.67
+(2.97)
+WS-XLM-RoBERTa
+75.53
+(4.56)
+70.73
+(6.44)
+73.24
+(4.28)
+73.82
+(3.22)
+WS-RemBERT
+74.15
+(5.62)
+65.35
+(6.94)
+70.41
+(4.14)
+72.51
+(3.74)
+WS-LSTM
+68.57
+(6.48)
+64.97
+(9.96)
+65.52
+(5.56)
+67.50
+(4.99)
+Unsupervised
+Rule-based full-text
+70.18
+(2.42)
+87.05
+(3.93)
+77.74
+(2.61)
+-
+Rule-based diagnosis
+73.88
+(2.26)
+86.38
+(3.11)
+79.85
+(2.33)
+-
+LLaMAntino-3
+57.39
+(8.31)
+63.78
+(4.47)
+79.64
+(5.96)
+70.87
+(2.37)
+Without diagnosis string
+Weakly-supervised
+WS-UmBERTo-TPT
+84.43
+(6.02)
+77.63
+(7.57)
+80.79
+(5.47)
+80.57
+(3.58)
+WS-XLM-RoBERTa-TPT
+74.47
+(3.95)
+71.68
+(7.24)
+73.11
+(3.54)
+75.62
+(3.67)
+WS-RemBERT-TPT
+72.13
+(5.64)
+72.64
+(6.02)
+72.40
+(5.28)
+72.27
+(3.96)
+WS-UmBERTo
+80.08
+(5.89)
+72.15
+(6.74)
+76.02
+(4.95)
+76.16
+(3.55)
+WS-XLM-RoBERTa
+72.21
+(4.77)
+65.56
+(7.88)
+68.74
+(5.04)
+69.62
+(3.66)
+WS-RemBERT
+69.86
+(5.96)
+68.32
+(7.02)
+69.25
+(4.87)
+70.34
+(4.21)
+WS-LSTM
+64.98
+(6.89)
+56.22
+(10.88)
+60.54
+(6.52)
+63.00
+(5.24)
+Unsupervised
+Rule-based full-text
+65.54
+(2.42)
+79.16
+(3.93)
+71.28
+(2.61)
+-
+LLaMAntino-3
+49.81
+(5.27)
+79.91
+(6.35)
+61.12
+(4.98)
+65.32
+(6.40)
+19
+Figure 2: AUC with varying percentages of weak labels. Mean AUC (±95% CI) on gold labels, with
+and without diagnosis strings, as different proportions of gold labels are replaced by weak labels.
+Results are averaged over 5 repetitions of 10-fold cross-validation.
+time. Excluding clusters #5 or #1 does not affect the results, which is reasonable
+considering their smaller size. Removing clusters #3 or #4 has a negative effect,
+but limited. Only excluding cluster #2 determines a drop in the performance and
+an increase in the variance, which is expected since it accounts for almost half of the
+bronchiolitis cases. These results confirm the robustness of the model with respect
+to small changes in weak labels selection.
+Appendix E reports additional results comparing different hospitals, LHUs and
+pediatric vs non-pediatric ER/Departments. Some hospitals are more represented in
+the dataset, leading to a superior performance, but also hospitals with a similar num-
+ber of records show considerable performance variability, suggesting that reporting
+practices in discharge letters might influence disease detection.
+4. Discussion
+This study introduces a novel pipeline demonstrating how weakly-supervised
+learning can be effectively applied to clinical NLP. To our knowledge, this is the first
+work addressing diagnosis identification from Italian discharge letters. Although we
+20
+Table 6: 10-fold CV results for classification, considering different groups of 1st level clusters for
+weak labels. Std. Dev. in parenthesis. G = gold labels, W = weak labels
+Clusters for weak labels
+(1st level)
+P [%] (W)
+R [%](W)
+F1 [%] (W)
+AUC [%] (W)
+P [%] (G)
+R [%] (G)
+F1 [%] (G)
+AUC [%] (G)
+#1. #2. #3. #4
+78.39 (7.04)
+73.35 (6.21)
+75.79 (4.65)
+83.02 (4.16)
+70.75 (6.48)
+81.27 (6.99)
+75.65 (4.29)
+75.49 (5.57)
+#1. #2. #4. #5
+73.69 (8.89)
+83.20 (9.16)
+78.16 (7.80)
+80.71 (7.01)
+68.42 (8.70)
+75.09 (8.58)
+71.60 (7.26)
+72.67 (6.87)
+#2. #3. #4. #5
+83.49 (7.87)
+74.66 (6.88)
+78.82 (4.26)
+84.02 (4.43)
+68.54 (6.30)
+82.35 (4.94)
+74.81 (3.82)
+75.83 (5.22)
+#1. #3. #4. #5
+93.73 (6.85)
+78.11 (8.47)
+85.19 (7.06)
+90.91 (7.35)
+57.29 (12.97)
+59.03 (15.94)
+58.15 (12.45)
+68.90 (10.04)
+#1. #2. #3. #5
+80.45 (8.90)
+74.62 (8.57)
+77.43 (5.76)
+85.95 (5.29)
+67.86 (6.36)
+73.42 (8.64)
+70.53 (5.33)
+70.22 (3.10)
+validated it using a case study on bronchiolitis, the pipeline is designed to be appli-
+cable to any disease. Our case study shows excellent results, outperforming existing
+unsupervised approaches, and underscores the potential for broader application in
+clinical settings.
+We observed a good mapping between diagnosis strings and their clusters’ de-
+scriptions in the manually evaluated subset of strings, and only a limited performance
+difference between weak and gold labels (4-7 % of AUC), confirming that the SAL
+step can effectively identify relevant cases as weak labels. Despite the inevitable
+noise that weak labels introduce, this is limited enough to allow the model to per-
+form well when evaluated against gold labels. Additionally, the differences between
+settings where we retained the diagnosis strings and those where we removed them
+are limited. This indicates that the model is effectively learning from the entire text
+of the discharge letters, making it particularly advantageous when the automatic
+extraction of diagnosis strings fails. Our manual exploration of some weak labels
+further revealed that diagnosis strings do not always mention the disease responsi-
+ble for hospitalization. In some cases, they only refer to symptoms, and in cases of
+multiple diseases, not all may be reported. These findings highlight the necessity for
+a classification model based on the complete text of discharge letters, as the one we
+developed.
+In contrast, rule-based approaches underperformed because diseases like bronchi-
+olitis are not always explicitly mentioned or may appear in negated or hypothetical
+contexts. While more sophisticated rule-based systems could address some of these
+issues, such approaches lack the scalability and generalizability of our pipeline. Con-
+versely, our pipeline can be easily adapted to other diseases, which makes it a versatile
+tool for clinical NLP. The zero shot LLM performed better than rule-based and some
+weakly-supervised settings, but it did not surpass the best weakly-supervised config-
+uration. Despite the reasoning capacities of modern LLMs, their training data rarely
+include documents and tasks of this type, limiting performance.
+Domain pretraining (TPT) improved results across all models. The best perfor-
+mance was obtained with UmBERTo, trained entirely on Italian data, confirming the
+21
+advantage of language-specific representations even over larger multilingual models.
+Compared with fully supervised classifiers, our weakly supervised pipeline main-
+tained competitive performance, with a limited and acceptable loss (< 6% of AUC).
+This is particularly notable given the substantial time and effort required for manual
+annotation in fully supervised setups: in our case study, annotating the entire dataset
+would require approximately 3 minutes per discharge letter, amounting to more than
+1,500 hours of expert time. The experiment in which we progressively replaced gold
+labels with weak labels (Figure 2) reflects a realistic scenario where only a small
+portion of the data can be manually annotated. Even in this mixed-label setting,
+performance degraded smoothly and remained close to the fully supervised baseline
+as long as a modest fraction of gold labels was available, indicating strong resilience
+to label noise. The pipeline has also shown robustness to the cluster selection for
+the weak labels. This highlights its value for settings where large-scale labeling is
+infeasible.
+While our results are promising, several limitations should be acknowledged.
+First, the gold labels for bronchiolitis were assigned primarily by a single annotator,
+preventing the estimation of inter-annotator agreement and introducing potential un-
+certainty in the reference standard. Second, the multi-centric nature of our dataset,
+though a strength in its diversity, also presents an imbalance in the number of records
+from different hospitals and Local Health Units, which are also all located within a
+single Italian region. This is not only due to the geographical distribution of the
+population, but might also reflect some biases in the distribution of the family pedi-
+atricians adhering to the Pedianet network. Testing the pipeline on a more balanced
+dataset, and externally validating it on data from other regions, would strengthen
+its generalizability and allow a more precise assessment of performance differences
+among hospitals. Finally, the evaluation of intermediate steps relied on the manual
+review of a relatively small subset of diagnoses strings. Extending this annotation
+to a larger subset and assessing entire clusters would require substantial effort but
+could enable a more detailed analysis of the performance of each component in the
+pipeline.
+Future research can extend this work along multiple directions.
+The pipeline
+should be validated on multiple diseases, particularly those with overlapping symp-
+toms, using larger annotated datasets. Incorporating hospital or LHU identifiers in
+hierarchical classification models could further improve performance by accounting
+for site-specific documentation practices. Moreover, enhancing the interpretability of
+model predictions will be crucial for widespread clinical adoption. Identifying which
+portions of each discharge letter most influence the classifier’s decision would help
+clinicians assess reliability and build trust. Techniques from explainable artificial
+22
+intelligence could be applied to reveal the reasoning process behind model outputs
+and possibly recognize potential biases present in the training data.
+These future developments would strengthen both the methodological robustness
+and clinical utility of weakly supervised NLP systems for healthcare text, supporting
+scalable and trustworthy solutions for real-world applications.
+Declaration of competing interests
+The authors declare that they have no competing interests.
+Data statement
+Data used in this study are not publicly available due to their confidential nature.
+Data are however available upon reasonable request to the corresponding author,
+subject to approval by the Internal Scientific Committee of Societ`a Servizi Telematici
+Srl, the legal owner of Pedianet.
+The code developed for the analysis is available at https://github.com/vittot/
+weakly-supervised-classification-italian-discharge-letters .
+CRediT authorship contribution statement
+Vittorio Torri: Methodology, Software, Investigation, Writing - Original Draft
+Elisa Barbieri: Conceptualization, Data Curation, Writing - Review & Editing
+Anna Cantarutti: Conceptualization, Data Curation, Writing - Review & Editing
+Carlo Giaquinto: Conceptualization, Supervision Francesca Ieva: Conceptual-
+ization, Methodology, Writing - Review & Editing, Supervision
+Acknowledgments
+Vittorio Torri and Francesca Ieva have been partially supported by MUR, grant
+Dipartimento di Eccellenza 2023-2027 awarded to the Department of Mathematics,
+Politecnico di Milano.
+Elisa Barbieri declares that her position is funded within the project “INF-ACT
+- One Health Basic and translational Research Actions addressing Unmet Needs on
+Emerging Infectious Diseases”, ID MUR PE 00000007, under the National Recovery
+and Resilience Plan (NRRP), Mission 4, Cofmponent 2 – CUP C93C22005170007.
+The authors thank all the family paediatricians collaborating in Pedianet: Eva
+Alfieri, Michela Alfiero Bordigato, Angelo Alongi, Biagio Amoroso, Rosaria Ancar-
+ola, Barbara Andreola, Giampaolo Anese, Roberta Angelini, Maria Grazia Apos-
+tolo, Giovanna Argo, Giovanni Avarello, Lucia Azzoni, Maria Carolina Barbazza,
+23
+Patrizia Barbieri, Gabriele Belluzzi, Eleonora Benetti, Filippo Biasci, Franca Boe,
+Stefano Bollettini, Francesco Bonaiuto, Anna Maria Bontempelli, Matteo Bonza,
+Sara Bozzetto, Andrea Bruna, Ivana Brusaterra, Massimo Caccini, Laura Cal`ı, So-
+nia Camposilvan, Laura Cantalupi, Luigi Cantarutti, Chiara Cardarelli, Giovanna
+Carli, Sylvia Carnazza, Massimo Castaldo, Stefano Castelli, Monica Cavedagni,
+Giuseppe Egidio Cera, Chiara Chillemi, Francesca Cichello, Giuseppe Cicione, Carla
+Ciscato, Mariangela Clerici Schoeller, Samuele Cocchiola, Giuseppe Collacciani, Va-
+leria Conte, Roberta Corro’, Rosaria Costagliola, Nicola Costanzo, Sandra Cozzani,
+Giancarlo Cuboni, Giorgia Curia, Caterina D’alia, Vito Francesco D’Amanti, An-
+tonio D’Avino, Roberto De Clara, Lorenzo De Giovanni, Annamaria De Marchi,
+Gigliola Del Ponte, Tiziana Di Giampietro, Giuseppe Di Mauro, Giuseppe Di Santo,
+Piero Di Saverio, Mattea Dieli, Marco Dolci, Mattia Doria, Dania El Mazloum,
+Maria Carmen Fadda, Pietro Falco, Mario Fama, Marco Faraci, Maria Immaco-
+lata Farina, Tania Favilli, Mariagrazia Federico, Michele Felice, Maurizio Ferraiuolo,
+Michele Ferretti, Mauro Gabriele Ferretti, Paolo Forcina, Patrizia Foti, Luisa Freo,
+Ezio Frison, Fabrizio Fusco, Giovanni Gallo, Roberto Gallo, Andrea Galvagno, Al-
+berta Gentili, Pierfrancesco Gentilucci, Giuliana Giampaolo, Francesco Gianfredi,
+Isabella Giuseppin, Laura Gnesi, Costantino Gobbi, Renza Granzon, Mauro Grel-
+loni, Mirco Grugnetti, Antonina Isca, Urania Elisabetta Lagrasta, Maria Rosaria
+Letta, Giuseppe Lietti, Cinzia Lista, Ricciardo Lucantonio, Francesco Luise, En-
+rico Marano, Francesca Marine, Lorenzo Mariniello, Gabriella Marostica, Sergio Ma-
+sotti, Stefano Meneghetti, Massimo Milani, Stella Vittoria Milone, Donatella Moggia,
+Angela Maria Monteleone, Pierangela Mussinu, Anna Naccari, Immacolata Naso,
+Flavia Nicoloso, Cristina Novarini, Laura Maria Olimpi, Riccardo Ongaro, Maria
+Maddalena Palma, Angela Pasinato, Andrea Passarella, Pasquale Pazzola, Mon-
+ica Perin, Danilo Perri, Silvana Rosa Pescosolido, Giovanni Petrazzuoli, Giuseppe
+Petrotto, Patrizia Picco, Ambrogina Pirola, Lorena Pisanello, Daniele Pittarello,
+Elena Porro, Antonino Puma, Maria Paola Puocci, Andrea Righetti, Rosaria Rizzari,
+Cristiano Rosafio, Paolo Rosas, Bruno Ruffato, Lucia Ruggieri, Annamaria Ruscitti,
+Annarita Russo, Pietro Salamone, Daniela Sambugaro, Luigi Saretta, Vittoria Sarno,
+Valentina Savio, Nico Maria Sciolla, Rossella Semenzato, Paolo Senesi, Carla Silvan,
+Giorgia Sold`a, Valter Spanevello, Sabrina Spedale, Francesco Speranza, Sara Stefani,
+Francesco Storelli, Paolo Tambaro, Giacomo Toffol, Gabriele Tonelli, Silvia Tulone,
+Angelo Giuseppe Tummarello, Cristina Vallongo, Sergio Venditti, Maria Grazia Vi-
+tale, Concetta Volpe, Francescopaolo Volpe, Aldo Vozzi, Giulia Zanon, Maria Luisa
+Zuccolo.
+24
+References
+[1] M. Tayefi, P. Ngo, T. Chomutare, H. Dalianis, E. Salvi, A. Budrionis,
+F. Godtliebsen, Challenges and opportunities beyond structured data in analy-
+sis of electronic health records, Wiley Interdisciplinary Reviews: Computational
+Statistics 13 (6) (2021) e1549.
+[2] M. R. Cowie, J. I. Blomster, L. H. Curtis, S. Duclaux, I. Ford, F. Fritz, S. Gold-
+man, S. Janmohamed, J. Kreuzer, M. Leenay, et al., Electronic health records
+to facilitate clinical research, Clinical Research in Cardiology 106 (2017) 1–9.
+[3] P. M. Nadkarni, L. Ohno-Machado, W. W. Chapman, Natural language process-
+ing: an introduction, Journal of the American Medical Informatics Association
+18 (5) (2011) 544–551.
+[4] D. Khurana, A. Koli, K. Khatter, S. Singh, Natural language processing: State
+of the art, current trends and challenges, Multimedia tools and applications
+82 (3) (2023) 3713–3744.
+[5] E. Hossain, R. Rana, N. Higgins, J. Soar, P. D. Barua, A. R. Pisani, K. Turner,
+Natural language processing in electronic health records in relation to healthcare
+decision-making: a systematic review, Computers in biology and medicine 155
+(2023) 106649.
+[6] C. Friedman, N. Elhadad, Natural language processing in health care and
+biomedicine, Biomedical Informatics: Computer Applications in Health Care
+and Biomedicine (2014) 255–284.
+[7] O. G. Iroju, J. O. Olaleke, A systematic review of natural language processing
+in healthcare, International Journal of Information Technology and Computer
+Science 8 (2015) 44–50.
+[8] A. N´ev´eol, H. Dalianis, S. Velupillai, G. Savova, P. Zweigenbaum, Clinical nat-
+ural language processing in languages other than english: opportunities and
+challenges, Journal of biomedical semantics 9 (1) (2018) 1–13.
+[9] W. H. Organization, International Statistical Classification of Diseases and re-
+lated health problems - 10th revision - 5th edition, Vol. 3, World Health Orga-
+nization, 2016.
+[10] S. H. Walsh, The clinician’s perspective on electronic health records and how
+they can affect patient care, Bmj 328 (7449) (2004) 1184–1187.
+25
+[11] P. Millares Martin, Consultation analysis: use of free text versus coded text,
+Health and Technology 11 (2) (2021) 349–357.
+[12] P. Walsh, S. J. Rothenberg, Which icd-9-cm codes should be used for bronchi-
+olitis research?, BMC Medical Research Methodology 18 (2018) 1–11.
+[13] F. Cozzolino, E. Bidoli, I. Abraha, M. Fusco, G. Giovannini, P. Casucci, M. Orso,
+A. Granata, M. De Giorgi, P. Collarile, et al., Accuracy of colorectal cancer
+icd-9-cm codes in italian administrative healthcare databases: a cross-sectional
+diagnostic study, BMJ open 8 (7) (2018) e020630.
+[14] C. W. Cipparone, M. Withiam-Leitch, K. S. Kimminau, C. H. Fox, R. Singh,
+L. Kahn, Inaccuracy of icd-9 codes for chronic kidney disease: a study from two
+practice-based research networks (pbrns), The Journal of the American Board
+of Family Medicine 28 (5) (2015) 678–682.
+[15] H. Dong, M. Falis, W. Whiteley, B. Alex, J. Matterson, S. Ji, J. Chen, H. Wu,
+Automated clinical coding: what, why, and where we are?, NPJ digital medicine
+5 (1) (2022) 159.
+[16] H. Mehrafarin, S. Rajaee, M. T. Pilehvar, On the importance of data size in
+probing fine-tuned models, in: Findings of the Association for Computational
+Linguistics: ACL 2022, 2022, pp. 228–238.
+[17] C. Lanera, P. Berchialla, I. Baldi, G. Lorenzoni, L. Tramontan, A. Scamarcia,
+L. Cantarutti, C. Giaquinto, D. Gregori, Use of machine learning techniques
+for case-detection of varicella zoster using routinely collected textual ambula-
+tory records: Pilot observational study, JMIR Medical Informatics 8 (5) (2020)
+e14330.
+[18] C. Lanera, I. Baldi, A. Francavilla, E. Barbieri, L. Tramontan, A. Scamarcia,
+L. Cantarutti, C. Giaquinto, D. Gregori, A deep learning approach to esti-
+mate the incidence of infectious disease cases for routinely collected ambulatory
+records: The example of varicella-zoster, International Journal of Environmental
+Research and Public Health 19 (10) (2022) 5959.
+[19] S. Veronica, J. P. Daniele, F. Elisa, A. Ricotti, R. Fulvio, C. Giuseppe,
+P. Berchialla, Deep learning for predicting urgent hospitalizations in elderly pop-
+ulation using healthcare administrative databases, Available at SSRN 4022016
+(2022).
+26
+[20] L. Hammami, A. Paglialonga, G. Pruneri, M. Torresani, M. Sant, C. Bono, E. G.
+Caiani, P. Baili, Automated classification of cancer morphology from italian
+pathology reports using natural language processing techniques: A rule-based
+approach, Journal of Biomedical Informatics 116 (2021) 103712.
+[21] N. Viani, C. Larizza, V. Tibollo, C. Napolitano, S. G. Priori, R. Bellazzi, L. Sac-
+chi, Information extraction from italian medical reports: An ontology-driven
+approach, International journal of medical informatics 111 (2018) 140–148.
+[22] N. Viani, T. A. Miller, C. Napolitano, S. G. Priori, G. K. Savova, R. Bellazzi,
+L. Sacchi, Supervised methods to extract clinical events from cardiology reports
+in italian, Journal of biomedical informatics 95 (2019) 103219.
+[23] A. E. Johnson, T. J. Pollard, L. Shen, L.-w. H. Lehman, M. Feng, M. Ghas-
+semi, B. Moody, P. Szolovits, L. Anthony Celi, R. G. Mark, Mimic-iii, a freely
+accessible critical care database, Scientific data 3 (1) (2016) 1–9.
+[24] A. E. Johnson, L. Bulgarelli, L. Shen, A. Gayles, A. Shammout, S. Horng, T. J.
+Pollard, S. Hao, B. Moody, B. Gow, et al., Mimic-iv, a freely accessible electronic
+health record dataset, Scientific data 10 (1) (2023) 1.
+[25] J. Edin, A. Junge, J. D. Havtorn, L. Borgholt, M. Maistro, T. Ruotsalo,
+L. Maaløe, Automated medical coding on mimic-iii and mimic-iv: a critical
+review and replicability study, in: Proceedings of the 46th International ACM
+SIGIR Conference on Research and Development in Information Retrieval, 2023,
+pp. 2572–2582.
+[26] F. Li, H. Yu, Icd coding from clinical text using multi-filter residual convo-
+lutional neural network, in: proceedings of the AAAI conference on artificial
+intelligence, Vol. 34, 2020, pp. 8180–8187.
+[27] M. Li, Z. Fei, M. Zeng, F.-X. Wu, Y. Li, Y. Pan, J. Wang, Automated icd-9
+coding via a deep learning approach, IEEE/ACM transactions on computational
+biology and bioinformatics 16 (4) (2018) 1193–1202.
+[28] M. Falter, D. Godderis, M. Scherrenberg, S. E. Kizilkilic, L. Xu, M. Mertens,
+J. Jansen, P. Legroux, H. Kindermans, P. Sinnaeve, et al., Using natural lan-
+guage processing for automated classification of disease and to identify misclas-
+sified icd codes in cardiac disease, European Heart Journal-Digital Health 5 (3)
+(2024) 229–234.
+27
+[29] S. Boytcheva, Automatic matching of icd-10 codes to diagnoses in discharge
+letters, in: Proceedings of the second workshop on biomedical natural language
+processing, 2011, pp. 11–18.
+[30] B. Velichkov, S. Gerginov, P. Panayotov, S. Vassileva, G. Velchev, I. Koychev,
+S. Boytcheva, Automatic icd-10 codes association to diagnosis: Bulgarian case,
+in: CSBio’20: Proceedings of the Eleventh International Conference on Compu-
+tational Systems-Biology and Bioinformatics, 2020, pp. 46–53.
+[31] A. Bagheri, A. Sammani, P. G. Van der Heijden, F. W. Asselbergs, D. L. Ober-
+ski, et al., Automatic icd-10 classification of diseases from dutch discharge let-
+ters, in: In conjunction with the 13th International Joint Conference on Biomed-
+ical Engineering Systems and Technologies-BIOSTEC 2020, 2020.
+[32] J. R. van Leeuwen, E. L. Penne, T. Rabelink, R. Knevel, Y. O. Teng, Using
+an artificial intelligence tool incorporating natural language processing to iden-
+tify patients with a diagnosis of anca-associated vasculitis in electronic health
+records, Computers in Biology and Medicine 168 (2024) 107757.
+[33] L. Lenc, J. Mart´ınek, J. Baloun, P. Pˇrib´aˇn, M. Prantl, S. E. Taylor, P. Kr´al,
+J. Kyliˇs, Czech medical coding assistant based on transformer networks, Com-
+puters in Biology and Medicine (2024) 108672.
+[34] S. Remmer, A. Lamproudis, H. Dalianis, Multi-label diagnosis classification
+of swedish discharge summaries–icd-10 code assignment using kb-bert, in:
+International Conference Recent Advances in Natural Language Processing
+(RANLP’21), online, September 1-3, 2021, INCOMA Ltd., 2021, pp. 1158–1166.
+[35] J. Sanyal, D. Rubin, I. Banerjee, A weakly supervised model for the automated
+detection of adverse events using clinical notes, Journal of Biomedical Informat-
+ics 126 (2022) 103969.
+[36] Y. Wang, S. Sohn, S. Liu, F. Shen, L. Wang, E. J. Atkinson, S. Amin, H. Liu,
+A clinical text classification paradigm using weak supervision and deep repre-
+sentation, BMC medical informatics and decision making 19 (1) (2019) 1.
+[37] M. Cusick, P. Adekkanattu, T. R. Campion Jr, E. T. Sholle, A. Myers, S. Baner-
+jee, G. Alexopoulos, Y. Wang, J. Pathak, Using weak supervision and deep
+learning to classify clinical notes for identification of current suicidal ideation,
+Journal of psychiatric research 136 (2021) 95–102.
+28
+[38] S. Y. Wang, J. Huang, H. Hwang, W. Hu, S. Tao, T. Hernandez-Boussard,
+Leveraging weak supervision to perform named entity recognition in electronic
+health records progress notes to identify the ophthalmology exam, International
+journal of medical informatics 167 (2022) 104864.
+[39] M. Humbert-Droz, P. Mukherjee, O. Gevaert, et al., Strategies to address the
+lack of labeled data for supervised machine learning training with electronic
+health records: case study for the extraction of symptoms from clinical notes,
+JMIR medical informatics 10 (3) (2022) e32903.
+[40] J. J. Zorc, C. B. Hall, Bronchiolitis: recent evidence on diagnosis and manage-
+ment, Pediatrics 125 (2) (2010) 342–349.
+[41] A. Cantarutti, C. Giaquinto, Pedianet database, in: Databases for Pharma-
+coepidemiological Research, Springer, 2021, pp. 159–164.
+[42] Y. Durani, M. J. Friedman, M. W. Attia, Clinical predictors of respiratory
+syncytial virus infection in children, Pediatrics International 50 (3) (2008) 352–
+355.
+[43] A. T. Gebremedhin, A. B. Hogan, C. C. Blyth, K. Glass, H. C. Moore, Devel-
+oping a prediction model to estimate the true burden of respiratory syncytial
+virus (rsv) in hospitalised children in western australia, Scientific reports 12 (1)
+(2022) 332.
+[44] P. Vartiainen, S. Jukarainen, S. A. Rhedin, A. Prinz, T. Hartonen, A. Vabalas,
+E. Viippola, R. S. Rodosthenous, S. Koskelainen, A. Liu, et al., Risk factors for
+severe respiratory syncytial virus infection during the first year of life: develop-
+ment and validation of a clinical prediction model, The Lancet Digital Health
+5 (11) (2023) e821–e830.
+[45] T. Mikolov, K. Chen, G. Corrado, J. Dean, Efficient estimation of word repre-
+sentations in vector space, in: ICLR Workshop, 2013, pp. 1–12.
+[46] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+ L. Kaiser, I. Polosukhin, Attention is all you need, Advances in neural infor-
+mation processing systems 30 (2017).
+[47] J. Devlin, M.-W. Chang, K. Lee, K. Toutanova, Bert: Pre-training of deep bidi-
+rectional transformers for language understanding, in: Proceedings of the 2019
+29
+Conference of the North American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies, Volume 1 (Long and Short
+Papers), 2019, pp. 4171–4186.
+[48] Y. Liu, M. Ott, N. Goyal, J. Du, M. Joshi, D. Chen, O. Levy, M. Lewis, L. Zettle-
+moyer, V. Stoyanov, Roberta: A robustly optimized bert pretraining approach,
+arXiv preprint arXiv:1907.11692 (2019).
+[49] J. Lee, W. Yoon, S. Kim, D. Kim, S. Kim, C. H. So, J. Kang, Biobert: a pre-
+trained biomedical language representation model for biomedical text mining,
+Bioinformatics 36 (4) (2020) 1234–1240.
+[50] E. Alsentzer, J. Murphy, W. Boag, W.-H. Weng, D. Jindi, T. Naumann, M. Mc-
+Dermott, Publicly available clinical bert embeddings, in: Proceedings of the 2nd
+Clinical Natural Language Processing Workshop, 2019, pp. 72–78.
+[51] F. Tamburini, How “bertology” changed the state-of-the-art also for italian nlp,
+Computational Linguistics CLiC-it 2020 (2020) 415.
+[52] B. Magnini, B. Altuna, A. Lavelli, M. Speranza, R. Zanoli, The e3c project: Col-
+lection and annotation of a multilingual corpus of clinical cases, in: Proceedings
+of the Seventh Italian Conference on Computational Linguistics, 2020.
+[53] R. J. Campello, D. Moulavi, J. Sander, Density-based clustering based on hier-
+archical density estimates, in: Pacific-Asia conference on knowledge discovery
+and data mining, Springer, 2013, pp. 160–172.
+[54] M. S. Asyaky, R. Mandala, Improving the performance of hdbscan on short text
+clustering by using word embedding and umap, in: 2021 8th international con-
+ference on advanced informatics: Concepts, theory and applications (ICAICTA),
+IEEE, 2021, pp. 1–6.
+[55] S. Yeasmin, N. Afrin, M. R. Huq, Transformer-based text clustering for newspa-
+per articles, in: International Conference on Machine Intelligence and Emerging
+Technologies, Springer, 2022, pp. 443–457.
+[56] M. Polignano, P. Basile, G. Semeraro, Advanced natural-based interaction
+for the italian language: Llamantino-3-anita, arXiv preprint arXiv:2405.07101
+(2024).
+30
+[57] A. Conneau, K. Khandelwal, N. Goyal, V. Chaudhary, G. Wenzek, F. Guzm´an,
+E. Grave, M. Ott, L. Zettlemoyer, V. Stoyanov, Unsupervised cross-lingual rep-
+resentation learning at scale, in: D. Jurafsky, J. Chai, N. Schluter, J. Tetreault
+(Eds.), Proceedings of the 58th Annual Meeting of the Association for Compu-
+tational Linguistics, Association for Computational Linguistics, Online, 2020,
+pp. 8440–8451.
+[58] H. W. Chung, T. Fevry, H. Tsai, M. Johnson, S. Ruder, Rethinking embed-
+ding coupling in pre-trained language models, arXiv preprint arXiv:2010.12821
+(2020).
+[59] W. J. Youden, Index for rating diagnostic tests, Cancer 3 (1) (1950) 32–35.
+[60] T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhariwal, A. Nee-
+lakantan, P. Shyam, G. Sastry, A. Askell, et al., Language models are few-shot
+learners, Advances in neural information processing systems 33 (2020) 1877–
+1901.
+31
+Appendix A. Dataset
+Appendix A.1. Records distributions among hospitals and LHUs
+Figures A.1 and A.2 show the distribution of records across hospitals and LUHs,
+highlighting the number of positive bronchiolitis cases and the percentage of records
+from pediatric ER/Departments.
+Figure A.1: A. Distribution of bronchiolitis cases among hospitals. B. Distribution of bronchiolitis
+cases among LHUs.
+32
+Figure A.2: A. Distribution of records among hospitals (only hospitals with > 50 records). B.
+Distribution of records among LHUs (only LHUs with > 50 cases). For each hospital/LHU, the
+blue bar indicates the total number of records, the light blue bar the records from pediatric ER/de-
+partments and the value on top of the bars is the % of pediatric records in the hospital/LHU.
+33
+Appendix A.2. Discharge letters example
+An example of a discharge letter is reported below. This letter is a synthetic
+example similar in the type of content to those present in the analyzed dataset. We
+report it in both Italian and English.
+SERVIZIO SANITARIO NAZIONALE −REGIONE VENETO
+Azienda ULSS n.
+−
+Presidio Ospedaliero di
+Unita’ Operativa di Pediatria Degenze
+Data:
+Egregio Collega,
+si dimette in data odierna: nato/a il
+Data e ora di ricovero:
+Diagnosi:
+INSUFFICIENZA RESPIRATORIA IN BRONCOSPASMO
+Decorso Clinico e Conclusioni:
+E.O. all’ingresso: condizioni generali sufficienti, Sat.O2 = 96%, FC = 154/m’. F.R.= 50/m’, P.A. = 100/60. Kg = 13,250, T
+= 36,3C
+Paziente pallido, polipnoica, al torace ridotta penetrazione d’aria, con ronchi e gemiti espiratori sparsi. Azione cardiaca
+valida e
+ritmica, addome piano, trattabile, non dolente ne’ dolorabile sia alla palpazione superficiale che profonda in tutti i
+quadranti, organi
+ipocondriaci nei limiti, peristalsi vivace. Faringe leggermente iperemico. Es. neurologico negativo. Non segni meningei.
+Sono stati eseguiti i seguenti esami, risultati negativi:
+Es. emocromocitometrico, azotemia, creatininemi, elettroliti, transaminasi, PCR, emogasanalisi.
+E’ stato riscontrato un modesto aumento della glicemia, dovuta allasomministrazione di cortisone.
+E’ stata iniziata terapia con O2 e con aerosol con broncovaleas 8 gtt + sol. fisiologica una somministrazione ogni 30 m’ per
+3 volte,
+seguita da somministrazione dello stesso prodotto ( 8 gtt) 8 volte al di’ (ogni 3 h), con buona risposta da parte della
+sintomatologia
+respiratoria. Alla terapia aerosolica e’ stata associata terapia cortisonica per os con bentelan, 1,0 mg 2 volte al di’.
+i
+Programma alla dimissione:
+A domicilio si consiglia:
+−Aerosol con broncovaleas 6 gtt + sol. fisiol. 3 −4 volte al di’ per 3 −5 giorni.
+−Lavaggi nasali con sol. fisiol. sei volte al di’ per 3 −5 giorni.
+−Bentelan 2 cp da 0,5 mg alla sera, a stomaco pieno, per 2 giorni.
+Consigli Clinici:
+Si consiglia inoltre controllo presso il pediatra curante nei prossimi giorni.
+A disposizione per ulteriori chiarimenti, inviamo cordiali saluti
+Cordiali saluti
+Dr.
+PED1D Pediatria Degenze
+INFORMAZIONE
+Gentile signore/ signora, desideriamo renderla partecipe che per il suo percorso di cura e stato stimato un impiego di risorse
+economiche da parte del Servizio Sanitario Regionale pari a Euro 1.945,69
+Paziente: ( ID: )
+Episodio N.: /01 ( Unita’ Operativa di PED1D Pediatria Degenze )
+stampato il Pag.1 of 1
+Referto firmato digitalmente.
+NATIONAL HEALTH SERVICE −VENETO REGION
+ULSS Company No.
+−
+Hospital of
+Pediatric Unit Hospitalization
+Date:
+Dear Colleague,
+discharged today: born on
+Date and time of admission:
+Diagnosis:
+RESPIRATORY FAILURE IN BRONCHOSPASM
+Clinical Course and Conclusions:
+Upon admission: general condition sufficient, Sat.O2 = 96%, HR = 154/m’, RR = 50/m’, BP = 100/60. Weight = 13,250 kg
+, T = 36.3C
+Patient pale, tachypneic, with reduced air entry in the chest, with scattered wheezing and expiratory moaning. Valid and
+rhythmic
+cardiac action, flat abdomen, treatable, not painful or tender on both superficial and deep palpation in all quadrants,
+hypochondriac
+organs within limits, active peristalsis. Pharynx slightly hyperemic. Neurological exam negative. No meningeal signs.
+The following tests were performed, all negative:
+34
+Blood count, urea, creatinine, electrolytes, transaminases, CRP, blood gas analysis.
+A slight increase in blood glucose was found, due to the administration of cortisone.
+Therapy was started with O2 and aerosol with broncovaleas 8 drops + saline solution, one administration every 30 minutes
+for 3 times,
+followed by administration of the same product (8 drops) 8 times a day (every 3 hours), with good response from
+respiratory symptoms.
+Aerosol therapy was combined with oral cortisone therapy with bentelan, 1.0 mg twice a day.
+i
+Discharge Plan:
+At home, it is advised:
+−Aerosol with broncovaleas 6 drops + saline solution 3 −4 times a day for 3 −5 days.
+−Nasal washes with saline solution six times a day for 3 −5 days.
+−Bentelan 2 tablets of 0.5 mg in the evening, on a full stomach, for 2 days.
+Clinical Recommendations:
+It is also advised to check with the primary care pediatrician in the coming days.
+Available for further clarification, we send our best regards.
+Best regards,
+Dr.
+PED1D Pediatric Hospitalization
+INFORMATION
+Dear sir/madam, we wish to inform you that an estimated expenditure of resources by the Regional Health Service for your
+care is
+Euro 1,945.69.
+Patient: ( ID: )
+Episode No.: /01 ( Pediatric Unit of PED1D Hospitalization )
+printed on Page 1 of 1
+Digitally signed report.
+Appendix A.3. E3C Corpus
+Table A.1 reports the details about the composition of the E3C corpus.
+Table A.1: Number of documents in the E3C corpus for the different languages and types of sources
+Source\Language
+English
+French
+Italian
+Spanish
+Basque
+pubmed
+9318
+132
+0
+0
+0
+journal
+716
+1637
+798
+504
+201
+SPACCC corpus
+0
+0
+0
+1645
+0
+other
+0
+24220
+9675
+0
+1232
+Appendix B. Pre-processing
+From diagnosis strings we remove punctuation, dates and times, and we trim new
+lines and spaces in excess.
+To remove headers and footers from the text of whole letters we report below the
+strings used as identifiers of sentences to be removed.
+regione
+azienda
+dipartimento*
+pronto soccorso pediatrico*
+u.o.c*
+35
+UOC *
+operativa*
+accettazione*
+u.o*
+UO *
+uo.*
+U.L.S.S.*
+ULSS*
+ospedale*
+presidio ospedaliero*
+via*
+punto di primo intervento
+pediatria*
+verbale*
+pag.
+pag
+pagina
+nato*
+tess.san
+codice fiscale
+comune di nascita
+cap
+indirizzo
+cartella dea
+documento firmato digitalmente
+informazione ai sensi
+il medico dimettente
+gentile signor
+copia di documento firmato e conservato
+desideriamo renderLa partecipe
+modulo di pronto soccorso
+direttore*
+ai genitori
+al medico
+indirizzo
+residente
+residenza
+nome
+36
+cognome
+firma
+consegnare al proprio pediatra
+l’orario di alcune prestazioni
+verbale di pronto soccorso
+della cartella*
+modulo di
+numero di certificato
+firmatario
+il referto e\ conservato
+ID Documento
+gentile signore
+informazione
+dettagli paziente
+verbale n
+cartella DEA
+priorita*
+tel
+fax
+indirizzo
+residenza
+domicilio
+segreteria
+data e ora
+Those with * must be removed only when they are strictly at the beginning of the
+document. Otherwise, they might not necessarily indicate a header sentence.
+Figure B.1 reports the difference in results with and without this preprocessing.
+37
+Figure B.1: AUC (±95% C.I.) on gold labels with and without pre-processing
+Appendix C. Diagnosis extraction
+To extract diagnosis strings, we initially consider the following keywords to be
+looked for at the beginning of a sentence
+diagnosi
+diagnosi di dimissione
+diagnosi alla dimissione
+diagnosi testuale
+We initially take as a diagnosis string the sentence that follows the keywords we
+identified among the ones above. It can be on the same line, if present, or on the
+following line.
+Then, this candidate diagnosis string is cleaned by removing the
+portion(s) related to the following expressions:
+decorso clinico
+consigli terapeutici
+consiglio
+controllo
+38
+a domicilio
+paziente: ( id: \d+)
+These keywords are followed by indications related to therapies to be followed after
+discharge or additional details of the hospital stay, which are not strictly part of the
+diagnosis string. In particular, if we identify these keywords, we remove the portion
+of the sentence that starts from them up to the next major punctuation sign (dot or
+semicolumn). The remaining portion, if any, is extracted as a diagnosis string.
+Table C.1 reports the most frequently extracted diagnosis sentences.
+39
+Table C.1: Most common diagnosis sentences extracted from discharge letters
+(frequency >100)
+Extracted Diagnosis [ITA]
+Extracted Diagnosis [ENG]
+N. Occ.
+virosi
+virosis
+598
+079.99 infezioni virali,non specifi-
+cate
+079.99 viral infections,unspecified
+351
+nato
+singolo,nato
+in
+ospedale
+senza menzione di taglio cesareo
+single-born child,born in hospital
+without mention of cesarean sec-
+tion
+324
+gastroenterite
+gastroenteritis
+323
+trauma cranico minore
+minor head injury
+212
+febbre
+fever
+190
+trauma cranico non commotivo
+non-concussive head injury
+174
+dolore addominale
+abdominal pain
+170
+780.6 febbre
+780.6 fever
+139
+orticaria
+hives
+135
+broncospasmo
+bronchospasm
+117
+519.11 broncospasmo acuto
+519.11 acute bronchospasm
+116
+febbre di recente insorgenza
+fever of recent onset
+112
+gastroenterite acuta
+acute gastroenteritis
+109
+otite
+otitis
+106
+trauma cranico
+head injury
+106
+009.1 colite,enterite e gastroen-
+terite di presunta origine infettiva
+009.1
+colitis,enteritis
+and
+gas-
+troenteritis of presumed infec-
+tious origin
+104
+vomito
+vomit
+104
+flogosi delle alte vie respiratorie
+upper respiratory tract inflamma-
+tion
+102
+bronchiolite
+bronchiolitis
+102
+Appendix D. Additional clustering results
+To assess the robustness of the weak-label generation process, we compared clus-
+terings obtained using multiple HDBSCAN, k-means, and agglomerative hierarchical
+clustering configurations. As shown in Figure D.1, HDBSCAN solutions exhibited
+very high internal consistency across parameter settings (ARI and NMI often > 0.7),
+indicating that the underlying structure captured by the algorithm is stable.
+In
+contrast, clusterings from k-means and agglomerative hierarchical clustering formed
+40
+Figure D.1: Adjusted Rand Index (ARI) (A) and Normalized Mutual Information (NMI) (B)
+among clusters obtained with different algorithms (HDBSCAN, K-Means, Agglomerative Hierar-
+chical Clustering), with different hyperparameters. For HDBSCAN mcs = minimum cluster size,
+ms=minimum number of samples. For K-Means and Agglomerative Hierarchical Clustering, kmin,
+kmed and kmax use as number of clusters the minimum, median or maximum number of clusters
+found by HDBSCAN, respectively.
+41
+Figure D.2: AUCs (±95% C.I.) obtained in 10-fold cross validation using weak labels derived by
+applying different clustering algorithms (HDBSCAN, K-Means, Agglomerative Hierarchical Cluster-
+ing), with different hyperparameters. For HDBSCAN mcs = minimum cluster size, ms=minimum
+number of samples.
+For K-Means and Agglomerative Hierarchical Clustering, kmin, kmed and
+kmax use as number of clusters the minimum, median or maximum number of clusters found by
+HDBSCAN, respectively.
+42
+separate blocks with substantially lower agreement with HDBSCAN (ARI 0.2–0.4),
+suggesting that these methods partition the data according to different inductive
+biases. We then evaluated the downstream utility of the derived weak labels in a su-
+pervised classification task (Figure D.2). Weak labels obtained from HDBSCAN con-
+sistently yielded the highest AUC values, whereas those from k-means and Ward re-
+sulted in lower performance. Although HDBSCAN configurations displayed broadly
+similar performance, some parameter choices led to noticeably larger uncertainty in
+downstream AUC estimates. This suggests that larger minimum cluster sizes and
+intermediate values of min samples provide more stable weak labels and should be
+preferred as a starting point.
+Another additional comparison that we report here is otbained by varying the
+embedding model.
+In particular, we experiment using the embeddings produced
+by the original Umberto model. This leads to 488 clusters at the first level and
+119 at the second level. Tables D.1 and D.2 describe the twenty largest clusters
+identified with the Umberto-TPT and the original Umberto, respectively. Table D.3
+reports the main first-level clusters related to respiratory infections and Table D.4
+the corresponding second-level clusters, using the original Umberto model.
+43
+Table D.1: Keyword-based representation of the twenty largest first-level diagnosis clusters obtained
+with Umberto-TPT
+Cluster size
+Cluster keywords [ITA]
+Cluster keywords [ENG]
+270
+flogosi vie
+phlogosis airways
+145
+trauma cranico
+head injury
+143
+contusione dito mano
+contusion finger hand
+116
+gastroenterite verosimile
+probable gastroenteritis
+114
+episodio febbre
+fever episode
+94
+vie infezione
+tract infection
+93
+pronazione dolorosa
+painful pronation
+78
+ferita labbro
+lip wound
+75
+otite media acuta
+acute otitis media
+70
+ferita lacero-contusa
+lacerocontused wound
+66
+trauma contusivo
+blunt trauma
+66
+broncospasmo flogosi vie
+bronchospasm pathway inflammation
+64
+puntura insetto
+insect bite
+62
+ferita lacero-contusa
+lacerocontused wound
+59
+trauma dx
+right-handed trauma
+58
+ustione grado
+burn degree
+54
+frattura ferita
+wound fracture
+54
+ferita lacero contusa destra
+right-handed lacerocontused wound
+53
+insorgenza recente febbre
+recent onset fever
+53
+contusione piede destro dito
+right foot toe contusion
+44
+Table D.2: Keyword-based representation of the twenty largest first-level diagnosis clusters from
+the original Umberto representation
+Cluster size
+Cluster keywords [ITA]
+Cluster keywords ENG
+615
+trauma cranico
+head injury
+498
+nato taglio
+born section
+405
+diagnosi reazione locale vac-
+cino
+diagnosis specific vaccine re-
+action
+368
+infezioni specificate
+specified infections
+333
+ansia cellulite diarrea febbre
+frattura influenza vomito
+anxiety
+cellulite
+diarrhea
+fever fracture flu vomiting
+238
+aeree flogosi vie
+flogosis airways
+232
+congiuntivite specificata
+painful pronation
+226
+flogosi vie
+flogosis airways
+206
+appendicite
+congiuntivite
+enterite rinite
+appendicitis
+conjunctivitis
+enteritis rhinitis
+199
+allergica orticaria pregressa
+previous allergic orticaria
+195
+coxalgia otalgia
+coxalgia otalgia
+178
+broncospasmo episodio
+bronchospasm episode
+178
+broncospasmo
+laringospasmo
+bronchospasm
+laryn-
+gospasm
+170
+d insetto puntura
+insect bite
+148
+acuta gastroenterite
+acute gastroenteritis
+144
+alte
+infezione
+respiratorie
+vie
+high airways infection
+140
+enterite gastroenterite
+enteritis gastroenteritis
+136
+faringotonsillite virale
+viral pharyngotonsillitis
+135
+insorgenza recente
+recent onset
+133
+acuta bronchiolite bronchite
+acute bronchiolitis bronchi-
+tis
+45
+Table D.3: Keyword-based representation of the first-level clusters related to respiratory infections, with the % of bronchiolitis
+cases in each cluster and the % to the total number of cases in the dataset from the original Umberto representation
+Cluster
+#
+Cluster keywords [ITA]
+Cluster keywords [ENG]
+Within cluster bronch. %
+% of total bronch.
+covered
+1
+acuta bronchiolite lieve severa
+acute mild severe bronchiolitis
+87.76
+12.84
+2
+acuta bronchiolite bronchite
+acute bronchiolitis bronchitis
+72.93
+28.96
+3
+bronchiolite respiratorio virus
+bronchiolitis respiratory virus
+66.66
+2.99
+4
+bronchiolite positiva vrs
+bronchiolitis rsv positive
+44.44
+1.19
+5
+bronchiolite complicata corso ex gastroenterite
+paziente
+bronchiolitis complicated course former gas-
+troenteritis patient
+40.00
+0.60
+6
+bronchite broncospasmo lieve
+bronchitis mild bronchospasm
+20.00
+0.30
+7
+bronchiolite broncospasmo lieve
+bronchiolitis mild bronchospasm
+16.67
+0.30
+8
+allarme bronchiolite caratteristiche d epistassi
+insetto locale lussazione medicazione pregressa
+reazione sdr sn vrs
+bronchiolitis alarm features epistaxis local in-
+sect dislocation dressing previous reaction sdr
+sn rsv
+16.67
+0.30
+9
+acuta insufficienza respiratoria
+acute respiratory failure
+14.04
+2.39
+10
+broncospasmo respiratoria
+bronchospasm respiratory
+12.50
+2.99
+11
+broncospasmo laringospasmo
+bronchospasm laryngospasm
+1.12
+0.60
+12
+broncospasmo episodio
+bronchospasm episode
+0.56
+0.30
+13
+febbrile respiratoria
+respiratory fever
+0.0
+0.0
+14
+febbre recente respiratorie vie
+recent fever airways
+0.0
+0.0
+15
+corso infezione respiratoria
+ongoing respiratory infection
+0.0
+0.0
+16
+broncospasmo vie
+bronchospasm airways
+0.0
+0.0
+17
+broncospasmo paziente ricorrente
+bronchospasm recurrent patient
+0.0
+0.0
+18
+broncospasmo parainfettivo
+parainfective bronchospasm
+0.0
+0.0
+19
+broncospasmo noto
+known bronchospasm
+0.0
+0.0
+20
+broncospasmo infettivo parainfettivo
+parainfective infectious bronchospasm
+0.0
+0.0
+21
+broncospasmo corso virosi
+bronchospasm ongoing virosis
+0.0
+0.0
+22
+broncospasmo corso respiratorie vie
+bronchospasm ongoing airways
+0.0
+0.0
+23
+broncospasmo corso infezione respiratoria
+bronchospasm ongoing respiratory infection
+0.0
+0.0
+24
+broncospasmo corso flogosi vie
+bronchospasm ongoing flogosis airways
+0.0
+0.0
+25
+broncospasmo corso flogosi lieve respiratoria
+bronchospasm ongoing mild flososis respira-
+tory
+0.0
+0.0
+26
+broncopolmonite destra iniziale
+initial right bronchopneumonia
+0.0
+0.0
+27
+batterica broncopolmonite esterna infettiva
+otite polmonite specificata
+bacterial bronchopneumonia external infec-
+tious otitis pneumonia specified
+0.0
+0.0
+28
+alte vie respiratorie infezione
+high airways infection
+0.0
+0.0
+29
+alte vie respiratorie flogosi
+high airways flogosis
+0.0
+0.0
+30
+corso alte vie respiratorie flogosi
+ongoing high airways flogosis
+0.0
+0.0
+31
+corso alte vie respiratorie virosi febbre
+ongoing high airways virosis fever
+0.0
+0.0
+32
+acuto broncospasmo lieve moderato
+acute mild moderate bronchospasm
+0.0
+0.0
+33
+acute infezioni vie respiratorie superiori
+acute high airways infection
+0.0
+0.0
+34
+acuta alte vie respiratorie rinite virosi
+acute high airways virosis rhinitis
+0.0
+0.0
+46
+Table D.4: Keyword-based representation of the second level clusters related to respiratory infections from the original Umberto
+representation
+2nd
+level
+cluster
+#
+2nd
+level
+clusters
+keywords
+[ITA]
+2nd
+level
+clusters
+keywords
+[ENG]
+1st level cluster
+#
+1st
+level
+clusters
+keywords
+[ITA]
+1st
+level
+clusters
+keywords
+[ENG]
+1
+acuta corso infezione
+insufficienza respiratoria
+acute bronchiolitis undergoing
+respiratory failure
+# 9
+acuta insufficienza respiratoria
+acute respiratory failure
+# 15
+corso infezione respiratoria
+ongoing respiratory infection
+2
+broncospasmo episodio noto vie
+known bronchospasm episode airways
+# 16
+broncospasmo vie
+bronchospasm airways
+# 19
+broncospasmo noto
+known bronchospasm
+# 12
+broncospasmo episodio
+episode bronchospasm
+3
+broncospasmo corso
+paziente ricorrente virosi
+bronchospasm ongoing
+recurrent patient virosis
+# 21
+broncospasmo corso virosi
+bronchospasm ongoing virosis
+# 17
+broncospasmo paziente ricorrente
+bronchospasm recurrent patient
+4
+broncospasmo lieve
+bronchospasm mild
+# 6
+bronchiolite broncospasmo lieve
+bronchiolitis bronchospasm mild
+# 7
+bronchiolite broncospasmo lieve
+bronchiolitis bronchospasm mild
+# 32
+acuto broncospasmo lieve moderato
+acute bronchospasm mild moderate
+5
+acuta bronchiolite
+acute bronchiolitis
+# 2
+acuta bronchiolite bronchite
+acute bronchiolitis bronchitis
+# 1
+acuta bronchiolite lieve severa
+acute bronchiolitis mild severe
+6
+respiratorie vie
+airways
+# 28
+alte infezione respiratorie vie
+high airways infection
+# 31
+alte vie respiratorie corso febbre vi-
+rosi
+high airways ongoing fever virosis
+# 33
+acute infezioni vie respiratorie su-
+periori
+acute high airways infection
+# 34
+acuta alte respiratorie rinite vie vi-
+rosi
+acute high airways rhinitis virosis
+# 14
+febbre recente respiratorie vie
+recent fever airways
+8
+broncospasmo respiratoria
+bronchospasm respiratory
+# 23
+broncospasmo corso infezione respi-
+ratoria
+bronchospasm ongoing respiratory
+infection
+# 25
+broncospasmo
+corso
+flogosi
+lieve
+respiratoria
+bronchospasm ongoing flogosis mild
+respiratory
+# 10
+broncospasmo respiratoria
+bronchospasm respiratory
+9
+broncospasmo corso vie
+bronchospasm ongoig airways
+# 24
+broncospasmo corso flogosi vie
+bronchospasm ongoing flogosis
+# 22
+broncospasmo corso respiratorie vie
+bronchospasm ongoing airways
+10
+alte flogosi respiratorie vie
+flogosis high airways
+# 30
+corso flogosi alte vie respiratorie
+flogosis high airways ongoing
+# 29
+flogosi alte vie respiratorie
+flogosis high airways
+11
+bronchiolite respiratorio virus
+bronchiolitis respiratory virus
+# 3
+bronchiolite respiratorio virus
+bronchiolitis respiratory virus
+12
+bronchiolite positiva vrs
+bronchiolitis rsv positive
+# 4
+bronchiolite positiva vrs
+bronchiolitis rsv positive
+13
+bronchiolite
+complicata
+corso
+ex
+gastroenterite paziente
+bronchiolitis
+complicated
+course
+former gastroenteritis patient
+# 5
+bronchiolite
+complicata
+corso
+ex
+gastroenterite paziente
+bronchiolitis
+complicated
+course
+former gastroenteritis patient
+14
+allarme bronchiolite caratteristiche
+d epistassi insetto locale lussazione
+medicazione pregressa reazione sdn
+sn vrs
+bronchiolitis
+alarm
+features
+epis-
+taxis local insect dislocation dress-
+ing previous reaction sdn sn rsv
+# 8
+allarme bronchiolite caratteristiche
+d epistassi insetto locale lussazione
+medicazione pregressa reazione sdn
+sn vrs
+bronchiolitis
+alarm
+features
+epis-
+taxis local insect dislocation dress-
+ing previous reaction sdn sn rsv
+15
+febbrile respiratoria
+respiratory fever
+# 13
+febbrile respiratoria
+respiratory fever
+16
+broncopolmonite destra iniziale
+initial right bronchopneumonia
+# 26
+broncopolmonite destra iniziale
+initial right bronchopneumonia
+17
+batterica broncopolmonite esterna
+infettiva otite polmonite specificata
+bacterial bronchopneumonia exter-
+nal
+infectious
+otitis
+pneumonia
+specified
+# 27
+batterica broncopolmonite esterna
+infettiva otite polmonite specificata
+bacterial bronchopneumonia exter-
+nal
+infectious
+otitis
+pneumonia
+specified
+47
+Appendix E. Additional classification results
+In this section, we report additional classification results to assess the effect and
+the differences among hospitals and LHUs, in Tables E.1 and E.2, respectively. Since
+the number of cases for each hospital and LHU is limited, we consider those with a
+minimum number of bronchiolitis cases (15) and measure the results using a Leave
+One Group Out (LOGO) approach. For each hospital/LHU to be evaluated, we
+train the model on the data from the other hospitals/LHUs, and we measure the
+performance on the data from the hospital/LHU of interest.
+In Table E.3 we also compare results between the groups of pediatric vs non-
+pediatric ER/Department admissions. In this case, we adopt the same 10-fold strat-
+ified cross-validation used to compare different classification models, dividing the
+test set between pediatric and non-pediatric ERs/Departments at each iteration and
+computing the metrics on these two groups separately.
+We identified the records related to pediatric ERs/Departments by looking at the
+presence of specific keywords (pediatria, pediatrico, pediatrica) in the header of the
+letters. This marked 10’340 records (31.17%) as related to pediatric ERs/Depart-
+ments.
+Table E.1: 10-fold CV results for classification, comparing different hospitals (only hospitals with
+more than 15 bronchiolitis cases). G = gold labels, W = weak labels.
+Hospital
+Dataset %
+Pediatric ER
+(% records)
+Bronchiolitis
+(% records)
+P [%]
+(W)
+R [%]
+(W)
+F1 [%]
+(W)
+AUC [%]
+(W)
+P [%]
+(G)
+R [%]
+(G)
+F1 [%]
+(G)
+AUC [%]
+(G)
+H-0
+31.41
+87.30
+0.76
+77.46
+78.57
+78.01
+90.40
+81.40
+63.64
+71.43
+86.56
+H-1
+14.56
+0.00
+1.08
+63.64
+71.79
+79.43
+85.32
+66.67
+66.67
+66.67
+77.95
+H-2
+11.63
+1.00
+0.78
+80.00
+72.73
+76.19
+92.16
+50.00
+71.43
+58.82
+83.98
+H-3
+10.23
+12.00
+1.71
+88.68
+88.68
+88.68
+89.45
+81.40
+81.40
+81.40
+88.12
+H-4
+7.43
+22.00
+1.22
+92.31
+35.29
+51.06
+64.32
+84.21
+37.21
+51.61
+57.34
+H-6
+2.59
+9.40
+2.09
+100.00
+31.25
+47.62
+65.63
+100.00
+33.33
+50.00
+70.48
+Table E.2: 10-fold CV results for classification, comparing different LHUs (only LHUs with more
+than 15 cases). Std. Dev. in parenthesis. G = gold labels, W = weak labels.
+LHU
+P [%]
+(W)
+R [%]
+(W)
+F1 [%]
+(W)
+AUC [%]
+(W)
+P [%]
+(G)
+R [%]
+(G)
+F1 [%]
+(G)
+AUC [%]
+(G)
+LHU-3
+75.56
+65.38
+70.10
+78.81
+69.70
+53.49
+60.53
+73.94
+LHU-5
+83.33
+40.00
+54.05
+65.77
+45.83
+64.71
+53.66
+58.25
+LHU-2
+94.12
+64.00
+76.19
+88.89
+51.61
+94.12
+66.67
+59.95
+LHU-6
+64.29
+81.81
+72.00
+91.17
+51.67
+71.43
+59.96
+83.52
+LHU-7
+86.27
+83.02
+84.62
+87.06
+82.50
+76.74
+79.52
+86.22
+LHU-0
+77.46
+78.57
+78.01
+90.40
+81.40
+63.64
+71.43
+86.56
+48
+Table E.3: 10-fold CV results for classification, comparing records from pediatric ERs/Departments
+with records from non-pediatric ERs/Departments. Std. Dev. in parenthesis. G = gold labels, W
+= weak labels.
+Pediatrics ER
+P [%]
+(W)
+R [%]
+(W)
+F1 [%]
+(W)
+AUC [%]
+(W)
+P [%]
+(G)
+R [%]
+(G)
+F1 [%]
+(G)
+AUC [%]
+(G)
+Yes
+87.79 (7.12)
+83.31 (4.30)
+85.13 (6.56)
+86.04 (5.29)
+75.89 (9.85)
+88.57 (8.23)
+81.74 (7.71)
+80.89 (6.37)
+No
+72.47 (7.28)
+80.52 (7.87)
+76.08 (5.64)
+75.93 (4.04)
+60.29 (8.29)
+85.21 (6.11)
+69.37 (4.36)
+71.07 (4.57)
+49

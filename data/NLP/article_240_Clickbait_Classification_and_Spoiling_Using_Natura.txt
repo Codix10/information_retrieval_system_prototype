@@ -1,0 +1,681 @@
+Title: Clickbait Classification and Spoiling Using Natural Language Processing
+Source URL: http://arxiv.org/abs/2306.14907v1
+--------------------------------------------------
+
+Clickbait Classification and Spoiling Using Natural Language
+Processing
+Adhitya Thirumala and Elisa Ferracane
+Abstract
+Clickbait is the practice of engineering ti-
+tles to incentivize readers to click through
+to articles.
+Such titles with sensational-
+ized language reveal as little information
+as possible. Occasionally, clickbait will be
+intentionally misleading, so natural lan-
+guage processing (NLP) can scan the ar-
+ticle and answer the question posed by
+the clickbait title, or spoil it.
+We tackle
+two tasks:
+classifying the clickbait into
+one of 3 types (Task 1), and spoiling the
+clickbait (Task 2).
+For Task 1, we pro-
+pose two binary classifiers to determine
+the final spoiler type.
+For Task 2, we
+experiment with two approaches: using a
+question-answering model to identify the
+span of text of the spoiler, and using a
+large language model (LLM) to generate
+the spoiler.
+Because the spoiler is con-
+tained in the article, we frame the second
+task as a question-answering approach for
+identifying the starting and ending posi-
+tions of the spoiler. We created models for
+Task 1 that were better than the baselines
+proposed by the dataset authors and engi-
+neered prompts for Task 2 that did not per-
+form as well as the baselines proposed by
+the dataset authors due to the evaluation
+metric performing worse when the output
+text is from a generative model as opposed
+to an extractive model.
+1
+Introduction
+Clickbait is the practice of engineering ti-
+tles to incentivize readers to click through
+to articles.
+It is an issue that plagues
+the internet, and spreads disinformation
+while causing readers to go through ex-
+treme methods to find the real content of
+an article. Many people, however, may not
+go to such an extent to find answers and
+will instead believe misleading information
+targetTitle
+Google paid HOW MUCH in
+overseas taxes!?
+spoiler
+had a UK tax bill of 35 million
+pounds ($55 million) in 2012
+targetParagraphs
+Google, which has been grilled
+twice in the past year by a UK
+parliamentary committee over
+its tax practices, had a UK tax
+bill of 35 million pounds ($55
+million) in 2012, on sales of $4.9
+billion to British customers, its
+accounts showed. The Internet
+search giant paid a tax rate of
+2.6 percent on $8.1 billion in
+non-U.S. income in 2012, be-
+cause it channelled almost all
+of its overseas profits to a sub-
+sidiary in Bermuda which levies
+no corporate income tax [...]
+tags
+passage
+Table 1: Example of a clickbait (targetTitle), its
+spoiler, the full text of the linked article with the
+spoiler in blue (targetParagraphs, shortened for
+space) and the spoiler type (tags).
+in the clickbait titles.
+Effectively, many
+may "judge a book by its cover." Such a
+problem can be solved by "adding to the
+cover" and creating a natural language pro-
+cessing model to "spoil" the article and re-
+veal a short summary which answers the
+question posed by the clickbait title. We
+tackle two tasks that can help with the
+spoiling clickbait. Task 1 is classification,
+where the data is split into three categories
+to make the next task easier.
+Task 2 is
+spoiling, where we reveal the answer to the
+title. Task 1 makes Task 2 much easier be-
+cause we can develop multiple algorithms
+to tackle the multiple types of clickbait.
+arXiv:2306.14907v1  [cs.CL]  16 Jun 2023
+2
+Data
+We obtain our dataset from a shared task
+called SemEval. SemEval is a group and
+runs 12 tasks per year; we used the dataset
+from the Clickbait shared task.
+Specifi-
+cally, the organizers of our tasks published
+a paper in which they defined a task, cre-
+ated a dataset, and made baseline clas-
+sifiers.[2] This dataset contains 4000 en-
+tries: 3200 train and 800 validation. 17.4%
+of the train dataset is multi, 39.8% of
+the train is passage, and the remaining
+42.8% is phrase.
+The dataset contains
+text and various metadata. Initial exper-
+iments found that the metadata did not
+help with predictions, so we do not utilize
+it in any predictions.
+The relevant parts
+of the dataset are the targetParagraphs
+column,
+the targetTitle column,
+the
+spoiler column, and the tags column.
+The targetParagraphs column contains
+the text of an article that contains the
+spoiler.
+In the dataset, it is formatted
+as a list where each element is a line of
+the article. The targetTitle contains the
+clickbait title of the article. The spoiler
+column contains the spoiler to the article.
+This spoiler is always a direct span of the
+text.
+The tags are the type of spoiler.
+There are three types of spoilers that we
+classify: phrase, passage, and multi. The
+phrase spoiler is always a span from the
+text less than or equal to 5 words in length.
+The passage spoiler is a single span of text
+longer than five words in length. The multi
+spoiler is multiple non-continuous spans of
+text. An example entry of the dataset’s rel-
+evant columns is illustrated in Table 1.
+3
+Related Work
+Previously, many have taken on the task
+of detecting clickbait, such as approaches
+which not only detect the presence of click-
+bait, but also sort out and puts into cat-
+egories based on their content such as in-
+flammatory clickbait, ambiguous clickbait,
+and exaggeration clickbait.[7] This method
+allowed for detection, but it was inca-
+pable of actually solving the clickbait issue.
+There have also been attempts to gener-
+ate clickbait using NLP. These approaches
+use a summarization method to make sen-
+sationalized headlines for articles.[9] This
+work makes the problem worse as it re-
+moves the human aspect of creating click-
+bait and makes the generation of clickbait
+easier and quicker.
+The organizers of the shared task are the
+first to define the task of spoiling and classi-
+fying clickbait that we use, and also creates
+a dataset for the purpose. They released
+baseline models for both classification and
+spoiling; however, the spoiling models were
+not capable of handling entries that were
+tagged as multi. The baseline value that
+they obtain for Task 1 is 71.57% balanced
+accuracy. For Task 2, they obtain a 0.688
+for phrase spoiler and a 0.3144 for passage
+spoilers. These values are for the BLEU-
+4 score which will be discussed in section
+5.2. Existing approaches to Task 2 take on
+an extractive question answering approach
+where the title of the article functions as
+the question and the text of the article
+functions as the context.
+4
+Task 1: Clickbait Classification
+The first task that we tackle is classification
+of the clickbait into the three types shown
+above.
+4.1
+Input/Output
+The inputs are the title of the article, and
+the output is one of the three types refer-
+enced above: phrase, passage and multi.
+We chose to only input the title because we
+found that the text of the article had little
+no no correlation with the performance of
+the model.
+4.2
+Approach
+We defined two models for this task. Both
+models are binary classifiers made using the
+deBERTa[3] neural network model for se-
+quence classification. The first model that
+we use classifies between the multi spoil-
+2
+Parameter
+Search Space
+Batch Size
+[8,12,16]
+Epoch
+[2,3,4,5]
+Learning Rate
+1 ∗10−5, 1 ∗10−3
+Weight Decay
+[0.1, 0.2, 0.3, 0.4, 0.5]
+Table 2: Search space for hyperparameter opti-
+mization for Task 1, clickbait classification.
+ers and the other types of spoilers. We re-
+fer to this model as Model 1 in the section
+hereafter. The second model classifies the
+passage versus the phrase spoiler. We re-
+fer to this model as Model 2 in this section
+hereafter.
+4.3
+Hyperparameter Optimization
+After defining the models,
+we utilized
+WandB’s hyperparameter search function
+to optimize our models.
+For both mod-
+els, we sought to tune the batch size, epoch
+count, learning rate, and weight decay pa-
+rameters.
+The batch size is the amount
+of samples that are passed to the model
+before it updates.
+The epoch count is
+the amount of iterations that the machine
+learning model goes through before the fi-
+nal model is trained. The learning rate is
+a parameter that determines how fast the
+model moves towards the optimal weigh
+values. The weight decay parameter reg-
+ularizes the weights of the model to pre-
+vent overfitting. The search space that we
+used can be seen in Table 2. The results
+for Model 1 and 2 can be seen in Table
+3.
+The searches can be seen in Figure 1
+and Figure 2. In the figures, each line is a
+"run" with certain parameters. The color
+of the line corresponds to the gradient on
+the right of the figure which represents the
+accuracy that the model had on its task.
+The parameter that had the highest corre-
+lation figure with accuracy was the learn-
+ing rate. This is clear in the figure because
+most of the lines that have the color cor-
+responding to the higher accuracy can be
+seen to have lower learning rates.
+Parameter
+Value
+Batch Size
+16
+Epoch
+4
+Learning Rate
+5.9 ∗10−6
+Weight Decay
+0.4
+Parameter
+Value
+Batch Size
+16
+Epoch
+2
+Learning Rate
+8.2 ∗10−6
+Weight Decay
+0.5
+Table 3:
+Optimal parameters for Model 1 and
+Model 2 respectively for Task 1, clickbait classi-
+fication.
+4.4
+Evaluation Metric
+We used balanced accuracy for the evalu-
+ation metric as the dataset did not have
+an equal amount of each spoiler. Balanced
+accuracy computes the mean of the sen-
+sitivity and specificity to prevent the im-
+balance of the dataset from affecting our
+performance.
+In our case, it would have
+affected model 1 because there was signifi-
+cantly more multi than not. The equation
+for balanced accuracy is
+balanced −accuracy(y, ˆy, w) =
+1
+P
+ˆwi
+X
+i
+1(ˆyi = yi) ˆwi
+where y is the predicted value for the ith
+term, ˆy is the reference value, and ˆw is the
+sample weight adjusted with the function
+wi
+P
+j 1(yj=yi)wj .[6]
+4.5
+Results
+For Model 1, using the optimal parame-
+ters in Table 3 gave a balanced accuracy of
+0.7884. For Model 2, using the parameters
+above gave a balanced accuracy of 0.799.
+Thus, our models performed better than
+the existing baseline set by the creators of
+the dataset which had a balanced accuracy
+of 0.7157.
+5
+Task 2: Clickbait Spoiling
+The second task that we tackle is the spoil-
+ing of the clickbait. We approach this task
+3
+Figure 1: Hyperparameter Optimization runs for multi vs. passage and phrase
+Figure 2: Hyperparameter Optimization runs for passage vs. phrase
+by using a Large Language Model (LLM) to
+generate the spoiler. Specifically, we utilize
+openAI’s GPT-3 to output the spoiler.[1]
+5.1
+Prompt Engineering
+Prompt engineering is a key part of get-
+ting the full value from LLM models such
+as GPT-3. There are multiple ways to go
+about prompt engineering, but we used the
+one-shot method.
+This method includes
+giving the LLM one completed example
+in the prompt as an example that it can
+"learn" from.
+Since finetuning GPT-3 is
+expensive both computationally and finan-
+cially due to model predictions being exclu-
+sive to the openAI API, approaches such
+as one-shot can help "train" the model to
+make the output better quality.
+We use
+three different prompts in the prediction
+process for the three different types of click-
+bait. The one-shot prompts contain a ran-
+dom entry from the train dataset with in-
+struction on how the model should inter-
+pret the prompt.
+The prompts that we
+used can be found in Appendix A.
+5.2
+Evaluation Metric
+We chose the BLEU-4 metric to evaluate
+our outputs.[4] BLEU is one of the metrics
+that the creators of the dataset chose to
+use in their evaluation of the baseline.
+This makes comparing our results very
+easy.
+BLEU is a score between 0 and
+1 that calculates the similarity between
+two texts, a reference (gold) text and a
+predicted text. It computes the geometric
+4
+average of the precision values for n-grams
+for n = 1 to n = 4 inclusive common to
+both texts, multiplied by a penalty value
+for short predicted texts. The equation for
+BLEU can be seen below where ˆS is the
+input string, S is the reference string, BP
+represents the brevity penalty function
+defined as e−(r/c−1)+ where c is the length
+of the input string and r is the length of
+the reference string, wn is the weighing
+vector, and pn is the modified n-gram
+precision function defined as pn( ˆS; S) :=
+PM
+i=1
+P
+s∈Gn(ˆy(i)) min(C(s,ˆy(i)),maxy∈Si C(s,y))
+PM
+i=1
+P
+s∈Gn(ˆy(i)) C(s,ˆy(i))
+which
+calculates
+the
+precision
+values
+without the brevity penalty.
+BLEUw( ˆS; S) := BP( ˆS; S) · exp(
+∞
+X
+n=1
+wn ln pn( ˆS; S))
+5.3
+Results
+The BLEU-4 score for task 2 was 0.13 on
+the validation set.
+This was significantly
+lower than the baseline put out by the
+dataset creators.
+6
+Error Analysis
+6.1
+Task 1
+In task 1, error could have come from ei-
+ther the input format or the hyperparam-
+eter optimization. The input format could
+have included the text of the article which
+might have led to a higher accuracy. The
+optimal set of hyperparameters might have
+been outside of search space, and therefore
+unreachable.
+6.2
+Task 2
+In task 2, we obtained a score that was
+significantly lower than the baseline score.
+This performance could have been due to
+a variety of factors.
+First, the prompt
+could have been misleading to the LLM.
+The quality of the output depends on the
+quality of the prompt, and the instruc-
+tions provided might have been too vague
+for the LLM to understand.
+However,
+the main problem with the score was that
+the evaluation metric was fundamentally
+flawed at evaluating the the similarity be-
+tween generated text and a gold standard.
+The BLEU-4 method was one that directly
+compared the two strings.
+Thus, if the
+LLM generated its own spoiler that was not
+taken from the text of the article verbatim,
+it would be severely penalized. The origi-
+nal intent of the authors of the dataset was
+to approach the problem as an extractive
+question answering problem. Such an ap-
+proach would result in higher BLEU scores
+because the model would only be able to
+output direct spans from the article text.
+7
+Conclusion
+We developed solutions to two problems
+dealing with internet clickbait.
+First,
+we classified clickbait into three types:
+phrase, passage, and multi.
+Next, we
+spoiled the clickbait with a short summary
+of the article. The output of the first task
+helped with the second task as it allowed
+us to use a specific prompt on the LLM for
+the specific type of clickbait. The first task
+used a basic sequence classification NLP
+model while the second task utilized GPT-3
+and prompt engineering to output a spoiler.
+The first task resulted in balanced accu-
+racy score of 0.7884 and 0.799 which out-
+performed the baseline scores significantly.
+The second task resulted a BLEU score
+of 0.13 which was lower than the baseline
+model; however, this was due to the evalu-
+ation metric being a poor fit for generative
+NLP models.
+8
+Future Work
+8.1
+Research
+8.1.1
+Task 1
+For task 1,
+a broader hyperparameter
+search might be result in better accuracy
+values. Since we were limited by our local
+hardware of an RTX 3070 graphics card, we
+could only use batch size values with a max
+of 24 before we encountered out-of-memory
+5
+(OOM) errors. We could also experiment
+with different input formats to try and in-
+crease performance.
+8.1.2
+Task 2
+For task 2, experimenting with a few-shot
+approach instead of a one-shot approach
+might have increased performance.
+We
+used one-shot because any other method re-
+sulted in the input being too large for the
+API to handle. Furthermore, another eval-
+uation metric that is more accepting of gen-
+erative text could help boost performance.
+8.2
+Applications
+A major application of this work is in in-
+ternet browsers. Creating an extension to
+spoil clickbait before users click on clickbait
+titles would help solves many issues related
+to the massive proliferation of disinforma-
+tion happening on the Internet by quench-
+ing users’ demand for the information that
+the clickbait title lures them with.
+References
+[1] T. B. Brown, B. Mann, N. Ryder, M. Sub-
+biah,
+J.
+Kaplan,
+P.
+Dhariwal,
+A.
+Nee-
+lakantan,
+P. Shyam,
+G. Sastry,
+A. Askell,
+S. Agarwal,
+A. Herbert-Voss,
+G. Krueger,
+T. Henighan, R. Child, A. Ramesh, D. M.
+Ziegler, J. Wu, C. Winter, C. Hesse, M. Chen,
+E. Sigler,
+M. Litwin,
+S. Gray,
+B. Chess,
+J. Clark, C. Berner, S. McCandlish, A. Radford,
+I. Sutskever, and D. Amodei. Language models
+are few-shot learners. CoRR, abs/2005.14165,
+2020.
+[2] M. Hagen, M. Fröbe, A. Jurk, and M. Pot-
+thast. Clickbait spoiling via question answering
+and passage retrieval. Proceedings of the 60th
+Annual Meeting of the Association for Compu-
+tational Linguistics (Volume 1: Long Papers),
+2022.
+[3] P. He, X. Liu, J. Gao, and W. Chen. Deberta:
+Decoding-enhanced BERT with disentangled at-
+tention. CoRR, abs/2006.03654, 2020.
+[4] K. Papineni, S. Roukos, T. Ward, and W.-J.
+Zhu.
+Bleu.
+Proceedings of the 40th Annual
+Meeting on Association for Computational Lin-
+guistics - ACL ’02, 2001.
+[5] A. Paszke,
+S. Gross,
+F. Massa,
+A. Lerer,
+J. Bradbury, G. Chanan, T. Killeen, Z. Lin,
+N.
+Gimelshein,
+L.
+Antiga,
+A.
+Desmaison,
+A. Köpf, E. Z. Yang, Z. DeVito, M. Raison,
+A. Tejani, S. Chilamkurthy, B. Steiner, L. Fang,
+J. Bai, and S. Chintala.
+Pytorch: An imper-
+ative style, high-performance deep learning li-
+brary. CoRR, abs/1912.01703, 2019.
+[6] F. Pedregosa,
+G. Varoquaux,
+A. Gramfort,
+V. Michel, B. Thirion, O. Grisel, M. Blondel,
+P. Prettenhofer, R. Weiss, V. Dubourg, J. Van-
+derplas, A. Passos, D. Cournapeau, M. Brucher,
+M. Perrot, and E. Duchesnay. Scikit-learn: Ma-
+chine learning in Python. Journal of Machine
+Learning Research, 12:2825–2830, 2011.
+[7] A. Pujahari and D. S. Sisodia.
+Clickbait de-
+tection using multiple categorisation techniques.
+Journal of Information Science, 47(1):118–128,
+2019.
+[8] T. Wolf, L. Debut, V. Sanh, J. Chaumond,
+C. Delangue, A. Moi, P. Cistac, T. Rault,
+R. Louf, M. Funtowicz, and J. Brew.
+Hug-
+gingface’s transformers: State-of-the-art natural
+language processing.
+CoRR, abs/1910.03771,
+2019.
+[9] P. Xu, C.-S. Wu, A. Madotto, and P. Fung.
+Clickbait? sensational headline generation with
+auto-tuned reinforcement learning.
+A
+Appendix: Prompts
+A.1
+Multi
+Predict the spoiler to the clickbait title sim-
+ilar to the example below:
+Title: Six lessons from the godfather of
+California cuisine
+Article:
+[...]The Huffington Post re-
+cently caught up with Patterson to see
+if we could glean any morsels of wisdom
+from the self-taught chef and father of two.
+Herewith, a few lessons from an icon most
+certainly qualified to discuss the state of
+California cuisine and beyond. Patterson,
+right, preparing food in Madrid.
+1) Eat
+your veggies.[...]1
+Spoiler: Daniel Patterson, 1) Eat your
+veggies., 2) Enjoy said veggies a few weeks
+after their season starts.", 3) Ingredients
+dictate everything., 4) Don’t serve complex
+foods to your 4-year-old.", 5) You can suc-
+ceed without a mentor.
+1Truncated for space.
+6
+A.2
+Passage
+Predict the spoiler to the clickbait title sim-
+ilar to the example below:
+Title:
+Instagram
+Just
+Killed
+This
+Feature
+Article:
+After adding a much re-
+quested
+pinch
+and
+zoom
+feature
+last
+week,
+Facebook-owned
+photo
+sharing
+giant Instagram is taking away a popular
+feature-photo
+maps.According
+to
+tech-
+nology news site Mashable, Instagram is
+killing the feature that allowed you to see
+a map of where a given user’s photos were
+taken (if they designated a location for the
+photo). You could also zoom in on maps
+to get a closer view of where photos were
+taken in a particular city or region.[...]2
+Spoiler: the feature that allowed you
+to see a map of where a given user’s photos
+were taken (if they designated a location
+for the photo).
+A.3
+Phrase
+Predict the spoiler to the clickbait title sim-
+ilar to the example below:
+Title:
+The cheapest place for a last-
+minute half-term holiday
+Article: Cyprus is the cheapest option
+for a last-minute February half-term get-
+away, new research has shown.
+Paphos,
+on the island’s west coast, and also one of
+2017’s two European Capitals of Culture,
+ranked first in an analysis of package hol-
+iday prices and on-the-ground costs in 10
+popular winter sun destinations.[...]3
+Spoiler: Cyprus
+2Truncated for space.
+3Truncated for space.
+7

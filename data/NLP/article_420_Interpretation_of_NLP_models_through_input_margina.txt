@@ -1,0 +1,1027 @@
+Title: Interpretation of NLP models through input marginalization
+Source URL: http://arxiv.org/abs/2010.13984v1
+--------------------------------------------------
+
+Interpretation of NLP models through input marginalization
+Siwon Kim
+Jihun Yi
+Eunji Kim
+Sungroh Yoon∗
+Data Science and Artiﬁcial Intelligence Laboratory
+ECE, Interdisciplinary Program in AI, and Institute of Engineering Research
+Seoul National University, Seoul 08826, South Korea
+{tuslkkk, t080205, kce407, sryoon}@snu.ac.kr
+Abstract
+To demystify the “black box” property of deep
+neural networks for natural language process-
+ing (NLP), several methods have been pro-
+posed to interpret their predictions by measur-
+ing the change in prediction probability after
+erasing each token of an input. Since existing
+methods replace each token with a predeﬁned
+value (i.e., zero), the resulting sentence lies out
+of the training data distribution, yielding mis-
+leading interpretations. In this study, we raise
+the out-of-distribution problem induced by the
+existing interpretation methods and present a
+remedy; we propose to marginalize each token
+out. We interpret various NLP models trained
+for sentiment analysis and natural language in-
+ference using the proposed method.
+1
+Introduction
+The advent of deep learning has greatly improved
+the performances of natural language processing
+(NLP) models. Consequently, the models are be-
+coming more complex (Yang et al., 2019; Liu et al.,
+2019), rendering it difﬁcult to understand the ratio-
+nale behind their predictions. To use deep neural
+networks (DNNs) for making high-stakes decisions,
+the interpretability must be guaranteed to instill the
+trust in the public. Hence, various attempts have
+been undertaken to provide an interpretation along
+with a prediction (Gilpin et al., 2018).
+Research in computer vision aims to interpret a
+target model by measuring attribution scores, i.e.,
+how much each pixel in an input image contributes
+to the ﬁnal prediction (Simonyan et al., 2013; Arras
+et al., 2017; Zeiler and Fergus, 2014; Lundberg and
+Lee, 2017). Since a pixel of an image corresponds
+to a token in a sentence, the attribution score of
+each token can provide an insight into the NLP
+model’s internal reasoning process. A straightfor-
+ward approach is to ask, “How would the model
+reaction change if each token was not there?” and
+*Correspondence to: Sungroh Yoon (sryoon@snu.ac.kr)
+(a) Original sentence
+(b) Existing erasure scheme
+(c) Input marginalization (Ours)
+ 
+Prediction
+0.979
+_
+_
+It’s also, clearly, great fun.
+It’s also, clearly [PAD] great fun.
+Likelihood
+0.890
+0.978
+It’s also, clearly             great fun.
+,
+It’s also, clearly              great fun.
+a
+It’s also, clearly             great fun.
+not
+...
+It’s also, clearly             great fun.
+0.979
+0.977
+0.457
+...
+0.009
+0.002
+...
+Figure 1: Given the original sentence (a), the existing
+erasure scheme (b) replaces each token with zero, i.e.,
+[PAD] token. Our method (c) marginalizes each token
+out considering the likelihoods of candidate tokens.
+the change can be measured by the difference in
+softmax probabilities after erasing each token. Li
+et al. (2016) proposed to erase each token by re-
+placing it with a predeﬁned value, i.e., zero. This
+became a representative method for interpreting
+NLP models, followed by several papers using the
+similar erasure scheme (Feng et al., 2018; Prab-
+hakaran et al., 2019; Jin et al., 2019).
+However, such an erasure scheme can cause
+out-of-distribution (OOD) problem, where the
+erased sentence deviates from the target model’s
+training data distribution. DNNs tend to assign a
+lower prediction probability to OOD samples than
+in-distribution samples (Hendrycks and Gimpel,
+2016), as shown in Fig. 1, which results in over-
+estimated contribution of an unimportant token.
+The OOD problem induced by the existing erasure
+scheme makes it difﬁcult to identify whether high-
+scoring tokens actually contribute signiﬁcantly to
+the prediction. In computer vision, several studies
+have highlighted the problem and attempted to ad-
+dress it (Zintgraf et al., 2017; Chang et al., 2018;
+Yi et al., 2020). To the best of our knowledge, the
+OOD problem has not been raised in the ﬁeld of
+NLP, hence no solution has been suggested yet.
+In this study, we ask instead; “How would the
+model react differently if there were other tokens
+arXiv:2010.13984v1  [cs.CL]  27 Oct 2020
+instead of each token?”, as proposed by Chang et al.
+(2018); Yi et al. (2020). We propose to marginalize
+each token out to mitigate the OOD problem of
+the existing erasure scheme. During the marginal-
+ization, our method measures the contribution of
+all probable candidate tokens considering their
+likelihoods. To calculate the likelihoods, we use
+the masked language modeling (MLM) of bidirec-
+tional encoder representations from transformers
+(BERT) (Devlin et al., 2019).
+Our contributions are as follows:
+i) To the best of our knowledge, we ﬁrst raise the
+OOD problem that can arise when interpret-
+ing NLP models through the existing erasure
+schemes.
+ii) To avoid the OOD problem, we propose a new
+interpretation method, i.e., input marginaliza-
+tion using MLM for likelihood modeling.
+iii) We apply the proposed method to interpret
+various NLP models and quantitatively verify
+the correctness of the resulting interpretation.
+2
+Related Works
+2.1
+Interpretation of NLP models
+Model-aware interpretation methods for DNNs use
+model information such as gradients. Saliency map
+(Simonyan et al., 2013) interprets an image classi-
+ﬁer by computing the gradient of a target class logit
+score with respect to each input pixel. Since a token
+index is not ordinal as an image pixel, the gradient
+with respect to a token is meaningless. Hence, Li
+et al. (2016) computed the gradient in an embed-
+ding space and Arras et al. (2017) distributed the
+class score to input embedding dimensions through
+layer-wise relevance propagation. Both methods
+sum up the scores of each embedding dimension to
+provide the attribution score of a token. Because the
+score can have a negative or positive sign, the sum
+may offset each other, so the contribution of the
+token may become zero even if it does contribute
+to the prediction.
+Recently, the attention mechanism has been
+widely adopted to various NLP tasks (Bahdanau
+et al., 2014; Vaswani et al., 2017; Zhang et al.,
+2018) and there have been attempts to use the at-
+tention score as an interpretation. (Jain and Wal-
+lace, 2019). However, its validity is still controver-
+sial (Wiegreffe and Pinter, 2019).
+Model-agnostic approaches aim to interpret any
+types of model with no information other than its
+feed-forward outputs. They observe how much the
+prediction changes after erasing each unit of in-
+put. If it differs signiﬁcantly, then the unit obtains
+a high attribution score. In computer vision, the
+measurement of prediction difference varies from
+the subtraction of probabilities (Zeiler and Fergus,
+2014) to a log-odds probability difference (Zintgraf
+et al., 2017). In the ﬁeld of NLP, Li et al. (2016)
+interpreted NLP models by erasing each dimension
+of the embedding vector or the token itself, where
+the erasure was implemented by simply setting the
+value to a predeﬁned value, i.e., zero. Such an era-
+sure scheme can push the embedding vector or the
+input out of the training data distribution, thereby
+resulting in an inaccurate interpretation.
+2.2
+Interpretation without OOD problem
+Several interpretation methods to mitigate the OOD
+problem have been proposed in computer vision.
+Zintgraf et al. (2017) proposed to marginalize each
+pixel out by assuming that the pixel value follows a
+Gaussian distribution. It had limitations in that the
+Gaussian distribution differed from the real pixel
+distribution. Chang et al. (2018) improved it by
+replacing an image segment with a plausible values
+generated from a deep generative model. Yi et al.
+(2020) proposed to adopt an additional DNN to
+model the pixel distribution, which motivated our
+work the most.
+The method recently proposed by Jin et al.
+(2019) may appear similar to ours as it marginal-
+izes context words out to obtain the context-free
+attribution of a token. However, it still cannot over-
+come the OOD problem because it replaces the
+token with zero, similar to the existing methods. To
+the best of our knowledge, no attempt has been un-
+dertaken to raise and overcome the OOD problem
+that arises when interpreting NLP models.
+2.3
+MLM of BERT
+BERT (Devlin et al., 2019), one of the state-of-the-
+art natural language representations, is trained with
+two pre-training tasks: MLM and next sentence pre-
+diction. The MLM aims to infer the probability of a
+token to appear in the masked position of an input.
+As BERT is deeply bidirectional, it can consider
+the entire context of the sentence which enables the
+exact likelihood modeling. The likelihoods of the
+candidate tokens for marginalization are easily and
+accurately attainable using the MLM of BERT.
+3
+Methods
+We propose input marginalization to mitigate the
+OOD issue. In the following subsections, we mea-
+sure the attribution score using the weight of evi-
+dence and marginalize over all possible candidate
+tokens using the MLM of BERT. We extend the
+method to multi-token cases and introduce adap-
+tively truncated marginalization for an efﬁcient
+computation. Finally, we propose a new metric,
+AUCrep, to evaluate the proposed method faithfully.
+The overall algorithm is provided in Algorithm 1.
+3.1
+Measurement of model output difference
+To measure the changes in the model output, we
+adopt the widely used weight of evidence (WoE)
+(Robnik-ˇSikonja and Kononenko, 2008), which is a
+log odds difference of prediction probabilities. We
+deﬁne θ as the target model parameter, yc as a target
+class to be explained, and x as an input sentence.
+We introduce x−i, i.e., x without i-th token xi,
+to quantify the contribution of xi to predicting yc.
+WoE is formulated as follows:
+WoEθ,i(yc|x) = log2(oddsθ(yc|x))
+−log2(oddsθ(yc|x−i)),
+(1)
+where oddsθ(yc|x) = pθ(yc|x)/(1 −pθ(yc|x)).
+pθ(yc|x−i) captures the notion of the model re-
+sponse without the i-th token. The ﬁrst term of
+Eq. 1 can be easily obtained as it is the original
+prediction probability, while the second term is
+computed by input marginalization.
+3.2
+Input marginalization
+We rewrite the term p(yc|x−i) of Eq. 1 using
+marginalization as follows:
+p(yc|x−i) =
+X
+˜xi∈V
+p(yc, ˜xi|x−i)
+=
+X
+˜xi∈V
+p(yc|˜xi, x−i) · p(˜xi|x−i).
+(2)
+Here, ˜xi is a candidate token that can appear instead
+of xi, and V is a set of vocabulary. p(yc|˜xi, x−i)
+can be easily obtained by a single feed forward
+to the target model with the i-th token replaced
+with ˜xi. We compute p(˜xi|x−i), the likelihood of
+˜xi appearing in the i-th position, by substituting the
+xi with the “[MASK]” token and feed forwarding it
+to BERT. The process of computing the attribution
+score of a token is repeated for all tokens in the
+sentence.
+Algorithm 1 Input marginalization
+Input Target model θ, input x, vocabulary V,
+likelihood threshold σ, and target class yc
+Output Attribution score a
+for i = 0 to length(x) do
+m ←0
+▷Initialize attribution score
+s ←copy x
+si ←“[MASK]” token
+for all ˜si in V do
+p(˜si|s−i) ←BERTMLM(s)
+if p(˜si|s−i) > σ then
+si ←˜si
+m ←m + p(˜si|s−i) · pθ(yc|s)
+end if
+end for
+ai = logoddsθ(yc|x) −logoddsθ(m)
+▷Prediction difference measurement
+end for
+3.3
+Multi-token marginalization
+We can compute the attribution score for multiple
+tokens similarly. Let us assume that we wish to
+measure the joint contribution of two tokens xi and
+xj. Eq. 2 then becomes
+p(yc|x−i,j) =
+X
+˜xj∈V
+X
+˜xi∈V
+p(yc, ˜xi, ˜xj|x−i,j). (3)
+Applying Bayes’ theorem, p(yc, ˜xi, ˜xj|x−i,j) be-
+comes p(yc|˜xi, ˜xj, x−i,j) · p(˜xi, ˜xj|x−i,j). The
+latter term of the multiplication can be decom-
+posed into the multiplication of p(˜xi|x−i, ˜xj) and
+p(˜xj|x−i,j). Each term can be easily obtained
+by masking the corresponding position and feed-
+forwarding it to BERT even when xi and xj are
+distant. For more than two tokens, the attribution
+scores can be obtained in the similar way.
+3.4
+Adaptively truncated marginalization
+The computational complexity for obtaining an at-
+tribution score of one token is O(|V|), where |V| is
+the size of a vocabulary set. For the tokenizer used
+in BERT, |V| is greater than 30,000, and the same
+number of marginalization is required, which is
+computationally burdensome. For the efﬁcient com-
+putation, we propose adaptively truncated marginal-
+ization. If the magnitude of p(˜xi|x−i) is insignif-
+icantly small, the contribution of p(yc|˜xi, x−i) to
+the summation in Eq. 2 becomes negligible. There-
+fore, we marginalize only over candidates whose
+likelihoods are greater than a likelihood threshold
+(a3)
+SST-2
+SNLI
++
+-
+LSTM
+-
+BERT
+pre:
+hypo:
+(a2) 
+(a4)
+(a5)
+(a6)
+(a7)
+(a8)
+(a9)
+(b1)
+(b2)
+(b3)
+(b4)
+(b5)
+(b6)
+ a  couple  holding  hands  walks  down  a  street  . 
+ people  are  holding  hands  and  walking  . 
+ a  woman  is  walking  across  the  street  eating  a  banana  ,  while  a  man  is  following  with  his  briefcase  . 
+ the  woman  is  outside 
+ a  big  brown  dog  swims  towards  the  camera  . 
+ a  dog  swims  towards  the  camera  . 
+ an  elderly  man  is  drinking  orange  juice  at  a  cafe  . 
+ an  elderly  man  is  drinking  apple  juice  at  a  bar  . 
+ a  couple  holding  hands  walks  down  a  street  . 
+ there  are  people  sitting  on  the  side  of  the  road  . 
+ people  on  bicycles  waiting  at  an  intersection  . 
+ the  people  are  sleeping  . 
+pre:
+hypo:
+pre:
+hypo:
+pre:
+hypo:
+pre:
+hypo:
+pre:
+hypo:
++
+-
+CNN
+(a1) 
+ pacino  is  brilliant  as  the  sleep  -  deprived  dormer  ,  his  increasing  weariness  as  much  existential  as  it  is  physical .
+ an  important  movie  ,  a  reminder  of  the  power  of  film  to  move  us  and  to  make  us  examine  our  values  . 
+ unflinchingly  bleak  and  desperate 
+ i  am  sorry  that  i  was  unable  to  get  the  full  brunt  of  the  comedy  . 
++
+ it  '  s  a  lovely  film  with  lovely  performances  by  buy  and  accorsi  . 
+ more  romantic  ,  more  emotional  and  ultimately  more  satisfying  than  the  teary  -  eyed  original  . 
+ it  '  s  a  bit  disappointing  that  it  only  manages  to  be  decent  instead  of  dead  brilliant  . 
+ suffers  from  the  lack  of  a  compelling  or  comprehensible  narrative  . 
+ .  .  .  very  funny  ,  very  enjoyable  .  .  . 
+ lookin  '  for  sin  ,  american  -  style  ? 
+(a10)
+(a)
+(b)
+Entailment
+Contradiction
+LSTM
+Figure 2: Interpretation results of the proposed method. “+” and “-” in (a) denote the positive and negative classes
+of the depicted sentences. “pre” and “hypo” in (b) denote premise and hypothesis of SNLI, respectively. Red and
+blue colors denote positive and negative contributions to the denoted classes, respectively.
+(σ) and normalize the score. Adaptively truncated
+marginalization approximates Eq. 2 as follows:
+p(yc|x−i) ≈
+P
+˜xi∈˜V p(yc|˜xi, x−i) · p(˜xi|x−i)
+P
+˜xi∈˜V p(˜xi|x−i)
+,
+(4)
+where ˜V = { ˜xi ∈V | p( ˜xi|x−i) > σ }.
+Since the likelihood distributions depend on
+a token’s position in the sentence, the number
+of marginalization varies for every i. We will
+demonstrate the efﬁciency of adaptively truncated
+marginalization and ﬁnd an optimal σ in Section 4.
+3.5
+Evaluation of interpretation
+Inspired by Petsiuk et al. (2018) and Chang et al.
+(2018), we propose a metric AUCrep to evaluate
+interpretation methods for NLP models. Given the
+attribution scores of a sentence, Petsiuk et al. (2018)
+plotted a prediction probability curve as pixels
+ﬁlled with zero in the order of importance. If the
+interpretation is faithful, then the curve will drop
+rapidly, resulting in a small area under a curve
+(AUC). However, replacing the token with zero or
+removing it from a sentence can cause the OOD
+problem again. Instead, we replace it with a token
+sampled from the distribution inferred by BERT
+MLM, as Chang et al. (2018) gradually replaced
+image segments with a generated sample. As MLM
+is trained by masking only a part of the input sen-
+tence, replacing too many tokens can degrade its
+modeling performance. Therefore, we calculate the
+AUC until 20% of the tokens are replaced, and refer
+to it as AUCrep.
+4
+Experimental Results
+4.1
+Experimental setup
+To show the model-agnostic and task-agnostic prop-
+erty of our method, we present interpretations of
+several types of DNNs trained for two tasks: senti-
+ment analysis and natural language inference.
+SST-2 For sentiment analysis, we used the Stan-
+ford Sentiment Treebank binary classiﬁcation cor-
+pus (SST-2) (Socher et al., 2013), which is a set of
+movie reviews labeled as positive or negative. We
+trained an 1-dimensional convolutional neural net-
+works (CNNs) and a bidirectional long short-term
+memory (LSTM) with attention mechanism, and
+ﬁne-tuned BERT (Devlin et al., 2019).
+SNLI For natural language inference, we used
+the Stanford natural language inference (SNLI) cor-
+pus (Young et al., 2014), a collection of pairs of two
+sentences, premise and hypothesis, annotated with
+three relationships between them: entailment, con-
+tradiction, and neutral. We trained the bidirectional
+LSTM for SNLI.
+The ﬁnal test accuracy of the target models is
+provided in Table 1. Note that the architectures
+of LSTM used for SST-2 and SNLI are distinct.
+Please refer to the Appendix for the detailed de-
+scriptions. Throughout the experiments, we used
+the same tokenizer as BERT, where the zero-th to-
+ken is “[PAD]”. After training the target models,
+we interpreted their predictions through the pro-
+posed input marginalization. We used pre-trained
+BERT (Wolf et al., 2019) for likelihood modeling
+and σ was set to 10−5.
+Table 1: Test accuracy of the target models
+Corpus
+Model
+LSTM
+BERT
+CNN
+SST-2
+0.7753
+0.8578
+0.7300
+SNLI
+0.6314
+4.2
+Interpretation results
+The interpretation results of the proposed method
+are shown in Fig. 2. The color indicates the contri-
+bution of each token to the ﬁnal prediction, with
+blue and red representing a negative and positive
+contribution, respectively. Its intensity represents
+the magnitude of the attribution score. More exam-
+ples are provided in Appendix.
+Fig. 2 (a) shows the interpretations of correct pre-
+dictions for SST-2. The labels are shown in front
+of the sentences. For predicting the positive class,
+afﬁrmative tokens such as “brilliant” and “funny”
+were attributed highly (a1, a9); if they are replaced
+with other tokens, the prediction probability will
+decrease signiﬁcantly. Likewise, negative tokens
+such as “disappointing” and “suffers” were high-
+lighted for predicting the negative class (a7, a8). If
+positive and negative tokens appear in one sentence
+simultaneously, our method successfully assigned
+the opposite scores to those tokens: positive score
+to “disappointing” and negative score to “dead bril-
+liant” for predicting negative class (a7).
+The interpretations of the LSTM for SNLI are
+shown in Fig. 2 (b). The sentences were correctly
+classiﬁed to the denoted class. For predicting a
+class entailment, the token with a similar mean-
+ing were assigned high attribution score, such as
+“swim” (b3). In contrast, tokens that makes two
+sentences contradicting were highlighted for pre-
+dicting contradiction, such as “cafe” vs. “bar” (b4).
+4.3
+Comparison to the existing erasing
+scheme
+In this section, we compare our method with the ex-
+isting method proposed by Li et al. (2015) through
+interpretations of models for SST-2. We refer to
+the existing method as zero erasure throughout the
+experiments as it replaces tokens with zero.
+Qualitative comparison Interpretation results
+using input marginalization (Marg) and zero era-
+sure (Zero) are depicted in Fig. 3 (a). Fig. 3 (a1-a6)
+and (a7-a8) were classiﬁed to positive and neg-
+ative class, respectively. As shown in the ﬁgure,
+zero erasure often completely failed to interpret
+the prediction (a1). Zero erasure also assigned high
+attribution scores to uninformative tokens such as
+punctuation and “to” (a3-a6). Our method showed
+clearer interpretations where unimportant tokens
+were given low attribution scores, while correctly
+highlighting the important ones. Moreover, the neg-
+ative attribution was captured better than zero era-
+sure. For example, in Fig. 3 (a7-a8), the token “bit”
+reduces the degree of negativity of “disappointing”.
+Compared to potentially more assertive tokens (e.g.
+“very”), the speciﬁc token diluted the negative senti-
+ment of the sentence. The negative contribution of
+“bit” to predicting the class “negative” was captured
+only with our method.
+Quantitative comparison using AUCrep We
+quantitatively compared our method with zero era-
+sure using the AUCrep proposed in Section 3. An-
+other baseline using “[UNK]” token instead of
+zero was tested to verify that the OOD problem
+occurs no matter what predeﬁned value is used.
+We would like to clarify that we did not consider
+the “[MASK]” token because it is a special token
+dedicated for the pre-training of BERT. It will ob-
+viously cause the OOD problem because it never
+appears during the training of target classiﬁers.
+The deletion curves in Fig. 3 (b) shows the
+change in prediction probabilities as tokens with
+high attribution score are gradually replaced. The
+Marg:
+(a)
+(b)
+  
+Zero:
+(a1) 
+ a  good  piece  of  work  more  often  than  not  . 
+(a2) 
+ a  good  piece  of  work  more  often  than  not  . 
+Marg:
+(a3)
+ it  '  s  also  ,  clearly  ,  great  fun  . 
+Zero:
+ it  '  s  also  ,  clearly  ,  great  fun .
+(a4)
+(a6)
+ the  best  film  about  baseball  to  hit  theaters  since  field  of  dreams . 
+Marg:
+(a5)
+ the  best  film  about  baseball  to  hit  theaters  since  field  of  dreams  . 
+Zero:
+Marg:
+Prediction probability
+Number of erased tokens
+Marg
+Zero
+Unk
+(a8)
+ it  '  s  a  bit  disappointing  that  it  only  manages  to  be  decent  instead  of  dead  brilliant .
+(a7)
+Zero:  it  '  s  a  bit  disappointing  that  it  only  manages  to  be  decent  instead  of  dead  brilliant .
+Figure 3: (a) shows examples of interpretations obtained by zero erasure and input marginalization (ours). Red and
+blue colors denote positive and negative contributions to the predicted classes, respectively. (a1-a6) are correctly
+classiﬁed as positive, and (a7-a8) are correctly classiﬁed to negative. (b) shows deletion curves of input marginal-
+ization, zero erasure, and “[UNK]” erasure, which are abbreviated as “Marg”, “Zero”, and “Unk”, respectively.
+curves show that the deletion curve drawn using
+our method dropped more rapidly compared to the
+zero and “[UNK]” erasures. The average AUCrep
+values for 700 SST-2 sentences are provided in Ta-
+ble 2, and the proposed method showed the lowest
+AUCrep. This result demonstrates that our method
+more accurately captures the importance of tokens
+than the existing erasure scheme.
+Table 2: Comparison of AUCrep with the existing era-
+sure scheme (the lower the better).
+Interpretation method
+Zero
+Unk
+Ours
+AUCrep
+0.5284
+0.5170
+0.4972
+Quantitative comparison using SST-2 tags
+The SST-2 corpus provides not only sentence-level
+labels, but also ﬁve-class word-level sentiment tags
+ranging from very negative to very positive. We
+can verify the validity of the attribution scores by
+comparing them with the word-level tags. For sim-
+plicity, we merged very positive and positive, very
+negative and negative into positive (pos) and neg-
+ative (neg), respectively, such that each token is
+given one tag among three. If a sentence is cor-
+rectly classiﬁed to positive, then three cases exist:
+i) pos-tagged word: contributes positively and
+signiﬁcantly to the prediction
+ii) neut-tagged word: does not contribute much
+to the prediction
+iii) neg-tagged word: contributes negatively to
+the prediction,
+where neut denotes neutral.
+To assess if our method can assign high score
+to case i), we measured the intersection of to-
+kens (IoT) between pos-tagged tokens and highly
+attributed tokens in one sentence, motivated by
+intersection of union (IoU) which is a widely
+used interpretation evaluation metric in the vi-
+sion ﬁeld (Chang et al., 2018). IoT is deﬁned as
+|P ∩T| / |P|, where P denotes a set of + tagged
+tokens, and T denotes a set of top-10 highly at-
+tributed tokens. The average IoT for 100 sentences
+was 0.72 and 0.64 for our method and zero erasure,
+respectively. This demonstrates that the tokens as-
+signed with the highest attribution scores by our
+methods are likely to have a signiﬁcant impact on
+the sentiment annotation.
+A faithful interpretation method is expected to
+assign a small attribution score for the tokens be-
+longing to ii). For 500 interpretations, the average
+attribution score of the neutral words was 0.053
+and 0.175 with our method and zero erasure, re-
+spectively. With our method, the candidate tokens
+inducing the OOD problem like zero have an in-
+signiﬁcant effect on the ﬁnal attribution score be-
+cause they are assigned relatively low likelihoods.
+4.4
+Additional analysis using input
+marginalization
+The experimental results above demonstrates that
+our method can provide faithful interpretations. It
+thus can be used to analyze DNNs. First, we can
+compare the rationale of various models by analyz-
+ing their interpretations. Fig. 4 (a1-a4) show the in-
+terpretations of SST-2 samples correctly classiﬁed
+to positive by both BERT and LSTM. BERT tended
+to focus more on afﬁrmative tokens such as “full”
+and “memorable” (a2) and successfully identiﬁed
+the role of the token “but” (a4) where the sentiment
+is reversed after it from negative to positive. Fig. 4
+(a5-a8) show the interpretations of samples that are
+labeled as positive but misclassiﬁed as negative by
+(a)
+(b)
+ a  man  with  wild  hair  rocks  a  show  playing  a  guitar  center  stage  . 
+ the  bald  man  played  the  drums  . 
+ a  man  with  wild  hair  rocks  a  show  playing  a  guitar  center  stage  . 
+ a  guy  stands  on  stage  with  his  guitar  . 
+ a  man  with  wild  hair  rocks  a  show  playing  a  guitar  center  stage  . 
+ one  crazy  looking  man  plays  in  a  show  . 
+Premise
+Hypothesis
+(Entailment)
+(Contradiction)
+(Neutral)
+Label
+(c)
+(b1)
+(b2)
+(b3)
+(c1)
+(c2)
+(c3)
+(a6)
+BERT:  the  band  '  s  courage  in  the  face  of  official  repression  is  inspiring  ,  especially  for  aging  hippies  (  this  one  included  )  .
+(a5)
+LSTM:  the  band  '  s  courage  in  the  face  of  official  repression  is  inspiring  ,  especially  for  aging  hippies  (  this  one  included  )  .
+(a7)
+LSTM:  add  yet  another  hat  to  a  talented  head  ,  clooney  '  s  a  good  director  . 
+(a8)
+BERT:  add  yet  another  hat  to  a  talented  head  ,  clooney  '  s  a  good  director  .
+BERT (-):  if  steven  soderbergh  '  s  `   solaris  '  is  a  failure  it  is  a  glorious  failure  . 
+ if  steven  soderbergh  '  s  `   solaris  '  is  a  failure  it  is  a  glorious  failure  .
+LSTM (-):
+ if  steven  soderbergh  '  s  `   solaris  '  is  a  failure  it  is  a  glorious  failure 
+Original (+):
+ (a1)
+LSTM:  leigh  '  s  film  is  full  of  memorable  performances  from  top  to  bottom  . 
+(a2)
+BERT:  leigh  '  s  film  is  full  of  memorable  performances  from  top  to  bottom  . 
+(a3)
+ the  very  definition  of  the  `   small  '  movie  ,  but  it  is  a  good  stepping  stone  for  director  sprecher  . 
+LSTM:
+(a4)
+ 
+ the  very  definition  of  the  `   small  '  movie  ,  but  it  is  a  good  stepping  stone  for  director  sprecher  . 
+BERT:
+Figure 4: Interpretation results using input marginalization. Red and blue colors denote positive and negative
+contributions to the predicted classes. (a) shows interpretations of SST-2 predictions. (a1-a6) are correctly classiﬁed
+to positive, and (a7-a8) are correctly classiﬁed to negative. (b) shows positive sentences which are misclassiﬁed to
+negative by both LSTM and BERT. (c) shows the interpretations of SNLI predictions.
+LSTM. The decisions of LSTM were signiﬁcantly
+inﬂuenced by the word “included” and “add” (a5,
+a7). In contrast, BERT correctly classiﬁed them as
+positive by focusing on “inspiring” and “good”.
+Our method enables debugging the model by an-
+alyzing the misclassiﬁcation case. Fig. 4 (b) shows
+the sentences whose true labels are positive but in-
+correctly classiﬁed as negative by both models. We
+measured the attribution score with respect to the
+negative class. For both models, the word “failure”
+was assigned signiﬁcantly high attribution score
+indicating that both models failed to recognize the
+overall positive sentiment of the sentence by focus-
+ing on the negativity inherent in the word.
+Fig. 4 (c) shows different attribution scores as-
+signed to the same premise when the hypothesis
+changes. It is shown that the tokens in the hy-
+potheses received higher scores than those in the
+premises. In fact, they obtained attribution scores
+twice as high as those in the premises for 500 in-
+terpretations. We can potentially conclude that the
+model was trained to pay more attention to hypoth-
+esis, since the SNLI corpus consists of repetitive
+premises and varying hypotheses. Moreover, (c1)
+shows that even if there are two contradictory word
+pairs, “wild hair”-“bald” and “guitar”-“drum”, the
+model focused more on the the former. Our method
+allows potential model debugging when the inter-
+pretation turns out to be counterintuitive.
+4.5
+Effect of language modeling
+In Eq. 2, an exact modeling of the likelihood
+p(˜xi|x−i) is important for the accurate calculation
+of the attribution scores. Hence, the high agreement
+between the modeled and the real-world distribu-
+tions will result in a more accurate interpretation.
+We analyzed the effect of the likelihood modeling
+capability on the accuracy of interpretation results.
+We tested three additional likelihood modeling: uni-
+form distribution, prior probability, and ﬁne-tuned
+BERT MLM.
+Uniform p(˜xi|x−i) = 1/ |V| = 1/30522 in the
+case of BERT tokenizer.
+Prior p(˜xi|x−i) = p(˜xi), deﬁned by counting
+the frequency of each token in the training data.
+Fine-tuned MLM We ﬁne-tuned the MLM of
+BERT with the SST-2 dataset for two epochs
+(MLMﬁne).
+Using each likelihood distribution modeling, we
+interpreted the BERT classiﬁer trained for the SST-
+2 corpus. The results are shown in Fig. 5. The uni-
+form distribution failed to provide an accurate inter-
+pretation. The result with prior probability model-
+ing appeared slightly clearer, but was still mislead-
+ing. MLMpre successfully highlighted important
+tokens, but it assigned high scores to tokens that
+were not expected to contribute signiﬁcantly to pre-
+dicting the sentiment of a movie review (e.g., “ﬁlm”
+and “movie” marked with box). MLMﬁne yielded
+(a)
+(b)
+Uniform  a  deep  and  meaningful  film  . 
+Prior
+ a  deep  and  meaningful  film  . 
+MLMpre  a  deep  and  meaningful  film  . 
+MLMfine  a  deep  and  meaningful  film  . 
+Uniform  the  performances  take  the  movie  to  a  higher  level  . 
+Prior
+ the  performances  take  the  movie  to  a  higher  level  . 
+MLMpre  the  performances  take  the  movie  to  a  higher  level  . 
+MLMfine  the  performances  take  the  movie  to  a  higher  level  . 
+Figure 5: Interpretation results using different likeli-
+hood modelings. Each sentence is correctly classiﬁed
+to positive. Red and blue colors denote positive and
+negative contributions to the predicted classes.
+the most reasonable interpretation, where the attri-
+bution score of “ﬁlm” and “movie” was reduced
+from 0.256 and 0.631 to 0.007 and 0.321, respec-
+tively, compared to MLMpre. We can expect the
+interpretation results to become more plausible as
+the likelihood modeling improves.
+4.6
+Ablation study on adaptively truncated
+marginalization
+We introduced adaptively truncated marginaliza-
+tion in Section 3.4 for a faster computation. The full
+marginalization over all possible tokens yields the
+most exact attribution scores. Thus, we searched
+for an optimal threshold σ of adaptively truncated
+marginalization that reduces the computational
+complexity while maintaining a high correlation to
+the scores from full marginalization. We measured
+the correlation using the Pearson correlation coef-
+ﬁcients. Furthermore, we tested ﬁxed truncation,
+which calculates top-n likely candidates without
+considering the varying likelihoods depending on
+the position.
+Table 3 shows the Pearson correlation coefﬁcient
+and the average number of marginalization under
+various thresholds. σ = 10−5 and 10−6 showed
+very similar interpretations to the full marginal-
+ization while the average marginalization number
+reduced to 2.5% and 10.4%, respectively, com-
+pared to 30,522 of the full marginalization. We
+regarded σ = 10−5, which showed a lower number
+of marginalization under a similar correlation, as
+the optimal value. The ﬁxed truncation showed a
+lower correlation under the similar average number
+of marginalization. The computational complexity
+can be further reduced by accepting a slight loss in
+the accuracy.
+Table 3: The Pearson correlation with full marginaliza-
+tion and the average number of marginalization under
+various thresholds. σ: likelihood threshold, n: marginal-
+ization number threshold for ﬁxed truncation.
+Corr
+Avg #
+Threshold
+σ = 10−6
+0.9999
+3,186
+σ = 10−5
+0.9999
+791
+σ = 10−4
+0.9988
+171
+σ = 10−3
+0.9928
+33
+n = 103
+0.9958
+1,000
+n = 102
+0.9823
+100
+5
+Conclusion
+Interpretability is becoming more important ow-
+ing to the increase in deep learning in NLP. Hence,
+several interpretation methods have been proposed,
+and we reviewed their limitations throughout the pa-
+per. Among them, we focused on the OOD problem
+arising from the widely used zero erasure scheme,
+which results in misleading interpretation. To the
+best of our knowledge, neither the OOD problem
+has been raised in interpreting NLP models nor the
+attempt to resolve it has been undertaken. Our pro-
+posed input marginalization, which can mitigate
+the OOD problem, can result in a faithful inter-
+pretation, thereby enabling better understanding of
+“black box” DNNs.
+The scope of this study was primarily fo-
+cused on interpreting DNNs for sentiment anal-
+ysis and natural language inference. Regarding the
+model-agnostic and task-agnostic properties of our
+method, they are applicable to any types of NLP
+model for various tasks, such as neural machine
+translation and visual question answering. It will
+be meaningful to interpret the state-of-the-art mod-
+els such as XLNet (Yang et al., 2019) and ELEC-
+TRA (Clark et al., 2019). In addition, as experi-
+mentally analyzed, the interpretation result of our
+method is affected by the likelihood modeling per-
+formance. We can expect even more faithful inter-
+pretation if the modeling performance improves.
+Acknowledgement
+This work was supported by the National Research
+Foundation of Korea (NRF) grant funded by the
+Korea government (Ministry of Science and ICT)
+[2018R1A2B3001628], the Brain Korea 21 Plus
+Project in 2020, and Hyundai Motor Company.
+References
+Leila Arras, Gr´egoire Montavon, Klaus-Robert M¨uller,
+and Wojciech Samek. 2017.
+Explaining recurrent
+neural network predictions in sentiment analysis.
+EMNLP 2017, page 159.
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Ben-
+gio. 2014.
+Neural machine translation by jointly
+learning to align and translate.
+arXiv preprint
+arXiv:1409.0473.
+Chun-Hao Chang, Elliot Creager, Anna Goldenberg,
+and David Duvenaud. 2018. Explaining image clas-
+siﬁers by counterfactual generation.
+Kevin Clark, Minh-Thang Luong, Quoc V Le, and
+Christopher D Manning. 2019. Electra: Pre-training
+text encoders as discriminators rather than genera-
+tors. In International Conference on Learning Rep-
+resentations.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. Bert: Pre-training of deep
+bidirectional transformers for language understand-
+ing.
+In Proceedings of the 2019 Conference of
+the North American Chapter of the Association for
+Computational Linguistics: Human Language Tech-
+nologies, Volume 1 (Long and Short Papers), pages
+4171–4186.
+Shi Feng, Eric Wallace, Alvin Grissom II, Mohit Iyyer,
+Pedro Rodriguez, and Jordan Boyd-Graber. 2018.
+Pathologies of neural models make interpretations
+difﬁcult. In Proceedings of the 2018 Conference on
+Empirical Methods in Natural Language Processing,
+pages 3719–3728.
+Leilani H Gilpin, David Bau, Ben Z Yuan, Ayesha Ba-
+jwa, Michael Specter, and Lalana Kagal. 2018. Ex-
+plaining explanations: An overview of interpretabil-
+ity of machine learning. In 2018 IEEE 5th Interna-
+tional Conference on data science and advanced an-
+alytics (DSAA), pages 80–89. IEEE.
+Dan Hendrycks and Kevin Gimpel. 2016. A baseline
+for detecting misclassiﬁed and out-of-distribution
+examples in neural networks.
+arXiv preprint
+arXiv:1610.02136.
+Sarthak Jain and Byron C Wallace. 2019. Attention is
+not explanation. arXiv preprint arXiv:1902.10186.
+Xisen Jin, Junyi Du, Zhongyu Wei, Xiangyang Xue,
+and Xiang Ren. 2019. Towards hierarchical impor-
+tance attribution: Explaining compositional seman-
+tics for neural sequence models.
+arXiv preprint
+arXiv:1911.06194.
+Jiwei Li, Xinlei Chen, Eduard Hovy, and Dan Jurafsky.
+2015. Visualizing and understanding neural models
+in nlp. arXiv preprint arXiv:1506.01066.
+Jiwei Li, Will Monroe, and Dan Jurafsky. 2016. Un-
+derstanding neural networks through representation
+erasure. arXiv preprint arXiv:1612.08220.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Roberta: A robustly optimized bert pretraining ap-
+proach. arXiv preprint arXiv:1907.11692.
+Scott M Lundberg and Su-In Lee. 2017.
+A uniﬁed
+approach to interpreting model predictions. In Ad-
+vances in neural information processing systems,
+pages 4765–4774.
+Vitali Petsiuk, Abir Das, and Kate Saenko. 2018.
+Rise: Randomized input sampling for explana-
+tion
+of
+black-box
+models.
+arXiv
+preprint
+arXiv:1806.07421.
+Vinodkumar Prabhakaran, Ben Hutchinson, and Mar-
+garet Mitchell. 2019. Perturbation sensitivity anal-
+ysis to detect unintended model biases.
+arXiv
+preprint arXiv:1910.04210.
+Marko Robnik-ˇSikonja and Igor Kononenko. 2008.
+Explaining classiﬁcations for individual instances.
+IEEE Transactions on Knowledge and Data Engi-
+neering, 20(5):589–600.
+Karen Simonyan, Andrea Vedaldi, and Andrew Zisser-
+man. 2013. Deep inside convolutional networks: Vi-
+sualising image classiﬁcation models and saliency
+maps. arXiv preprint arXiv:1312.6034.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, Christopher D Manning, Andrew Y Ng,
+and Christopher Potts. 2013. Recursive deep mod-
+els for semantic compositionality over a sentiment
+treebank. In Proceedings of the 2013 conference on
+empirical methods in natural language processing,
+pages 1631–1642.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In Advances in neural information pro-
+cessing systems, pages 5998–6008.
+Sarah Wiegreffe and Yuval Pinter. 2019.
+Atten-
+tion is not not explanation.
+arXiv preprint
+arXiv:1908.04626.
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Chaumond, Clement Delangue, Anthony Moi, Pier-
+ric Cistac, Tim Rault, R’emi Louf, Morgan Funtow-
+icz, and Jamie Brew. 2019.
+Huggingface’s trans-
+formers: State-of-the-art natural language process-
+ing. ArXiv, abs/1910.03771.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Car-
+bonell, Ruslan Salakhutdinov, and Quoc V Le.
+2019.
+Xlnet: Generalized autoregressive pretrain-
+ing for language understanding.
+arXiv preprint
+arXiv:1906.08237.
+Jihun Yi, Eunji Kim, Siwon Kim, and Sungroh Yoon.
+2020. Information-theoretic visual explanation for
+black-box classiﬁers.
+Peter Young, Alice Lai, Micah Hodosh, and Julia Hock-
+enmaier. 2014. From image descriptions to visual
+denotations: New similarity metrics for semantic in-
+ference over event descriptions. Transactions of the
+Association for Computational Linguistics, 2:67–78.
+Matthew D Zeiler and Rob Fergus. 2014. Visualizing
+and understanding convolutional networks. In Euro-
+pean conference on computer vision, pages 818–833.
+Springer.
+Lei Zhang, Shuai Wang, and Bing Liu. 2018.
+Deep
+learning for sentiment analysis: A survey.
+Wiley
+Interdisciplinary Reviews: Data Mining and Knowl-
+edge Discovery, 8(4):e1253.
+Luisa M Zintgraf, Taco S Cohen, Tameem Adel,
+and Max Welling. 2017.
+Visualizing deep neu-
+ral network decisions: Prediction difference analysis.
+arXiv preprint arXiv:1702.04595.

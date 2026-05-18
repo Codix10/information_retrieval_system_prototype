@@ -1,0 +1,1489 @@
+Title: Trankit: A Light-Weight Transformer-based Toolkit for Multilingual Natural Language Processing
+Source URL: http://arxiv.org/abs/2101.03289v5
+--------------------------------------------------
+
+Trankit: A Light-Weight Transformer-based Toolkit for Multilingual
+Natural Language Processing
+Minh Van Nguyen, Viet Lai, Amir Pouran Ben Veyseh, Thien Huu Nguyen
+Department of Computer and Information Science
+University of Oregon, Eugene, Oregon, USA
+{minhnv,vietl,apouranb,thien}@cs.uoregon.edu
+Abstract
+We
+introduce
+Trankit,
+a
+light-weight
+Transformer-based Toolkit for multilingual
+Natural
+Language
+Processing
+(NLP).
+It
+provides a trainable pipeline for fundamen-
+tal NLP tasks over 100 languages, and 90
+pretrained pipelines for 56 languages.
+Built
+on
+a
+state-of-the-art
+pretrained
+language
+model,
+Trankit
+significantly
+outperforms
+prior multilingual NLP pipelines over sen-
+tence segmentation, part-of-speech tagging,
+morphological feature tagging, and depen-
+dency parsing while maintaining competitive
+performance
+for
+tokenization,
+multi-word
+token expansion, and lemmatization over 90
+Universal Dependencies treebanks.
+Despite
+the use of a large pretrained transformer, our
+toolkit is still efficient in memory usage and
+speed.
+This is achieved by our novel plug-
+and-play mechanism with Adapters where a
+multilingual pretrained transformer is shared
+across
+pipelines
+for
+different
+languages.
+Our toolkit along with pretrained models
+and code are publicly available at: https:
+//github.com/nlp-uoregon/trankit.
+A demo website for our toolkit is also available
+at:
+http://nlp.uoregon.edu/trankit.
+Finally, we create a demo video for Trankit at:
+https://youtu.be/q0KGP3zGjGc.
+1
+Introduction
+Many efforts have been devoted to developing
+multilingual NLP systems to overcome language
+barriers (Aharoni et al., 2019; Liu et al., 2019a;
+Taghizadeh and Faili, 2020; Zhu, 2020; Kanayama
+and Iwamoto, 2020; Nguyen and Nguyen, 2021). A
+large portion of existing multilingual systems has
+focused on downstream NLP tasks that critically
+depend on upstream linguistic features, ranging
+from basic information such as token and sentence
+boundaries for raw text to more sophisticated struc-
+tures such as part-of-speech tags, morphological
+features, and dependency trees of sentences (called
+fundamental NLP tasks). As such, building effec-
+tive multilingual systems/pipelines for fundamental
+upstream NLP tasks to produce such information
+has the potentials to transform multilingual down-
+stream systems.
+There have been several NLP toolkits that con-
+cerns multilingualism for fundamental NLP tasks,
+featuring spaCy1, UDify (Kondratyuk and Straka,
+2019), Flair (Akbik et al., 2019), CoreNLP (Man-
+ning et al., 2014), UDPipe (Straka, 2018), and
+Stanza (Qi et al., 2020). However, these toolk-
+its have their own limitations. spaCy is designed to
+focus on speed, thus it needs to sacrifice the per-
+formance. UDify and Flair cannot process raw text
+as they depend on external tokenizers. CoreNLP
+supports raw text, but it does not offer state-of-
+the-art performance. UDPipe and Stanza are the
+recent toolkits that leverage word embeddings, i.e.,
+word2vec (Mikolov et al., 2013) and fastText (Bo-
+janowski et al., 2017), to deliver current state-of-
+the-art performance for many languages. However,
+Stanza and UDPipe’s pipelines for different lan-
+guages are trained separately and do not share any
+component, especially the embedding layers that
+account for most of the model size. This makes
+their memory usage grow aggressively as pipelines
+for more languages are simultaneously needed and
+loaded into the memory (e.g., for language learn-
+ing apps). Most importantly, none of such toolk-
+its have explored contextualized embeddings from
+pretrained transformer-based language models that
+have the potentials to significantly improve the per-
+formance of the NLP tasks, as demonstrated in
+many prior works (Devlin et al., 2019; Liu et al.,
+2019b; Conneau et al., 2020).
+In this paper, we introduce Trankit, a multi-
+lingual Transformer-based NLP Toolkit that over-
+1https://spacy.io/
+arXiv:2101.03289v5  [cs.CL]  15 Oct 2021
+Shared
+Multilingual
+Pretrained
+Transformer
+Joint Model for
+POS,Morphological Tagging, 
+and Dependency Parsing
+Joint Token and Sentence
+Splitter
+Multi-word 
+Token Expander
+Lemmatizer
+Language=1,L
+Hierarchical Native Python Dictionary 
+Named Entity 
+Recognizer
+Output:
+Input:
+Raw Sentence/Document String
+Figure 1: Overall architecture of Trankit. A single multilingual pretrained transformer is shared across three
+components (pointed by the red arrows) of the pipeline for different languages.
+comes such limitations. Our toolkit can process
+raw text for fundamental NLP tasks, supporting 56
+languages with 90 pre-trained pipelines on 90 tree-
+banks of the Universal Dependency v2.5 (Zeman
+et al., 2019). By utilizing the state-of-the-art multi-
+lingual pretrained transformer XLM-Roberta (Con-
+neau et al., 2020), Trankit advances state-of-the-
+art performance for sentence segmentation, part-
+of-speech (POS) tagging, morphological feature
+tagging, and dependency parsing while achieving
+competitive or better performance for tokenization,
+multi-word token expansion, and lemmatization
+over the 90 treebanks. It also obtains competitive
+or better performance for named entity recognition
+(NER) on 11 public datasets.
+Unlike previous work, our token and sentence
+splitter is wordpiece-based instead of character-
+based to better exploit contextual information,
+which are beneficial in many languages. Consider-
+ing the following sentence:
+“John Donovan from Argghhh! has put out a ex-
+cellent slide show on what was actually found and
+fought for in Fallujah.”
+As such, Trankit correctly recognizes this as a sin-
+gle sentence while character-based sentence split-
+ters of Stanza and UDPipe are easily fooled by the
+exclamation mark “!”, treating it as two separate
+sentences. To our knowledge, this is the first work
+to successfully build a wordpiece-based token and
+sentence splitter that works well for 56 languages.
+Figure 1 presents the overall architecture
+of Trankit pipeline that features three novel
+transformer-based components for: (i) the joint
+token and sentence splitter, (ii) the joint model
+for POS tagging, morphological tagging, depen-
+dency parsing, and (iii) the named entity recog-
+nizer. One potential concern for our use of a large
+pretrained transformer model (i.e., XML-Roberta)
+in Trankit involves GPU memory where different
+transformer-based components in the pipeline for
+one or multiple languages must be simultaneously
+loaded into the memory to serve multilingual tasks.
+This could extensively consume the memory if dif-
+ferent versions of the large pre-trained transformer
+(finetuned for each component) are employed in
+the pipeline. As such, we introduce a novel plug-
+and-play mechanism with Adapters to address this
+memory issue. Adapters are small networks in-
+jected inside all layers of the pretrained transformer
+model that have shown their effectiveness as a light-
+weight alternative for the traditional finetuning
+of pretrained transformers (Houlsby et al., 2019;
+Peters et al., 2019; Pfeiffer et al., 2020a,b). In
+Trankit, a set of adapters (for transfomer layers)
+and task-specific weights (for final predictions) are
+created for each transformer-based component for
+each language while only one single large mul-
+tilingual pretrained transformer is shared across
+components and languages. Adapters allow us to
+learn language-specific features for tasks. During
+training, the shared pretrained transformer is fixed
+while only the adapters and task-specific weights
+are updated. At inference time, depending on the
+language of the input text and the current active
+component, the corresponding trained adapter and
+task-specific weights are activated and plugged into
+the pipeline to process the input. This mechanism
+not only solves the memory problem but also sub-
+stantially reduces the training time.
+2
+Related Work
+There have been works using pre-trained trans-
+formers to build models for character-based word
+segmentation for Chinese (Yang, 2019; Tian et al.,
+2020; Che et al., 2020); POS tagging for Dutch,
+English, Chinese, and Vietnamese (de Vries et al.,
+2019; Tenney et al., 2019; Tian et al., 2020; Che
+et al., 2020; Nguyen and Nguyen, 2020); mor-
+phological feature tagging for Estonian and Per-
+sian (Kittask et al., 2020; Mohseni and Tebbifakhr,
+2019); and dependency parsing for English and
+Chinese (Tenney et al., 2019; Che et al., 2020).
+However, all of these works are only developed for
+some specific language, thus potentially unable to
+support and scale to the multilingual setting.
+Some
+works
+have
+designed
+multilingual
+transformer-based systems via multilingual train-
+ing on the combined data of different languages
+(Tsai et al., 2019; Kondratyuk and Straka, 2019;
+¨Ust¨un et al., 2020).
+However, multilingual
+training is suboptimal (see Section 5). Also, these
+systems still rely on external resources to perform
+tokenization and sentence segmentation, thus
+unable to consume raw text. To our knowedge, this
+is the first work to successfully build a multilingual
+transformer-based NLP toolkit where different
+transformer-based models for many languages can
+be simultaneously loaded into GPU memory and
+process raw text inputs of different languages.
+3
+Design and Architecture
+Adapters. Adapters play a critical role in making
+Trankit memory- and time-efficient for training and
+inference. Figure 2 shows the architecture and the
+location of an adapter inside a layer of transformer.
+We use the adapter architecture proposed by (Pfeif-
+fer et al., 2020a,b), which consists of two projection
+layers Up and Down (feed-forward networks), and
+a residual connection.
+ci = AddNorm(ri), hi = Up(ReLU(Down(ci))) + ri (1)
+where ri is the input vector from the transformer
+layer for the adapter and hi is the output vector
+for the transformer layer i. During training, all the
+weights of the pretrained transformer (i.e., gray
+Add & Norm
+Add & Norm
+Add & Norm
+Adapter
+Feed-forward
+Multi-Head Attention
+Add & Norm
+FF Up
+FF Down
+Adapter
+Figure 2: Left: location of an adapter (green box) in-
+side a layer of the pretrained transformer. Gray boxes
+represent the original components of a transformer
+layer. Right: the network architecture of an adapter.
+boxes) are fixed and only the adapter weights of
+two projection layers and the task-specific weights
+outside the transformer (for final predictions) are
+updated. As demonstrated in Figure 1, Trankit
+involves six components described as follows.
+Multilingual Encoder with Adapters.
+This is
+our core component that is shared across different
+transformer-based components for different lan-
+guages of the system. Given an input raw text s,
+we first split it into substrings by spaces. After-
+ward, Sentence Piece, a multilingual subword tok-
+enizer (Kudo and Richardson, 2018; Kudo, 2018),
+is used to further split each substring into word-
+pieces. By concatenating wordpiece sequences for
+substrings, we obtain an overall sequence of word-
+pieces w = [w1, w2, . . . , wK] for s. In the next
+step, w is fed into the pretrained transformer, which
+is already integrated with adapters, to obtain the
+wordpiece representations:
+xl,m
+1:K = Transformer(w1:K; θl,m
+AD)
+(2)
+Here, θl,m
+AD represents the adapter weights for lan-
+guage l and component m of the system. As such,
+we have specific adapters in all transformer layers
+for each component m and language l. Note that if
+K is larger than the maximum input length of the
+pretrained transformer (i.e., 512), we further divide
+w into consecutive chunks; each has the length less
+than or equal to the maximum length. The pre-
+trained transformer is then applied over each chunk
+to obtain a representation vector for each wordpiece
+in w. Finally, xl,m
+1:K will be sent to component m to
+perform the corresponding task.
+Joint Token and Sentence Splitter. Given the
+wordpiece representations xl,m
+1:K for this component,
+each vector xl,m
+i
+for wi ∈w will be consumed by
+a feed-forward network with softmax in the end to
+predict if wi is the end of a single-word token, the
+end of a multi-word token, or the end of a sentence.
+The predictions for all wordpieces in w will then be
+aggregated to determine token, multi-word token,
+and sentence boundaries for s.
+Multi-word Token Expander. This component is
+responsible for expanding each detected multi-word
+token (MWT) into multiple syntactic words2. We
+follow Stanza to deploy a character-based seq2seq
+model for this component. This decision is made
+based on our observation that the task is done best
+at character level, and the character-based model
+(with character embeddings) is very small.
+Joint Model for POS Tagging, Morphological
+Tagging and Dependency Parsing. In Trankit,
+given the detected sentences and tokens/words, we
+use a single model to jointly perform POS tag-
+ging, morphological feature tagging and depen-
+dency parsing at sentence level. Joint modeling
+mitigates error propagation, saves the memory, and
+speedups the system. In particular, given a sen-
+tence, the representation for each word is computed
+as the average of its wordpieces’ transformer-based
+representations in xl,m
+1:K. Let t1:N = [t1, t2, . . . , tN]
+be the representations of the words in the sen-
+tence. We compute the following vectors using
+feed-forward networks FFN∗:
+rupos
+1:N
+= FFNupos(t1:N), rxpos
+1:N = FFNxpos(t1:N)
+rufeats
+1:N
+= FFNufeats(t1:N), rdep
+0:N = [xcls; FFNdep(t1:N)]
+Vectors for the words in rupos
+1:N , rxpos
+1:N , rufeats
+1:N
+are
+then passed to a softmax layer to make predic-
+tions for UPOS, XPOS, and UFeats tags for each
+word. For dependency parsing, we use the classi-
+fication token <s> to represent the root node, and
+apply Deep Biaffine Attention (Dozat and Man-
+ning, 2017) and the Chu-Liu/Edmonds algorithm
+(Chu, 1965; Edmonds, 1967) to assign a syntac-
+tic head and the associated dependency relation to
+each word in the sentence.
+Lemmatizer. This component receives sentences
+and their predicted UPOS tags to produce the
+canonical form for each word. We also employ a
+character-based seq2seq model for this component
+as in Stanza.
+2For languages (e.g., English, Chinese) that do not require
+MWT expansion, tokens and words are the same concepts.
+Named Entity Recognizer. Given a sentence, the
+named entity recognizer determines spans of en-
+tity names by assigning a BIOES tag to each token
+in the sentence. We deploy a standard sequence
+labeling architecture using transformer-based rep-
+resentations for tokens, involving a feed-forward
+network followed by a Conditional Random Field.
+4
+Usage
+Detailed documentation for Trankit can be found
+at: https://trankit.readthedocs.io.
+Trankit Installation.
+Trankit is written in
+Python and available on PyPI: https://pypi.
+org/project/trankit/.
+Users can install our
+toolkit via pip using:
+pip install trankit
+Initialize a Pipeline. Lines 1-4 in Figure 3 shows
+how to initialize a pretrained pipeline for English; it
+is instructed to run on GPU and store downloaded
+pretrained models to the specified cache directory.
+Trankit will not download pretrained models if they
+already exist.
+Multilingual Usage. Figure 3 shows how to ini-
+tialize a multilingual pipeline and process inputs of
+different languages in Trankit:
+from trankit import Pipeline
+# initialize a multilingual pipeline
+p = Pipeline(lang='english', gpu=True, cache_dir='./cache')
+langs = ['arabic', 'chinese', 'dutch']
+for lang in langs:
+p.add(lang)
+# tokenize English input
+p.set_active('english')
+en = p.tokenize('Rich was here before the scheduled time.')
+# get ner tags for Arabic input
+p.set_active('arabic')
+ar = p.ner('ﻮﻛﺎﻧ ﻚﻨﻋﺎﻧ ﻖﺒﻟ ﺬﻠﻛ ﺮﺌﻴﺳ ﺞﻫﺍﺯ ﺍﻼﻤﻧ ﻭﺍﻼﺴﺘﻃﻼﻋ ﻞﻠﻗﻭﺎﺗ ﺎﻠﺳﻭﺮﻳﺓ ﺎﻠﻋﺎﻤﻟﺓ ﻒﻳ ﻞﺒﻧﺎﻧ.
+')
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+Figure 3: Multilingual pipeline initialization.
+Basic Functions. Trankit can process inputs which
+are untokenized (raw) or pretokenized strings, at
+both sentence and document levels. Figure 4 illus-
+trates a simple code to perform all the supported
+tasks for an input text. We organize Trankit’s out-
+puts into hierarchical native Python dictionaries,
+which can be easily inspected by users. Figure 5
+demonstrates the outputs of the command line 6 in
+Figure 4.
+Training your own Pipelines. Trankit also pro-
+vides a trainable pipeline for 100 languages via the
+class TPipeline. This ability is inherited from
+Treebank
+System
+Tokens
+Sents.
+Words
+UPOS
+XPOS
+UFeats
+Lemmas
+UAS
+LAS
+Overall (90 treebanks)
+Trankit
+99.23
+91.82
+99.02
+95.65
+94.05
+93.21
+94.27
+87.06
+83.69
+Stanza
+99.26
+88.58
+98.90
+94.21
+92.50
+91.75
+94.15
+83.06
+78.68
+Arabic-PADT
+Trankit
+99.93
+96.59
+99.22
+96.31
+94.08
+94.28
+94.65
+88.39
+84.68
+Stanza
+99.98
+80.43
+97.88
+94.89
+91.75
+91.86
+93.27
+83.27
+79.33
+UDPipe
+99.98
+82.09
+94.58
+90.36
+84.00
+84.16
+88.46
+72.67
+68.14
+Chinese-GSD
+Trankit
+97.01
+99.7
+97.01
+94.21
+94.02
+96.59
+97.01
+85.19
+82.54
+Stanza
+92.83
+98.80
+92.83
+89.12
+88.93
+92.11
+92.83
+72.88
+69.82
+UDPipe
+90.27
+99.10
+90.27
+84.13
+84.04
+89.05
+90.26
+61.60
+57.81
+English-EWT
+Trankit
+98.48
+88.35
+98.48
+95.95
+95.71
+96.26
+96.84
+90.14
+87.96
+Stanza
+99.01
+81.13
+99.01
+95.40
+95.12
+96.11
+97.21
+86.22
+83.59
+UDPipe
+98.90
+77.40
+98.90
+93.26
+92.75
+94.23
+95.45
+80.22
+77.03
+spaCy
+97.44
+63.16
+97.44
+86.99
+91.05
+-
+87.16
+55.38
+37.03
+French-GSD
+Trankit
+99.7
+96.63
+99.66
+97.85
+-
+97.16
+97.80
+94.00
+92.34
+Stanza
+99.68
+94.92
+99.48
+97.30
+-
+96.72
+97.64
+91.38
+89.05
+UDPipe
+99.68
+93.59
+98.81
+95.85
+-
+95.55
+96.61
+87.14
+84.26
+spaCy
+99.02
+89.73
+94.81
+89.67
+-
+-
+88.55
+75.22
+66.93
+Spanish-Ancora
+Trankit
+99.94
+99.13
+99.93
+99.02
+98.94
+98.8
+99.17
+94.11
+92.41
+Stanza
+99.98
+99.07
+99.98
+98.78
+98.67
+98.59
+99.19
+92.21
+90.01
+UDPipe
+99.97
+98.32
+99.95
+98.32
+98.13
+98.13
+98.48
+88.22
+85.10
+spaCy
+99.95
+97.54
+99.43
+93.43
+-
+-
+80.02
+89.35
+83.81
+Table 1: Systems’ performance on test sets of the Universal Dependencies v2.5 treebanks. Performance for Stanza,
+UDPipe, and spaCy is obtained using their public pretrained models. The overall performance for Trankit and
+Stanza is computed as the macro-averaged F1 over 90 treebanks. Detailed performance of Trankit for 90 supported
+treebanks can be found at our documentation page.
+from trankit import Pipeline
+p = Pipeline(lang='english', gpu=True, cache_dir='./cache')
+doc = '''Hello! This is Trankit.'''
+# perform all tasks on the input
+all = p(doc)
+1
+2
+3
+4
+5
+6
+7
+Figure 4: A function performing all tasks on the input.
+the XLM-Roberta encoder which is pretrained on
+those languages. Figure 6 illustrates how to train a
+token and sentence splitter with TPipeline.
+Demo Website. A demo website for Trankit to
+support 90 pretrained pipelines is hosted at: http:
+//nlp.uoregon.edu/trankit. Figure 7 shows its
+interface.
+5
+System Evaluation
+5.1
+Datasets & Hyper-parameters
+To achieve a fair comparison, we follow Stanza (Qi
+et al., 2020) to train and evaluate all the models
+on the same canonical data splits of 90 Universal
+Dependencies treebanks v2.5 (UD2.5)3 (Zeman
+et al., 2019), and 11 public NER datasets pro-
+vided in the following corpora: AQMAR (Mo-
+hit et al., 2012), CoNLL02 (Tjong Kim Sang,
+2002), CoNLL03 (Tjong Kim Sang and De Meul-
+3We skip 10 treebanks whose languages are not supported
+by XLM-Roberta.
+// Output
+{
+'text': 'Hello! This is Trankit.', // input string
+'sentences': [ // list of sentences
+{
+'id': 1, 'text': 'Hello!', 'dspan': (0, 6), 'tokens': [...]
+},
+{
+'id': 2, // sentence index
+'text': 'This is Trankit.', 'dspan': (7, 23), // sentence span
+'tokens’: [ // list of tokens
+{
+'id': 1, // token index
+'text': 'This', 'upos': 'PRON', 'xpos': 'DT',
+'feats': 'Number=Sing|PronType=Dem',
+'head': 3, 'deprel': 'nsubj', 'lemma': 'this', 'ner': 'O',
+'dspan': (7, 11), // document-level span of the token
+'span': (0, 4)    // sentence-level span of the token
+},
+{'id': 2...},
+{'id': 3...},
+{'id': 4...}
+]
+}
+]
+}
+Figure 5: Output from Trankit. Some parts are col-
+lapsed to improve visualization.
+der, 2003), GermEval14 (Benikova et al., 2014),
+OntoNotes (Weischedel et al., 2013), and WikiNER
+(Nothman et al., 2012). Hyper-parameters for all
+models and datasets are selected based on the de-
+velopment data in this work.
+5.2
+Universal Dependencies performance
+Table 1 compares the performance of Trankit and
+the latest available versions of other popular toolk-
+its, including Stanza (v1.1.1) with current state-
+of-the-art performance, UDPipe (v1.2), and spaCy
+(v2.3) on the UD2.5 test sets. The performance
+for all systems is obtained using the official scorer
+System
+Tokens
+Sents.
+Words
+UPOS
+XPOS
+UFeats
+Lemmas
+UAS
+LAS
+Trankit (plug-and-play with adapters)
+99.05
+95.12
+98.96
+95.43
+89.02
+92.69
+93.46
+86.20
+82.51
+Multilingual
+96.69
+88.95
+96.35
+91.19
+84.64
+88.10
+90.02
+72.96
+68.66
+No-adapters
+95.06
+89.57
+94.08
+88.79
+82.54
+83.76
+88.33
+66.63
+63.11
+Table 2: Model performance on 9 different treebanks (macro-averaged F1 score over test sets).
+from trankit import TPipeline
+tp = TPipeline(training_config={
+'task': 'tokenize',
+'save_dir': './saved_model',
+'train_txt_fpath': './train.txt',
+'train_conllu_fpath': './train.conllu',
+'dev_txt_fpath': './dev.txt',
+'dev_conllu_fpath': './dev.conllu'})
+trainer.train()
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+Figure 6: Training a token and sentence splitter using
+the CONLL-U formatted data (Nivre et al., 2020).
+of the CoNLL 2018 Shared Task4. On five illus-
+trated languages, Trankit achieves competitive per-
+formance on tokenization, MWT expansion, and
+lemmatization. Importantly, Trankit outperforms
+other toolkits over all remaining tasks (e.g., POS
+and morphological tagging) in which the improve-
+ment boost is substantial and significant for sen-
+tence segmentation and dependency parsing. For
+example, English enjoys a 7.22% improvement for
+sentence segmentation, a 3.92% and 4.37% im-
+provement for UAS and LAS in dependency pars-
+ing. For Arabic, Trankit has a remarkable improve-
+ment of 16.16% for sentence segmentation while
+Chinese observes 12.31% and 12.72% improve-
+ment of UAS and LAS for dependency parsing.
+Over all 90 treebanks, Trankit outperforms the
+previous state-of-the-art framework Stanza in most
+of the tasks, particularly for sentence segmenta-
+tion (+3.24%), POS tagging (+1.44% for UPOS
+and +1.55% for XPOS), morphological tagging
+(+1.46%), and dependency parsing (+4.0% for
+UAS and +5.01% for LAS) while maintaining the
+competitive performance on tokenization, multi-
+word expansion, and lemmatization.
+5.3
+NER results
+Table 3 compares Trankit with Stanza (v1.1.1),
+Flair (v0.7), and spaCy (v2.3) on the test sets of
+11 considered NER datasets. Following Stanza, we
+report the performance for other toolkits with their
+pretrained models on the canonical data splits if
+they are available. Otherwise, their best configura-
+tions are used to train the models on the same data
+splits (inherited from Stanza). Also, for the Dutch
+4https://universaldependencies.org/
+conll18/evaluation.html
+datasets, we retrain the models in Flair as those
+models (for Dutch) have been updated in version
+v0.7. As can be seen, Trankit obtains competitive
+or better performance for most of the languages,
+clearly demonstrating the benefit of using the pre-
+trained transformer for multilingual NER.
+Language
+Corpus
+Trankit
+Stanza
+Flair
+spaCy
+Arabic
+AQMAR
+74.8
+74.3
+74.0
+-
+Chinese
+OntoNotes
+80.0
+79.2
+-
+69.3
+Dutch
+CoNLL02
+91.8
+89.2
+91.3
+73.8
+WikiNER
+94.8
+94.8
+94.8
+90.9
+English
+CoNLL03
+92.1
+92.1
+92.7
+81.0
+OntoNotes
+89.6
+88.8
+89.0
+85.4
+French
+WikiNER
+92.3
+92.9
+92.5
+88.8
+German
+CoNLL03
+84.6
+81.9
+82.5
+63.9
+GermEval14
+86.9
+85.2
+85.4
+68.4
+Russian
+WikiNER
+92.8
+92.9
+-
+-
+Spanish
+CoNLL02
+88.9
+88.1
+87.3
+77.5
+Table 3: Performance (F1) on NER test sets.
+System
+GPU
+CPU
+UD
+NER
+UD
+NER
+Trankit
+4.50×
+1.36×
+19.8×
+31.5×
+Stanza
+3.22×
+1.08×
+10.3×
+17.7×
+UDPipe
+-
+-
+4.30×
+-
+Flair
+-
+1.17×
+-
+51.8×
+Table 4: Run time on processing the English EWT tree-
+bank and the English Ontonotes NER dataset. Mea-
+surements are done on an NVIDIA Titan RTX card.
+Model Package
+Trankit
+Stanza
+Multilingual Transformer
+1146.9MB
+-
+Arabic
+38.6MB
+393.9MB
+Chinese
+40.6MB
+225.2MB
+English
+47.9MB
+383.5MB
+French
+39.6MB
+561.9MB
+Spanish
+37.3MB
+556.1MB
+Total size
+1350.9MB
+2120.6MB
+Table 5: Model sizes for five languages.
+5.4
+Speed and Memory Usage
+Table 4 reports the relative processing time for
+UD and NER of the toolkits compared to spaCy’s
+CPU processing time5. For memory usage com-
+parison, we show the model sizes of Trankit and
+5spaCy can process 8140 tokens and 5912 tokens per sec-
+ond for UD and NER, respectively.
+Figure 7: Demo website for Trankit.
+Stanza for several languages in Table 5. As can be
+seen, besides the multilingual transformer, model
+packages in Trankit only take dozens of megabytes
+while Stanza consumes hundreds of megabytes for
+each package. This leads to the Stanza’s usage of
+much more memory when the pipelines for these
+languages are loaded at the same time. In fact,
+Trankit only takes 4.9GB to load all the 90 pre-
+trained pipelines for the 56 supported languages.
+5.5
+Ablation Study
+This section compares Trankit with two other pos-
+sible strategies to build a multilingual system for
+fundamental NLP tasks. In the first strategy (called
+“Multilingual”), we train a single pipeline where
+all the components in the pipeline are trained with
+the combined training data of all the languages.
+The second strategy (called “No-adapters”) in-
+volves eliminating adapters from XLM-Roberta in
+Trankit. As such, in “No-adapters”, pipelines are
+still trained separately for each language; the pre-
+trained transformer is fixed; and only task-specific
+weights (for predictions) in components are up-
+dated during training.
+For evaluation, we select 9 treebanks for 3 differ-
+ent groups, i.e., high-resource, medium-resource,
+and low-resource, depending on the sizes of the
+treebanks. In particular, the high-resource group
+includes Czech, Russian, and Arabic; the medium-
+resource group includes French, English, and Chi-
+nese; and the low-resource group involves Belaru-
+sian, Telugu, and Lithuanian. Table 2 compares the
+average performance of Trankit, “Multilingual”,
+and “No-adapters”. As can be seen, “Multilingual”
+and “No-adapters” are significantly worse than the
+proposed adapter-based Trankit. We attribute this
+to the fact that multilingual training might suffer
+from unbalanced sizes of treebanks, causing high-
+resource languages to dominate others and impair-
+ing the overall performance. For “No-adapters”,
+fixing pretrained transformer might significantly
+limit the models’ capacity for multiple tasks and
+languages.
+6
+Conclusion and Future Work
+We introduce Trankit, a transformer-based multi-
+lingual toolkit that significantly improves the per-
+formance for fundamental NLP tasks, including
+sentence segmentation, part-of-speech, morpho-
+logical tagging, and dependency parsing over 90
+Universal Dependencies v2.5 treebanks of 56 dif-
+ferent languages. Our toolkit is fast on GPUs and
+efficient in memory use, making it usable for gen-
+eral users. In the future, we plan to improve our
+toolkit by investigating different pretrained trans-
+formers such as mBERT and XLM-Robertalarge.
+We also plan to provide Named Entity Recognizers
+for more languages and add modules to perform
+more NLP tasks.
+Acknowledgments
+This research has been supported by the Office
+of the Director of National Intelligence (ODNI),
+Intelligence Advanced Research Projects Activ-
+ity (IARPA), via IARPA Contract No.
+2019-
+19051600006 under the Better Extraction from
+Text Towards Enhanced Retrieval (BETTER) Pro-
+gram. The views and conclusions contained herein
+are those of the authors and should not be inter-
+preted as necessarily representing the official poli-
+cies, either expressed or implied, of ODNI, IARPA,
+the Department of Defense, or the U.S. Govern-
+ment. The U.S. Government is authorized to re-
+produce and distribute reprints for governmental
+purposes notwithstanding any copyright annotation
+therein. This document does not contain technol-
+ogy or technical data controlled under either the
+U.S. International Traffic in Arms Regulations or
+the U.S. Export Administration Regulations.
+References
+Roee Aharoni, Melvin Johnson, and Orhan Firat. 2019.
+Massively multilingual neural machine translation.
+In Proceedings of the 2019 Conference of the North
+American Chapter of the Association for Compu-
+tational Linguistics: Human Language Technolo-
+gies, Volume 1 (Long and Short Papers), pages
+3874–3884, Minneapolis, Minnesota. Association
+for Computational Linguistics.
+Alan Akbik, Tanja Bergmann, Duncan Blythe, Kashif
+Rasul, Stefan Schweter, and Roland Vollgraf. 2019.
+FLAIR: An easy-to-use framework for state-of-the-
+art NLP.
+In Proceedings of the 2019 Confer-
+ence of the North American Chapter of the Asso-
+ciation for Computational Linguistics (Demonstra-
+tions), pages 54–59, Minneapolis, Minnesota. Asso-
+ciation for Computational Linguistics.
+Darina Benikova, Chris Biemann, and Marc Reznicek.
+2014.
+NoSta-d named entity annotation for Ger-
+man: Guidelines and dataset.
+In Proceedings of
+the Ninth International Conference on Language Re-
+sources and Evaluation (LREC-2014), pages 2524–
+2531, Reykjavik, Iceland. European Languages Re-
+sources Association (ELRA).
+Piotr Bojanowski, Edouard Grave, Armand Joulin, and
+Tomas Mikolov. 2017. Enriching word vectors with
+subword information. Transactions of the Associa-
+tion for Computational Linguistics, 5:135–146.
+Wanxiang Che, Yunlong Feng, Libo Qin, and Ting Liu.
+2020. N-ltp: A open-source neural chinese language
+technology platform with pretrained models. arXiv
+preprint arXiv:2009.11616.
+Yoeng-Jin Chu. 1965. On the shortest arborescence of
+a directed graph. Scientia Sinica.
+Alexis Conneau, Kartikay Khandelwal, Naman Goyal,
+Vishrav Chaudhary, Guillaume Wenzek, Francisco
+Guzmán, Edouard Grave, Myle Ott, Luke Zettle-
+moyer, and Veselin Stoyanov. 2020. Unsupervised
+cross-lingual representation learning at scale.
+In
+Proceedings of the 58th Annual Meeting of the Asso-
+ciation for Computational Linguistics, pages 8440–
+8451, Online. Association for Computational Lin-
+guistics.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019.
+BERT: Pre-training of
+deep bidirectional transformers for language under-
+standing.
+In Proceedings of the 2019 Conference
+of the North American Chapter of the Association
+for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long and Short Papers),
+pages 4171–4186, Minneapolis, Minnesota. Associ-
+ation for Computational Linguistics.
+Timothy Dozat and Christopher D Manning. 2017.
+Deep biaffine attention for neural dependency pars-
+ing. In Proceedings of the International Conference
+on Learning Representations.
+Jack Edmonds. 1967. Optimum branchings. Journal
+of Research of the national Bureau of Standards B.
+Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski,
+Bruna Morrone, Quentin De Laroussilhe, Andrea
+Gesmundo, Mona Attariyan, and Sylvain Gelly.
+2019. Parameter-efficient transfer learning for nlp.
+In Proceedings of the International Conference on
+Machine Learning.
+Hiroshi Kanayama and Ran Iwamoto. 2020. How uni-
+versal are Universal Dependencies? exploiting syn-
+tax for multilingual clause-level sentiment detection.
+In Proceedings of the 12th Language Resources
+and Evaluation Conference, pages 4063–4073, Mar-
+seille, France. European Language Resources Asso-
+ciation.
+Claudia Kittask, Kirill Milintsevich, and Kairit Sirts.
+2020.
+Evaluating multilingual bert for estonian.
+Volume, 328:19–26.
+Dan Kondratyuk and Milan Straka. 2019.
+75 lan-
+guages, 1 model: Parsing Universal Dependencies
+universally.
+In Proceedings of the 2019 Confer-
+ence on Empirical Methods in Natural Language
+Processing and the 9th International Joint Con-
+ference on Natural Language Processing (EMNLP-
+IJCNLP), pages 2779–2795, Hong Kong, China. As-
+sociation for Computational Linguistics.
+Taku Kudo. 2018.
+Subword regularization: Improv-
+ing neural network translation models with multiple
+subword candidates. In Proceedings of the 56th An-
+nual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers), pages 66–
+75, Melbourne, Australia. Association for Compu-
+tational Linguistics.
+Taku Kudo and John Richardson. 2018.
+Sentence-
+Piece: A simple and language independent subword
+tokenizer and detokenizer for neural text processing.
+In Proceedings of the 2018 Conference on Empirical
+Methods in Natural Language Processing: System
+Demonstrations, pages 66–71, Brussels, Belgium.
+Association for Computational Linguistics.
+Jian Liu, Yubo Chen, Kang Liu, and Jun Zhao. 2019a.
+Neural cross-lingual event detection with minimal
+parallel resources. In Proceedings of the 2019 Con-
+ference on Empirical Methods in Natural Language
+Processing and the 9th International Joint Con-
+ference on Natural Language Processing (EMNLP-
+IJCNLP), pages 738–748, Hong Kong, China. Asso-
+ciation for Computational Linguistics.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019b.
+Roberta: A robustly optimized bert pretraining ap-
+proach. arXiv preprint arXiv:1907.11692.
+Christopher Manning, Mihai Surdeanu, John Bauer,
+Jenny Finkel, Steven Bethard, and David McClosky.
+2014. The Stanford CoreNLP natural language pro-
+cessing toolkit.
+In Proceedings of 52nd Annual
+Meeting of the Association for Computational Lin-
+guistics: System Demonstrations, pages 55–60, Bal-
+timore, Maryland. Association for Computational
+Linguistics.
+Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg S Cor-
+rado, and Jeff Dean. 2013. Distributed representa-
+tions of words and phrases and their composition-
+ality. In Proceedings of the Conference on Neural
+Information Processing Systems.
+Behrang Mohit, Nathan Schneider, Rishav Bhowmick,
+Kemal Oflazer, and Noah A. Smith. 2012. Recall-
+oriented learning of named entities in Arabic
+Wikipedia.
+In Proceedings of the 13th Confer-
+ence of the European Chapter of the Association
+for Computational Linguistics, pages 162–173, Avi-
+gnon, France. Association for Computational Lin-
+guistics.
+Mahdi Mohseni and Amirhossein Tebbifakhr. 2019.
+MorphoBERT: a Persian NER system with BERT
+and morphological analysis.
+In Proceedings of
+The First International Workshop on NLP Solutions
+for Under Resourced Languages (NSURL 2019) co-
+located with ICNLSP 2019 - Short Papers, pages 23–
+30, Trento, Italy. Association for Computational Lin-
+guistics.
+Dat Quoc Nguyen and Anh Tuan Nguyen. 2020.
+PhoBERT: Pre-trained language models for Viet-
+namese.
+In Findings of the Association for Com-
+putational Linguistics: EMNLP 2020, pages 1037–
+1042, Online. Association for Computational Lin-
+guistics.
+Minh Van Nguyen and Thien Huu Nguyen. 2021. Im-
+proving cross-lingual transfer for event argument
+extraction with language-universal sentence struc-
+tures. In Proceedings of the Sixth Arabic Natural
+Language Processing Workshop (WANLP) at EACL
+2021.
+Joakim Nivre, Marie-Catherine de Marneffe, Filip Gin-
+ter, Jan Hajiˇc, Christopher D. Manning, Sampo
+Pyysalo, Sebastian Schuster, Francis Tyers, and
+Daniel Zeman. 2020. Universal Dependencies v2:
+An evergrowing multilingual treebank collection.
+In Proceedings of the 12th Language Resources
+and Evaluation Conference, pages 4034–4043, Mar-
+seille, France. European Language Resources Asso-
+ciation.
+Joel Nothman, Nicky Ringland, Will Radford, Tara
+Murphy, and James R. Curran. 2012. Learning mul-
+tilingual named entity recognition from Wikipedia.
+Artificial Intelligence, 194:151–175.
+Matthew E. Peters, Sebastian Ruder, and Noah A.
+Smith. 2019. To tune or not to tune? adapting pre-
+trained representations to diverse tasks. In Proceed-
+ings of the 4th Workshop on Representation Learn-
+ing for NLP (RepL4NLP-2019), pages 7–14, Flo-
+rence, Italy. Association for Computational Linguis-
+tics.
+Jonas Pfeiffer, Andreas R¨ucklé, Clifton Poth, Aish-
+warya
+Kamath,
+Ivan
+Vuli´c,
+Sebastian
+Ruder,
+Kyunghyun Cho,
+and Iryna Gurevych. 2020a.
+AdapterHub: A framework for adapting transform-
+ers. In Proceedings of the 2020 Conference on Em-
+pirical Methods in Natural Language Processing:
+System Demonstrations, pages 46–54, Online. Asso-
+ciation for Computational Linguistics.
+Jonas Pfeiffer, Ivan Vuli´c, Iryna Gurevych, and Se-
+bastian Ruder. 2020b. MAD-X: An Adapter-Based
+Framework for Multi-Task Cross-Lingual Transfer.
+In Proceedings of the 2020 Conference on Empirical
+Methods in Natural Language Processing (EMNLP),
+pages 7654–7673, Online. Association for Computa-
+tional Linguistics.
+Peng Qi, Yuhao Zhang, Yuhui Zhang, Jason Bolton,
+and Christopher D. Manning. 2020.
+Stanza: A
+python natural language processing toolkit for many
+human languages. In Proceedings of the 58th An-
+nual Meeting of the Association for Computational
+Linguistics:
+System Demonstrations, pages 101–
+108, Online. Association for Computational Lin-
+guistics.
+Milan Straka. 2018. UDPipe 2.0 prototype at CoNLL
+2018 UD shared task. In Proceedings of the CoNLL
+2018 Shared Task: Multilingual Parsing from Raw
+Text to Universal Dependencies, pages 197–207,
+Brussels, Belgium. Association for Computational
+Linguistics.
+Nasrin Taghizadeh and Heshaam Faili. 2020. Cross-
+lingual adaptation using universal dependencies.
+arXiv preprint arXiv:2003.10816.
+Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019.
+BERT rediscovers the classical NLP pipeline.
+In
+Proceedings of the 57th Annual Meeting of the Asso-
+ciation for Computational Linguistics, pages 4593–
+4601, Florence, Italy. Association for Computational
+Linguistics.
+Yuanhe Tian, Yan Song, Xiang Ao, Fei Xia, Xi-
+aojun Quan, Tong Zhang, and Yonggang Wang.
+2020. Joint Chinese word segmentation and part-
+of-speech tagging via two-way attentions of auto-
+analyzed knowledge. In Proceedings of the 58th An-
+nual Meeting of the Association for Computational
+Linguistics, pages 8286–8296, Online. Association
+for Computational Linguistics.
+Erik F. Tjong Kim Sang. 2002.
+Introduction to the
+CoNLL-2002 shared task: Language-independent
+named entity recognition.
+In COLING-02:
+The
+6th Conference on Natural Language Learning 2002
+(CoNLL-2002).
+Erik F. Tjong Kim Sang and Fien De Meulder.
+2003. Introduction to the CoNLL-2003 shared task:
+Language-independent named entity recognition. In
+Proceedings of the Seventh Conference on Natu-
+ral Language Learning at HLT-NAACL 2003, pages
+142–147.
+Henry Tsai, Jason Riesa, Melvin Johnson, Naveen Ari-
+vazhagan, Xin Li, and Amelia Archer. 2019. Small
+and practical BERT models for sequence labeling.
+In Proceedings of the 2019 Conference on Empirical
+Methods in Natural Language Processing and the
+9th International Joint Conference on Natural Lan-
+guage Processing (EMNLP-IJCNLP), pages 3632–
+3636, Hong Kong, China. Association for Computa-
+tional Linguistics.
+Ahmet ¨Ust¨un, Arianna Bisazza, Gosse Bouma, and
+Gertjan van Noord. 2020. UDapter: Language adap-
+tation for truly Universal Dependency parsing. In
+Proceedings of the 2020 Conference on Empirical
+Methods in Natural Language Processing (EMNLP),
+pages 2302–2315, Online. Association for Computa-
+tional Linguistics.
+Wietse de Vries, Andreas van Cranenburgh, Arianna
+Bisazza, Tommaso Caselli, Gertjan van Noord, and
+Malvina Nissim. 2019. Bertje: A dutch bert model.
+arXiv preprint arXiv:1912.09582.
+Ralph Weischedel, Martha Palmer, Mitchell Marcus,
+Eduard Hovy, Sameer Pradhan, Lance Ramshaw,
+Nianwen Xue, Ann Taylor, Jeff Kaufman, Michelle
+Franchini, et al. 2013. Ontonotes release 5.0. Lin-
+guistic Data Consortium.
+Haiqin Yang. 2019. Bert meets chinese word segmen-
+tation. arXiv preprint arXiv:1909.09292.
+Daniel Zeman, Joakim Nivre, Mitchell Abrams, No¨emi
+Aepli, ˇZeljko Agi´c, Lars Ahrenberg, Gabriel˙e Alek-
+sandraviˇci¯ut˙e, Lene Antonsen, Katya Aplonova,
+Maria Jesus Aranzabe, Gashaw Arutie, Masayuki
+Asahara, Luma Ateyah, Mohammed Attia, Aitz-
+iber Atutxa,
+Liesbeth Augustinus,
+Elena Bad-
+maeva, Miguel Ballesteros, Esha Banerjee, Se-
+bastian Bank, Verginica Barbu Mititelu, Victo-
+ria Basmov, Colin Batchelor, John Bauer, San-
+dra Bellato, Kepa Bengoetxea, Yevgeni Berzak, Ir-
+shad Ahmad Bhat, Riyaz Ahmad Bhat, Erica Bi-
+agetti, Eckhard Bick, Agn˙e Bielinskien˙e, Rogier
+Blokland, Victoria Bobicev, Lo¨ıc Boizou, Emanuel
+Borges V¨olker, Carl B¨orstell, Cristina Bosco, Gosse
+Bouma, Sam Bowman, Adriane Boyd, Kristina
+Brokait˙e,
+Aljoscha
+Burchardt,
+Marie
+Candito,
+Bernard Caron, Gauthier Caron, Tatiana Cavalcanti,
+G¨uls¸en Cebiro˘glu Eryi˘git, Flavio Massimiliano Cec-
+chini, Giuseppe G. A. Celano, Slavomír ˇCépl¨o,
+Savas Cetin, Fabricio Chalub, Jinho Choi, Yongseok
+Cho, Jayeol Chun, Alessandra T. Cignarella, Sil-
+vie Cinková, Aurélie Collomb, C¸ a˘grı C¸ ¨oltekin,
+Miriam Connor, Marine Courtin, Elizabeth David-
+son, Marie-Catherine de Marneffe, Valeria de Paiva,
+Elvis de Souza, Arantza Diaz de Ilarraza, Carly
+Dickerson, Bamba Dione, Peter Dirix, Kaja Do-
+brovoljc, Timothy Dozat, Kira Droganova, Puneet
+Dwivedi, Hanne Eckhoff, Marhaba Eli, Ali Elkahky,
+Binyam Ephrem, Olga Erina, Tomaˇz Erjavec, Aline
+Etienne, Wograine Evelyn, Richárd Farkas, Hec-
+tor Fernandez Alcalde, Jennifer Foster, Cláudia Fre-
+itas, Kazunori Fujita, Katarína Gajdoˇsová, Daniel
+Galbraith, Marcos Garcia, Moa G¨ardenfors, Se-
+bastian Garza, Kim Gerdes, Filip Ginter, Iakes
+Goenaga, Koldo Gojenola, Memduh G¨okırmak,
+Yoav Goldberg, Xavier Gómez Guinovart, Berta
+González Saavedra, Bernadeta Grici¯ut˙e, Matias Gri-
+oni, Normunds Gr¯uz¯ıtis, Bruno Guillaume, Céline
+Guillot-Barbance, Nizar Habash, Jan Hajiˇc, Jan
+Hajiˇc jr., Mika H¨am¨al¨ainen, Linh Hà Mỹ, Na-Rae
+Han, Kim Harris, Dag Haug, Johannes Heinecke,
+Felix Hennig, Barbora Hladká, Jaroslava Hlaváˇcová,
+Florinel Hociung,
+Petter Hohle,
+Jena Hwang,
+Takumi Ikeda, Radu Ion, Elena Irimia, Ọlájídé
+Ishola, Tomáˇs Jelínek, Anders Johannsen, Fredrik
+Jørgensen, Markus Juutinen, H¨uner Kas¸ıkara, An-
+dre Kaasen,
+Nadezhda Kabaeva,
+Sylvain Ka-
+hane, Hiroshi Kanayama, Jenna Kanerva, Boris
+Katz, Tolga Kayadelen, Jessica Kenney, Václava
+Kettnerová, Jesse Kirchner, Elena Klementieva,
+Arne K¨ohn, Kamil Kopacewicz, Natalia Kotsyba,
+Jolanta Kovalevskait˙e, Simon Krek, Sookyoung
+Kwak, Veronika Laippala, Lorenzo Lambertino, Lu-
+cia Lam, Tatiana Lando, Septina Dian Larasati,
+Alexei Lavrentiev, John Lee, Phương Lê H`ông,
+Alessandro Lenci, Saran Lertpradit, Herman Le-
+ung, Cheuk Ying Li, Josie Li, Keying Li, KyungTae
+Lim, Maria Liovina, Yuan Li, Nikola Ljubeˇsi´c, Olga
+Loginova, Olga Lyashevskaya, Teresa Lynn, Vivien
+Macketanz, Aibek Makazhanov, Michael Mandl,
+Christopher Manning, Ruli Manurung, Cătălina
+Mărănduc, David Mareˇcek, Katrin Marheinecke,
+Héctor Martínez Alonso, André Martins, Jan Maˇsek,
+Yuji Matsumoto, Ryan McDonald, Sarah McGuin-
+ness,
+Gustavo Mendonc¸a,
+Niko Miekka,
+Mar-
+garita Misirpashayeva, Anna Missil¨a, Cătălin Mi-
+titelu, Maria Mitrofan, Yusuke Miyao, Simonetta
+Montemagni, Amir More, Laura Moreno Romero,
+Keiko Sophie Mori, Tomohiko Morioka, Shinsuke
+Mori, Shigeki Moro, Bjartur Mortensen, Bohdan
+Moskalevskyi, Kadri Muischnek, Robert Munro,
+Yugo Murawaki, Kaili M¨u¨urisep, Pinkey Nainwani,
+Juan Ignacio Navarro Hor˜niacek, Anna Nedoluzhko,
+Gunta Neˇspore-B¯erzkalne,
+Lương Nguy˜ên Thị,
+Huy`ên Nguy˜ên ThịMinh, Yoshihiro Nikaido, Vi-
+taly Nikolaev, Rattima Nitisaroj, Hanna Nurmi,
+Stina Ojala, Atul Kr. Ojha, AdédayọOlúòkun,
+Mai Omura, Petya Osenova, Robert ¨Ostling, Lilja
+Øvrelid, Niko Partanen, Elena Pascual, Marco
+Passarotti, Agnieszka Patejuk, Guilherme Paulino-
+Passos,
+Angelika Peljak-Łapi´nska,
+Siyao Peng,
+Cenel-Augusto Perez, Guy Perrier, Daria Petrova,
+Slav
+Petrov,
+Jason
+Phelan,
+Jussi
+Piitulainen,
+Tommi A Pirinen, Emily Pitler, Barbara Plank,
+Thierry Poibeau, Larisa Ponomareva, Martin Popel,
+Lauma Pretkalnin¸a, Sophie Prévost, Prokopis Proko-
+pidis, Adam Przepiórkowski, Tiina Puolakainen,
+Sampo Pyysalo, Peng Qi, Andriela R¨a¨abis, Alexan-
+dre Rademaker, Loganathan Ramasamy, Taraka
+Rama, Carlos Ramisch, Vinit Ravishankar, Livy
+Real, Siva Reddy, Georg Rehm, Ivan Riabov,
+Michael Rießler, Erika Rimkut˙e, Larissa Rinaldi,
+Laura Rituma, Luisa Rocha, Mykhailo Romanenko,
+Rudolf Rosa, Davide Rovati, Valentin Ros,ca, Olga
+Rudina, Jack Rueter, Shoval Sadde, Benoˆıt Sagot,
+Shadi Saleh, Alessio Salomoni, Tanja Samardˇzi´c,
+Stephanie Samson,
+Manuela Sanguinetti,
+Dage
+S¨arg, Baiba Saul¯ıte, Yanin Sawanakunanon, Nathan
+Schneider, Sebastian Schuster, Djamé Seddah, Wolf-
+gang Seeker, Mojgan Seraji, Mo Shen, Atsuko
+Shimada, Hiroyuki Shirasu, Muh Shohibussirri,
+Dmitry Sichinava, Aline Silveira, Natalia Silveira,
+Maria Simi, Radu Simionescu, Katalin Simkó,
+Mária ˇSimková, Kiril Simov, Aaron Smith, Isabela
+Soares-Bastos, Carolyn Spadine, Antonio Stella,
+Milan Straka, Jana Strnadová, Alane Suhr, Umut
+Sulubacak, Shingo Suzuki, Zsolt Szántó, Dima
+Taji, Yuta Takahashi, Fabio Tamburini, Takaaki
+Tanaka, Isabelle Tellier, Guillaume Thomas, Li-
+isi Torga, Trond Trosterud, Anna Trukhina, Reut
+Tsarfaty, Francis Tyers, Sumire Uematsu, Zdeˇnka
+Ureˇsová, Larraitz Uria, Hans Uszkoreit, Andrius
+Utka, Sowmya Vajjala, Daniel van Niekerk, Gert-
+jan van Noord, Viktor Varga, Eric Villemonte de la
+Clergerie, Veronika Vincze, Lars Wallin, Abigail
+Walsh, Jing Xian Wang, Jonathan North Washing-
+ton, Maximilan Wendt, Seyi Williams, Mats Wirén,
+Christian Wittern, Tsegay Woldemariam, Tak-sum
+Wong, Alina Wróblewska, Mary Yako, Naoki Ya-
+mazaki, Chunxiao Yan, Koichi Yasuoka, Marat M.
+Yavrumyan, Zhuoran Yu, Zdenˇek ˇZabokrtský, Amir
+Zeldes, Manying Zhang, and Hanzhi Zhu. 2019.
+Universal dependencies 2.5. LINDAT/CLARIAH-
+CZ digital library at the Institute of Formal and Ap-
+plied Linguistics (ÚFAL), Faculty of Mathematics
+and Physics, Charles University.
+Xingran Zhu. 2020. Cross-lingual word sense disam-
+biguation using mbert embeddings with syntactic
+dependencies. arXiv preprint arXiv:2012.05300.
