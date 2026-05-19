@@ -53,3 +53,28 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 def get_vectorizer():
     return TfidfVectorizer(stop_words='english')
+
+from multiprocessing import Pool
+import os
+
+def _generate_ngrams_single(item):
+    """Worker function for parallel n-gram generation."""
+    doc_id, tokens, ngram_type = item
+    return doc_id, get_ngrams(tokens, ngram_type)
+
+def parallel_generate_ngrams(docs_tokens, ngram_type='unigram', num_workers=None):
+    """
+    Generate n-grams for multiple documents in parallel.
+    docs_tokens: Dictionary of {doc_id: list of tokens}
+    Returns: Dictionary of {doc_id: list of n-grams}
+    """
+    if num_workers is None:
+        num_workers = os.cpu_count() or 1
+        
+    items = [(doc_id, tokens, ngram_type) for doc_id, tokens in docs_tokens.items()]
+    
+    with Pool(processes=num_workers) as pool:
+        results = pool.map(_generate_ngrams_single, items)
+        
+    return dict(results)
+

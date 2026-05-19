@@ -54,3 +54,29 @@ def preprocess(text):
     tokens = [stem_word(word) for word in tokens]
     
     return tokens
+
+from multiprocessing import Pool
+import os
+
+def _preprocess_single(item):
+    """Worker function for parallel preprocessing."""
+    doc_id, info = item
+    text = info["content"] if isinstance(info, dict) else info
+    return doc_id, preprocess(text)
+
+def parallel_preprocess(docs_dict, num_workers=None):
+    """
+    Preprocess all documents in docs_dict in parallel.
+    docs_dict: Dictionary of {doc_id: info_dict_or_string}
+    Returns: Dictionary of {doc_id: list of preprocessed tokens}
+    """
+    if num_workers is None:
+        num_workers = os.cpu_count() or 1
+        
+    items = list(docs_dict.items())
+    
+    with Pool(processes=num_workers) as pool:
+        results = pool.map(_preprocess_single, items)
+        
+    return dict(results)
+
