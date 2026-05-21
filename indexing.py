@@ -12,13 +12,10 @@ def build_inverted_index(preprocessed_docs):
     inverted_index = {}
     
     for doc_id, tokens in preprocessed_docs.items():
-        # Using a set ensures we avoid duplicate document IDs if a term appears multiple times in one document
-        unique_tokens = set(tokens)
-        
-        for token in unique_tokens:
+        for token in tokens:
             if token not in inverted_index:
-                inverted_index[token] = []
-            inverted_index[token].append(doc_id)
+                inverted_index[token] = {}
+            inverted_index[token][doc_id] = inverted_index[token].get(doc_id, 0) + 1
             
     return inverted_index
 

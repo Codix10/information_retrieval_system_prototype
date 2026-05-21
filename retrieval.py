@@ -7,22 +7,46 @@ def process_query(query):
     """
     return preprocess(query)
 
+# Cache to avoid recomputing document lengths and average document length across queries
+_stats_cache = {
+    'preprocessed_docs_id': None,
+    'doc_lengths': {},
+    'avgdl': 0.0
+}
+
+def get_doc_stats(preprocessed_docs):
+    global _stats_cache
+    current_id = id(preprocessed_docs)
+    if _stats_cache['preprocessed_docs_id'] == current_id:
+        return _stats_cache['doc_lengths'], _stats_cache['avgdl']
+    
+    # Precompute statistics
+    doc_lengths = {doc_id: len(tokens) for doc_id, tokens in preprocessed_docs.items()}
+    N = len(doc_lengths)
+    avgdl = sum(doc_lengths.values()) / N if N > 0 else 0.0
+    
+    _stats_cache = {
+        'preprocessed_docs_id': current_id,
+        'doc_lengths': doc_lengths,
+        'avgdl': avgdl
+    }
+    return doc_lengths, avgdl
+
 def score_tfidf(query_tokens, inverted_index, preprocessed_docs):
     """Calculate TF-IDF scores for documents matching the query."""
     N = len(preprocessed_docs)
+    if N == 0:
+        return {}
     scores = {}
     
     for token in query_tokens:
         if token in inverted_index:
-            doc_ids = inverted_index[token]
-            df = len(doc_ids)
+            doc_tfs = inverted_index[token]
+            df = len(doc_tfs)
             # Standard IDF with +1 smoothing to avoid division by zero
             idf = math.log((N + 1) / (df + 1)) + 1
             
-            for doc_id in doc_ids:
-                doc_tokens = preprocessed_docs[doc_id]
-                tf = doc_tokens.count(token)
-                
+            for doc_id, tf in doc_tfs.items():
                 tfidf_score = tf * idf
                 scores[doc_id] = scores.get(doc_id, 0.0) + tfidf_score
                 
@@ -34,21 +58,19 @@ def score_bm25(query_tokens, inverted_index, preprocessed_docs, k1=1.5, b=0.75):
     if N == 0:
         return {}
         
-    avgdl = sum(len(tokens) for tokens in preprocessed_docs.values()) / N
+    doc_lengths, avgdl = get_doc_stats(preprocessed_docs)
     scores = {}
     
     for token in query_tokens:
         if token in inverted_index:
-            doc_ids = inverted_index[token]
-            df = len(doc_ids)
+            doc_tfs = inverted_index[token]
+            df = len(doc_tfs)
             
             # BM25 IDF formula
             idf = math.log(((N - df + 0.5) / (df + 0.5)) + 1.0)
             
-            for doc_id in doc_ids:
-                doc_tokens = preprocessed_docs[doc_id]
-                tf = doc_tokens.count(token)
-                dl = len(doc_tokens)
+            for doc_id, tf in doc_tfs.items():
+                dl = doc_lengths.get(doc_id, 0)
                 
                 # BM25 TF normalization
                 numerator = tf * (k1 + 1)
